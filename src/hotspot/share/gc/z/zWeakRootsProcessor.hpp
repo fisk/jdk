@@ -33,7 +33,7 @@ private:
 public:
   ZWeakRootsProcessor(ZWorkers* workers);
 
-  void process_weak_roots();
+  void process_weak_roots(ZGeneration* generation);
 };
 
 #endif // SHARE_GC_Z_ZWEAKROOTSPROCESSOR_HPP

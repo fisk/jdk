@@ -27,8 +27,6 @@
 #include "runtime/safepoint.hpp"
 #include "utilities/debug.hpp"
 
-volatile bool ZResurrection::_blocked = false;
-
 void ZResurrection::block() {
   assert(SafepointSynchronize::is_at_safepoint(), "Should be at safepoint");
   _blocked = true;

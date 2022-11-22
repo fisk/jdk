@@ -241,4 +241,15 @@ public:
              CLDClosure* cld_cl);
 };
 
+class ZRootsIteratorAllCLDs {
+private:
+  ZParallelApply<ZCLDsIteratorAll> _clds_all;
+
+public:
+  ZRootsIteratorAllCLDs(ZGenerationIdOptional generation) :
+    _clds_all(generation) {}
+
+  void apply(CLDClosure* cld_cl);
+};
+
 #endif // SHARE_GC_Z_ZROOTSITERATOR_HPP

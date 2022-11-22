@@ -565,23 +565,29 @@ public:
 //
 // Stat references
 //
-class ZStatReferences : public AllStatic {
+class ZStatReferences {
 private:
-  static struct ZCount {
+  struct ZCount {
     size_t encountered;
     size_t discovered;
     size_t enqueued;
   } _soft, _weak, _final, _phantom;
 
-  static void set(ZCount* count, size_t encountered, size_t discovered, size_t enqueued);
+  void set(ZCount* count, size_t encountered, size_t discovered, size_t enqueued);
 
 public:
-  static void set_soft(size_t encountered, size_t discovered, size_t enqueued);
-  static void set_weak(size_t encountered, size_t discovered, size_t enqueued);
-  static void set_final(size_t encountered, size_t discovered, size_t enqueued);
-  static void set_phantom(size_t encountered, size_t discovered, size_t enqueued);
+  ZStatReferences() :
+      _soft(),
+      _weak(),
+      _final(),
+      _phantom() {}
 
-  static void print();
+  void set_soft(size_t encountered, size_t discovered, size_t enqueued);
+  void set_weak(size_t encountered, size_t discovered, size_t enqueued);
+  void set_final(size_t encountered, size_t discovered, size_t enqueued);
+  void set_phantom(size_t encountered, size_t discovered, size_t enqueued);
+
+  void print();
 };
 
 struct ZStatHeapStats {

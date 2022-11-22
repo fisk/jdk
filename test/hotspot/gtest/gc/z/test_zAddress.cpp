@@ -45,14 +45,16 @@ protected:
     MarkedYoung1,
     MarkedOld0,
     MarkedOld1,
-    Finalizable0,
-    Finalizable1,
+    FinalizableYoung0,
+    FinalizableYoung1,
+    FinalizableOld0,
+    FinalizableOld1,
     Remembered0,
     Remembered1,
     Remembered11
   };
 
-  static uintptr_t make_color(ZColor remembered, ZColor remapped_young, ZColor remapped_old, ZColor marked_young, ZColor marked_old) {
+  static uintptr_t make_color(ZColor remembered, ZColor remapped_young, ZColor remapped_old, ZColor finalizable_young, ZColor finalizable_old, ZColor marked_young, ZColor marked_old) {
     uintptr_t color = 0;
     switch (remapped_young) {
     case RemappedYoung0: {
@@ -96,6 +98,17 @@ protected:
       EXPECT_TRUE(false);
     }
 
+    switch (finalizable_young) {
+    case FinalizableYoung0:
+      color |= ZPointerFinalizableYoung0;
+      break;
+    case FinalizableYoung1:
+      color |= ZPointerFinalizableYoung1;
+      break;
+    default:
+      EXPECT_TRUE(false);
+    }
+
     switch (marked_old) {
     case MarkedOld0:
       color |= ZPointerMarkedOld0;
@@ -103,11 +116,16 @@ protected:
     case MarkedOld1:
       color |= ZPointerMarkedOld1;
       break;
-    case Finalizable0:
-      color |= ZPointerFinalizable0;
+    default:
+      EXPECT_TRUE(false);
+    }
+
+    switch (finalizable_old) {
+    case FinalizableOld0:
+      color |= ZPointerFinalizableOld0;
       break;
-    case Finalizable1:
-      color |= ZPointerFinalizable1;
+    case FinalizableOld1:
+      color |= ZPointerFinalizableOld1;
       break;
     default:
       EXPECT_TRUE(false);
@@ -134,16 +152,20 @@ protected:
                         ZColor remembered,
                         ZColor remapped_young,
                         ZColor remapped_old,
+                        ZColor finalizable_young,
+                        ZColor finalizable_old,
                         ZColor marked_young,
                         ZColor marked_old) {
     if (remembered == Uncolored &&
         remapped_young == Uncolored &&
         remapped_old == Uncolored &&
+        finalizable_young == Uncolored &&
+        finalizable_old == Uncolored &&
         marked_young == Uncolored &&
         marked_old == Uncolored) {
       return zpointer(addr);
     } else {
-      return color(addr, make_color(remembered, remapped_young, remapped_old, marked_young, marked_old));
+      return color(addr, make_color(remembered, remapped_young, remapped_old, finalizable_young, finalizable_old, marked_young, marked_old));
     }
   }
 
@@ -155,12 +177,20 @@ protected:
     return ZPointer::remap_bits(bits) & (ZPointerRemapped10 | ZPointerRemapped11);
   }
 
-  static bool is_marked_young_odd(uintptr_t bits) {
-    return bits & ZPointerMarkedYoung1;
+  static bool is_finalizable_old_odd(uintptr_t bits) {
+    return bits & ZPointerFinalizableOld1;
+  }
+
+  static bool is_finalizable_young_odd(uintptr_t bits) {
+    return bits & ZPointerFinalizableYoung1;
   }
 
   static bool is_marked_old_odd(uintptr_t bits) {
-    return bits & (ZPointerMarkedOld1 | ZPointerFinalizable1);
+    return bits & ZPointerMarkedOld1;
+  }
+
+  static bool is_marked_young_odd(uintptr_t bits) {
+    return bits & ZPointerMarkedYoung1;
   }
 
   static bool is_remembered(uintptr_t bits) {
@@ -179,9 +209,11 @@ protected:
                                 ZColor remembered,
                                 ZColor remapped_young,
                                 ZColor remapped_old,
+                                ZColor finalizable_young,
+                                ZColor finalizable_old,
                                 ZColor marked_young,
                                 ZColor marked_old) {
-    const zpointer ptr = color(value, remembered, remapped_young, remapped_old, marked_young, marked_old);
+    const zpointer ptr = color(value, remembered, remapped_young, remapped_old, finalizable_young, finalizable_old, marked_young, marked_old);
     uintptr_t ptr_raw = untype(ptr);
 
     EXPECT_TRUE(ZPointerLoadGoodMask != 0);
@@ -190,6 +222,8 @@ protected:
     bool ptr_raw_null = ptr_raw == 0;
     bool global_remapped_old_odd = is_remapped_old_odd(ZPointerLoadGoodMask);
     bool global_remapped_young_odd = is_remapped_young_odd(ZPointerLoadGoodMask);
+    bool global_finalizable_old_odd = is_finalizable_old_odd(ZPointerStoreGoodMask);
+    bool global_finalizable_young_odd = is_finalizable_young_odd(ZPointerStoreGoodMask);
     bool global_marked_old_odd = is_marked_old_odd(ZPointerStoreGoodMask);
     bool global_marked_young_odd = is_marked_young_odd(ZPointerStoreGoodMask);
     bool global_remembered_odd = is_remembered_odd(ZPointerStoreGoodMask);
@@ -201,6 +235,8 @@ protected:
       EXPECT_TRUE(ZPointer::is_load_good_or_null(ptr));
       EXPECT_FALSE(ZPointer::is_load_bad(ptr));
       EXPECT_FALSE(ZPointer::is_mark_good(ptr));
+      EXPECT_TRUE(ZPointer::is_finalizable_good_or_null(ptr));
+      EXPECT_FALSE(ZPointer::is_finalizable_bad(ptr));
       EXPECT_TRUE(ZPointer::is_mark_good_or_null(ptr));
       EXPECT_FALSE(ZPointer::is_mark_bad(ptr));
       EXPECT_FALSE(ZPointer::is_store_good(ptr));
@@ -209,9 +245,10 @@ protected:
     } else {
       bool ptr_remapped_old_odd = is_remapped_old_odd(ptr_raw);
       bool ptr_remapped_young_odd = is_remapped_young_odd(ptr_raw);
+      bool ptr_finalizable_old_odd = is_finalizable_old_odd(ptr_raw);
+      bool ptr_finalizable_young_odd = is_finalizable_young_odd(ptr_raw);
       bool ptr_marked_old_odd = is_marked_old_odd(ptr_raw);
       bool ptr_marked_young_odd = is_marked_young_odd(ptr_raw);
-      bool ptr_final = ptr_raw & (ZPointerFinalizable0 | ZPointerFinalizable1);
       bool ptr_remembered = is_power_of_2(ptr_raw & (ZPointerRemembered0 | ZPointerRemembered1));
       bool ptr_remembered_odd = is_remembered_odd(ptr_raw);
       bool ptr_remembered_even = is_remembered_even(ptr_raw);
@@ -219,135 +256,138 @@ protected:
 
       bool same_old_marking = global_marked_old_odd == ptr_marked_old_odd;
       bool same_young_marking = global_marked_young_odd == ptr_marked_young_odd;
+      bool same_old_finalizable = global_finalizable_old_odd == ptr_finalizable_old_odd;
+      bool same_young_finalizable = global_finalizable_young_odd == ptr_finalizable_young_odd;
       bool same_old_remapping = global_remapped_old_odd == ptr_remapped_old_odd;
       bool same_young_remapping = global_remapped_young_odd == ptr_remapped_young_odd;
       bool same_remembered = ptr_remembered_even == global_remembered_even && ptr_remembered_odd == global_remembered_odd;
 
-      EXPECT_EQ(ZPointer::is_marked_finalizable(ptr), same_old_marking && ptr_final);
-      EXPECT_EQ(ZPointer::is_marked_any_old(ptr), same_old_marking);
       EXPECT_EQ(ZPointer::is_remapped(ptr), same_old_remapping && same_young_remapping);
       EXPECT_EQ(ZPointer::is_load_good(ptr), same_old_remapping && same_young_remapping);
       EXPECT_EQ(ZPointer::is_load_good_or_null(ptr), same_old_remapping && same_young_remapping);
       EXPECT_EQ(ZPointer::is_load_bad(ptr), !same_old_remapping || !same_young_remapping);
-      EXPECT_EQ(ZPointer::is_mark_good(ptr), same_young_remapping && same_old_remapping && same_young_marking && same_old_marking);
-      EXPECT_EQ(ZPointer::is_mark_good_or_null(ptr), same_young_remapping && same_old_remapping && same_young_marking && same_old_marking);
-      EXPECT_EQ(ZPointer::is_mark_bad(ptr), !same_young_remapping || !same_old_remapping || !same_young_marking || !same_old_marking);
-      EXPECT_EQ(ZPointer::is_store_good(ptr), same_young_remapping && same_old_remapping && same_young_marking && same_old_marking && ptr_remembered && same_remembered);
-      EXPECT_EQ(ZPointer::is_store_good_or_null(ptr), same_young_remapping && same_old_remapping && same_young_marking && same_old_marking && ptr_remembered && same_remembered);
-      EXPECT_EQ(ZPointer::is_store_bad(ptr), !same_young_remapping || !same_old_remapping || !same_young_marking || !same_old_marking || !ptr_remembered || !same_remembered);
+      EXPECT_EQ(ZPointer::is_finalizable_good(ptr), same_young_remapping && same_old_remapping && same_young_finalizable && same_old_finalizable);
+      EXPECT_EQ(ZPointer::is_finalizable_good_or_null(ptr), same_young_remapping && same_old_remapping && same_young_finalizable && same_old_finalizable);
+      EXPECT_EQ(ZPointer::is_finalizable_bad(ptr), !same_young_remapping || !same_old_remapping || !same_young_finalizable || !same_old_finalizable);
+      EXPECT_EQ(ZPointer::is_mark_good(ptr), same_young_remapping && same_old_remapping && same_young_finalizable && same_old_finalizable && same_young_marking && same_old_marking);
+      EXPECT_EQ(ZPointer::is_mark_good_or_null(ptr), same_young_remapping && same_old_remapping && same_young_finalizable && same_old_finalizable && same_young_marking && same_old_marking);
+      EXPECT_EQ(ZPointer::is_mark_bad(ptr), !same_young_remapping || !same_old_remapping || !same_young_finalizable || !same_old_finalizable || !same_young_marking || !same_old_marking);
+      EXPECT_EQ(ZPointer::is_store_good(ptr), same_young_remapping && same_old_remapping && same_young_finalizable && same_old_finalizable && same_young_marking && same_old_marking && ptr_remembered && same_remembered);
+      EXPECT_EQ(ZPointer::is_store_good_or_null(ptr), same_young_remapping && same_old_remapping && same_young_finalizable && same_old_finalizable && same_young_marking && same_old_marking && ptr_remembered && same_remembered);
+      EXPECT_EQ(ZPointer::is_store_bad(ptr), !same_young_remapping || !same_old_remapping || !same_young_finalizable || !same_old_finalizable || !same_young_marking || !same_old_marking || !ptr_remembered || !same_remembered);
     }
   }
 
   static void test_is_checks_on_all() {
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered0, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered0, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered1, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered1, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld0, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung0, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld0, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld0, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld0, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld0, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld1, MarkedYoung0, MarkedOld1);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld0);
-    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld1);
-    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld0, MarkedYoung0, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld1, FinalizableYoung0, FinalizableOld1, MarkedYoung0, MarkedOld1);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld0, MarkedYoung1, MarkedOld0);
+    test_is_checks_on(valid_value, Remembered11, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
+    test_is_checks_on(null_value, Remembered11, RemappedYoung1, RemappedOld1, FinalizableYoung1, FinalizableOld1, MarkedYoung1, MarkedOld1);
 
-    test_is_checks_on(null_value, Uncolored, Uncolored, Uncolored, Uncolored, Uncolored);
+    test_is_checks_on(null_value, Uncolored, Uncolored, Uncolored, Uncolored, Uncolored, Uncolored, Uncolored);
   }
 
   static void advance_and_test_young_phase(int& phase, int amount) {

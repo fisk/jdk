@@ -76,6 +76,7 @@
 
 static const ZStatSubPhase ZSubPhaseConcurrentMarkRootUncoloredYoung("Concurrent Mark Root Uncolored", ZGenerationId::young);
 static const ZStatSubPhase ZSubPhaseConcurrentMarkRootColoredYoung("Concurrent Mark Root Colored", ZGenerationId::young);
+static const ZStatSubPhase ZSubPhaseConcurrentMarkCLDRootColoredYoung("Concurrent Mark CLD Root Colored", ZGenerationId::young);
 static const ZStatSubPhase ZSubPhaseConcurrentMarkRootUncoloredOld("Concurrent Mark Root Uncolored", ZGenerationId::old);
 static const ZStatSubPhase ZSubPhaseConcurrentMarkRootColoredOld("Concurrent Mark Root Colored", ZGenerationId::old);
 
@@ -203,7 +204,7 @@ void ZMark::push_partial_array(zpointer* addr, size_t length, bool finalizable) 
 static void mark_barrier_on_oop_array(volatile zpointer* p, size_t length, bool finalizable, bool young) {
   for (volatile const zpointer* const end = p + length; p < end; p++) {
     if (young) {
-      ZBarrier::mark_barrier_on_young_oop_field(p);
+      ZBarrier::mark_barrier_on_young_oop_field(p, finalizable);
     } else {
       ZBarrier::mark_barrier_on_old_oop_field(p, finalizable);
     }
@@ -278,34 +279,24 @@ template <bool finalizable, ZGenerationIdOptional generation>
 class ZMarkBarrierFollowOopClosure : public OopIterateClosure {
 private:
   static int claim_value() {
-    return finalizable ? ClassLoaderData::_claim_finalizable
-                       : ClassLoaderData::_claim_strong;
-  }
-
-  static ReferenceDiscoverer* discoverer() {
-    if (!finalizable) {
-      return ZGeneration::old()->reference_discoverer();
+    if (generation == ZGenerationIdOptional::young) {
+      return finalizable ? ClassLoaderData::_claim_young_finalizable
+                         : ClassLoaderData::_claim_young_strong;
     } else {
-      return nullptr;
+      assert(generation == ZGenerationIdOptional::old, "must claim either young or old bits");
+      return finalizable ? ClassLoaderData::_claim_finalizable
+                         : ClassLoaderData::_claim_strong;
     }
   }
 
-  static bool visit_metadata() {
-    // Only visit metadata if we're marking through the old generation
-    return ZGeneration::old()->is_phase_mark();
-  }
-
-  const bool _visit_metadata;
-
 public:
-  ZMarkBarrierFollowOopClosure()
-    : OopIterateClosure(discoverer()),
-      _visit_metadata(visit_metadata()) {}
+  ZMarkBarrierFollowOopClosure(ReferenceDiscoverer* discoverer)
+    : OopIterateClosure(discoverer) {}
 
   virtual void do_oop(oop* p) {
     switch (generation) {
     case ZGenerationIdOptional::young:
-      ZBarrier::mark_barrier_on_young_oop_field((volatile zpointer*)p);
+      ZBarrier::mark_barrier_on_young_oop_field((volatile zpointer*)p, finalizable);
       break;
     case ZGenerationIdOptional::old:
       ZBarrier::mark_barrier_on_old_oop_field((volatile zpointer*)p, finalizable);
@@ -322,7 +313,7 @@ public:
 
   virtual bool do_metadata() final {
     // Only help out with metadata visiting
-    return _visit_metadata;
+    return true;
   }
 
   virtual void do_nmethod(nmethod* nm) {
@@ -338,28 +329,43 @@ public:
 
   virtual void do_klass(Klass* klass) {
     ClassLoaderData* cld = klass->class_loader_data();
-    ZMarkBarrierFollowOopClosure<finalizable, ZGenerationIdOptional::none> cl;
-    cld->oops_do(&cl, claim_value());
+    if (generation == ZGenerationIdOptional::young) {
+      ZMarkBarrierFollowOopClosure<finalizable, ZGenerationIdOptional::none> cl(ZGeneration::young()->reference_discoverer());
+      cld->oops_do(&cl, claim_value());
+    } else {
+      assert(generation == ZGenerationIdOptional::old, "what other generation would we be marking?");
+      ZMarkBarrierFollowOopClosure<finalizable, ZGenerationIdOptional::none> cl(ZGeneration::old()->reference_discoverer());
+      cld->oops_do(&cl, claim_value());
+    }
   }
 
   virtual void do_cld(ClassLoaderData* cld) {
-    ZMarkBarrierFollowOopClosure<finalizable, ZGenerationIdOptional::none> cl;
-    cld->oops_do(&cl, claim_value());
+    if (generation == ZGenerationIdOptional::young) {
+      ZMarkBarrierFollowOopClosure<finalizable, ZGenerationIdOptional::none> cl(ZGeneration::young()->reference_discoverer());
+      cld->oops_do(&cl, claim_value());
+    } else {
+      assert(generation == ZGenerationIdOptional::old, "what other generation would we be marking?");
+      ZMarkBarrierFollowOopClosure<finalizable, ZGenerationIdOptional::none> cl(ZGeneration::old()->reference_discoverer());
+      cld->oops_do(&cl, claim_value());
+    }
   }
 };
 
 void ZMark::follow_array_object(objArrayOop obj, bool finalizable) {
   if (_generation->is_old()) {
     if (finalizable) {
-      ZMarkBarrierFollowOopClosure<true /* finalizable */, ZGenerationIdOptional::old> cl;
+      ZMarkBarrierFollowOopClosure<true /* finalizable */, ZGenerationIdOptional::old> cl(ZGeneration::old()->reference_discoverer());
       cl.do_klass(obj->klass());
     } else {
-      ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::old> cl;
+      ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::old> cl(ZGeneration::old()->reference_discoverer());
       cl.do_klass(obj->klass());
     }
   } else {
-    ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::none> cl;
-    if (cl.do_metadata()) {
+    if (finalizable) {
+      ZMarkBarrierFollowOopClosure<true /* finalizable */, ZGenerationIdOptional::young> cl(ZGeneration::young()->reference_discoverer());
+      cl.do_klass(obj->klass());
+    } else {
+      ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::young> cl(ZGeneration::young()->reference_discoverer());
       cl.do_klass(obj->klass());
     }
   }
@@ -374,23 +380,32 @@ void ZMark::follow_array_object(objArrayOop obj, bool finalizable) {
 }
 
 void ZMark::follow_object(oop obj, bool finalizable) {
+  assert(ZHeap::heap()->is_old(to_zaddress(obj)) == _generation->is_old(), "Following across generation boundaries");
   if (_generation->is_old()) {
     assert(ZHeap::heap()->is_old(to_zaddress(obj)), "Should only follow objects from old gen");
     if (obj->is_stackChunk()) {
       // No support for tracing through stack chunks as finalizably reachable
-      ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::old> cl;
+      ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::old> cl(ZGeneration::old()->reference_discoverer());
       ZIterator::oop_iterate(obj, &cl);
     } else if (finalizable) {
-      ZMarkBarrierFollowOopClosure<true /* finalizable */, ZGenerationIdOptional::old> cl;
+      ZMarkBarrierFollowOopClosure<true /* finalizable */, ZGenerationIdOptional::old> cl(ZGeneration::old()->reference_discoverer());
       ZIterator::oop_iterate(obj, &cl);
     } else {
-      ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::old> cl;
+      ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::old> cl(ZGeneration::old()->reference_discoverer());
       ZIterator::oop_iterate(obj, &cl);
     }
   } else {
-    // Young gen must help out with old marking
-    ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::young> cl;
-    ZIterator::oop_iterate(obj, &cl);
+    if (obj->is_stackChunk()) {
+      // No support for tracing through stack chunks as finalizably reachable
+      ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::young> cl(ZGeneration::young()->reference_discoverer());
+      ZIterator::oop_iterate(obj, &cl);
+    } else if (finalizable) {
+      ZMarkBarrierFollowOopClosure<true /* finalizable */, ZGenerationIdOptional::young> cl(ZGeneration::young()->reference_discoverer());
+      ZIterator::oop_iterate(obj, &cl);
+    } else {
+      ZMarkBarrierFollowOopClosure<false /* finalizable */, ZGenerationIdOptional::young> cl(ZGeneration::young()->reference_discoverer());
+      ZIterator::oop_iterate(obj, &cl);
+    }
   }
 }
 
@@ -781,10 +796,10 @@ public:
 
       // Disarm only the young marking, not any potential old marking cycle
 
-      const uintptr_t old_marked_mask = ZPointerMarkedMask ^ (ZPointerMarkedYoung0 | ZPointerMarkedYoung1);
+      const uintptr_t old_marked_mask = ZPointerMarkedMask & (ZPointerMarkedOld0 | ZPointerMarkedOld1);
       const uintptr_t old_marked = prev_color & old_marked_mask;
 
-      const zpointer new_disarm_value_ptr = ZAddress::color(zaddress::null, ZPointerLoadGoodMask | ZPointerMarkedYoung | old_marked | ZPointerRemembered);
+      const zpointer new_disarm_value_ptr = ZAddress::color(zaddress::null, ZPointerFinalizableGoodMask | ZPointerMarkedYoung | old_marked | ZPointerRemembered);
 
       // Check if disarming for young mark, completely disarms the nmethod entry barrier
       const bool complete_disarm = ZPointer::is_store_good(new_disarm_value_ptr);
@@ -853,31 +868,63 @@ public:
   }
 };
 
-class ZMarkYoungCLDClosure : public ClaimingCLDToOopClosure<ClassLoaderData::_claim_none> {
+class ZMarkIfYoungOopClosure : public OopClosure {
+public:
+  virtual void do_oop(oop* p) {
+    ZBarrier::mark_young_good_barrier_on_oop_field((volatile zpointer*)p);
+  }
+
+  virtual void do_oop(narrowOop* p) {
+    ShouldNotReachHere();
+  }
+};
+
+class ZMarkYoungFromOldCLDClosure : public ClaimingCLDToOopClosure<ClassLoaderData::_claim_none> {
+public:
+  ZMarkYoungFromOldCLDClosure(OopClosure* cl) :
+    ClaimingCLDToOopClosure<ClassLoaderData::_claim_none>(cl) {}
+
+  virtual void do_cld(ClassLoaderData* cld) {
+    if (!cld->is_alive()) {
+      // Skip marking through concurrently unloading CLDs
+      return;
+    }
+
+    oop holder = cld->holder_no_keepalive();
+    if (holder == nullptr || ZHeap::heap()->is_old(to_zaddress(holder))) {
+      CLDToOopClosure::do_cld(cld);
+    }
+  }
+};
+
+class ZMarkYoungCLDClosure : public ClaimingCLDToOopClosure<ClassLoaderData::_claim_young_strong> {
 public:
   virtual void do_cld(ClassLoaderData* cld) {
     if (!cld->is_alive()) {
       // Skip marking through concurrently unloading CLDs
       return;
     }
-    ClaimingCLDToOopClosure<ClassLoaderData::_claim_none>::do_cld(cld);
+    ClaimingCLDToOopClosure<ClassLoaderData::_claim_young_strong>::do_cld(cld);
   }
 
   ZMarkYoungCLDClosure(OopClosure* cl)
-    : ClaimingCLDToOopClosure<ClassLoaderData::_claim_none>(cl) {}
+    : ClaimingCLDToOopClosure<ClassLoaderData::_claim_young_strong>(cl) {}
 };
 
 class ZMarkYoungRootsTask : public ZTask {
 private:
-  ZMark* const               _mark;
-  ZRootsIteratorAllColored   _roots_colored;
-  ZRootsIteratorAllUncolored _roots_uncolored;
+  ZMark* const                _mark;
+  ZRootsIteratorStrongColored _roots_colored;
+  ZRootsIteratorAllUncolored  _roots_uncolored;
 
-  ZMarkYoungOopClosure       _cl_colored;
-  ZMarkYoungCLDClosure       _cld_cl;
+  ZMarkYoungOopClosure        _cl_colored;
+  ZMarkYoungCLDClosure        _cld_cl;
+  ZMarkIfYoungOopClosure      _cl_young_colored;
+  ZMarkYoungFromOldCLDClosure _cld_from_old_cl;
+  ZRootsIteratorAllCLDs       _clds_all;
 
-  ZMarkThreadClosure         _thread_cl;
-  ZMarkYoungNMethodClosure   _nm_cl;
+  ZMarkThreadClosure          _thread_cl;
+  ZMarkYoungNMethodClosure    _nm_cl;
 
 public:
   ZMarkYoungRootsTask(ZMark* mark)
@@ -887,6 +934,8 @@ public:
       _roots_uncolored(ZGenerationIdOptional::young),
       _cl_colored(),
       _cld_cl(&_cl_colored),
+      _cld_from_old_cl(&_cl_colored),
+      _clds_all(ZGenerationIdOptional::young),
       _thread_cl(),
       _nm_cl() {}
 
@@ -901,6 +950,11 @@ public:
       ZStatTimerWorker timer(ZSubPhaseConcurrentMarkRootUncoloredYoung);
       _roots_uncolored.apply(&_thread_cl,
                              &_nm_cl);
+    }
+
+    {
+      ZStatTimerWorker timer(ZSubPhaseConcurrentMarkCLDRootColoredYoung);
+      _clds_all.apply(&_cld_from_old_cl);
     }
 
     // Flush and free worker stacks. Needed here since

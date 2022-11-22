@@ -24,16 +24,15 @@
 #ifndef SHARE_GC_Z_ZRESURRECTION_HPP
 #define SHARE_GC_Z_ZRESURRECTION_HPP
 
-#include "memory/allStatic.hpp"
-
-class ZResurrection : public AllStatic {
+class ZResurrection {
 private:
-  static volatile bool _blocked;
+  volatile bool _blocked;
 
 public:
-  static bool is_blocked();
-  static void block();
-  static void unblock();
+  ZResurrection() : _blocked(false) {}
+  bool is_blocked() const;
+  void block();
+  void unblock();
 };
 
 #endif // SHARE_GC_Z_ZRESURRECTION_HPP

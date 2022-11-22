@@ -163,7 +163,7 @@ static void z_verify_uncolored_root_oop(zaddress* p) {
 static void z_verify_possibly_weak_oop(zpointer* p) {
   const zpointer o = *p;
   if (!z_is_null_relaxed(o)) {
-    guarantee(ZPointer::is_marked_old(o) || ZPointer::is_marked_finalizable(o), BAD_OOP_ARG(o, p));
+    guarantee(ZPointer::is_marked_old(o) || ZPointer::is_marked_finalizable_old(o), BAD_OOP_ARG(o, p));
 
     const zaddress addr = ZBarrier::load_barrier_on_oop_field_preloaded(nullptr, o);
     guarantee(ZHeap::heap()->is_old(addr) || ZPointer::is_marked_young(o), BAD_OOP_ARG(o, p));
@@ -379,7 +379,7 @@ void ZVerify::roots_strong(bool verify_after_old_mark) {
 
 void ZVerify::roots_weak() {
   assert(SafepointSynchronize::is_at_safepoint(), "Must be at a safepoint");
-  assert(!ZResurrection::is_blocked(), "Invalid phase");
+  assert(!ZGeneration::old()->is_resurrection_blocked(), "Invalid phase");
 
   ZVerifyColoredRootClosure cl(true /* verify_after_old_mark*/);
   ZRootsIteratorWeakColored roots_weak_colored(ZGenerationIdOptional::none);
@@ -467,7 +467,8 @@ void ZVerify::objects(bool verify_weaks) {
   assert(SafepointSynchronize::is_at_safepoint(), "Must be at a safepoint");
   assert(ZGeneration::young()->is_phase_mark_complete() ||
          ZGeneration::old()->is_phase_mark_complete(), "Invalid phase");
-  assert(!ZResurrection::is_blocked(), "Invalid phase");
+  assert(!ZGeneration::old()->is_resurrection_blocked(), "Invalid phase");
+  assert(!ZGeneration::young()->is_resurrection_blocked(), "Invalid phase");
 
   // Note that object verification will fix the pointers and
   // only verify that the resulting objects are sane.

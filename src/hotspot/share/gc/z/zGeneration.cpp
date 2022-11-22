@@ -80,6 +80,7 @@ static const ZStatPhaseConcurrent ZPhaseConcurrentMarkYoung("Concurrent Mark", Z
 static const ZStatPhaseConcurrent ZPhaseConcurrentMarkContinueYoung("Concurrent Mark Continue", ZGenerationId::young);
 static const ZStatPhasePause      ZPhasePauseMarkEndYoung("Pause Mark End", ZGenerationId::young);
 static const ZStatPhaseConcurrent ZPhaseConcurrentMarkFreeYoung("Concurrent Mark Free", ZGenerationId::young);
+static const ZStatPhaseConcurrent ZPhaseConcurrentProcessNonStrongYoung("Concurrent Process Non-Strong", ZGenerationId::young);
 static const ZStatPhaseConcurrent ZPhaseConcurrentResetRelocationSetYoung("Concurrent Reset Relocation Set", ZGenerationId::young);
 static const ZStatPhaseConcurrent ZPhaseConcurrentSelectRelocationSetYoung("Concurrent Select Relocation Set", ZGenerationId::young);
 static const ZStatPhasePause      ZPhasePauseRelocateStartYoung("Pause Relocate Start", ZGenerationId::young);
@@ -105,6 +106,11 @@ static const ZStatSubPhase ZSubPhaseConcurrentRemapRootsColoredOld("Concurrent R
 static const ZStatSubPhase ZSubPhaseConcurrentRemapRootsUncoloredOld("Concurrent Remap Roots Uncolored", ZGenerationId::old);
 static const ZStatSubPhase ZSubPhaseConcurrentRemapRememberedOld("Concurrent Remap Remembered", ZGenerationId::old);
 
+static const ZStatSubPhase ZSubPhaseConcurrentReferencesProcessYoung("Concurrent References Process", ZGenerationId::young);
+static const ZStatSubPhase ZSubPhaseConcurrentReferencesEnqueueYoung("Concurrent References Enqueue", ZGenerationId::young);
+static const ZStatSubPhase ZSubPhaseConcurrentReferencesProcessOld("Concurrent References Process", ZGenerationId::old);
+static const ZStatSubPhase ZSubPhaseConcurrentReferencesEnqueueOld("Concurrent References Enqueue", ZGenerationId::old);
+
 static const ZStatSampler ZSamplerJavaThreads("System", "Java Threads", ZStatUnitThreads);
 
 ZGenerationYoung* ZGeneration::_young;
@@ -119,6 +125,9 @@ ZGeneration::ZGeneration(ZGenerationId id, ZPageTable* page_table, ZPageAllocato
     _mark(this, page_table),
     _relocate(this),
     _relocation_set(this),
+    _resurrection(),
+    _reference_processor(&_workers, this),
+    _weak_roots_processor(&_workers),
     _freed(0),
     _promoted(0),
     _compacted(0),
@@ -129,7 +138,16 @@ ZGeneration::ZGeneration(ZGenerationId id, ZPageTable* page_table, ZPageAllocato
     _stat_workers(),
     _stat_mark(),
     _stat_relocation(),
+    _stat_references(),
     _gc_timer(nullptr) {}
+
+void ZGeneration::resurrection_block() {
+  _resurrection.block();
+}
+
+void ZGeneration::resurrection_unblock() {
+  _resurrection.unblock();
+}
 
 bool ZGeneration::is_initialized() const {
   return _mark.is_initialized();
@@ -473,6 +491,38 @@ public:
   }
 };
 
+class ZRendezvousHandshakeClosure : public HandshakeClosure {
+public:
+  ZRendezvousHandshakeClosure() :
+    HandshakeClosure("ZRendezvous") {}
+
+  void do_thread(Thread* thread) {
+    // Does nothing
+  }
+};
+
+class ZRendezvousGCThreads: public VM_Operation {
+ public:
+  VMOp_Type type() const { return VMOp_ZRendezvousGCThreads; }
+
+  virtual bool evaluate_at_safepoint() const {
+    // We only care about synchronizing the GC threads.
+    // Leave the Java threads running.
+    return false;
+  }
+
+  virtual bool skip_thread_oop_barriers() const {
+    fatal("Concurrent VMOps should not call this");
+    return true;
+  }
+
+  void doit() {
+    // Light weight "handshake" of the GC threads
+    SuspendibleThreadSet::synchronize();
+    SuspendibleThreadSet::desynchronize();
+  };
+};
+
 ZYoungTypeSetter::ZYoungTypeSetter(ZYoungType type) {
   assert(ZGeneration::young()->_active_type == ZYoungType::none, "Invalid type");
   ZGeneration::young()->_active_type = type;
@@ -546,24 +596,29 @@ void ZGenerationYoung::collect(ZYoungType type, ConcurrentGCTimer* timer) {
 
   abortpoint();
 
-  // Phase 5: Concurrent Reset Relocation Set
+  // Phase 5: Concurrent Process Non-Strong References
+  concurrent_process_non_strong_references();
+
+  abortpoint();
+
+  // Phase 6: Concurrent Reset Relocation Set
   concurrent_reset_relocation_set();
 
   abortpoint();
 
-  // Phase 6: Concurrent Select Relocation Set
+  // Phase 7: Concurrent Select Relocation Set
   concurrent_select_relocation_set();
 
   abortpoint();
 
-  // Phase 7: Pause Relocate Start
+  // Phase 8: Pause Relocate Start
   pause_relocate_start();
 
   // Note that we can't have an abortpoint here. We need
   // to let concurrent_relocate() call abort_page()
   // on the remaining entries in the relocation set.
 
-  // Phase 8: Concurrent Relocate
+  // Phase 9: Concurrent Relocate
   concurrent_relocate();
 }
 
@@ -682,6 +737,11 @@ void ZGenerationYoung::concurrent_mark_continue() {
 void ZGenerationYoung::concurrent_mark_free() {
   ZStatTimerYoung timer(ZPhaseConcurrentMarkFreeYoung);
   mark_free();
+}
+
+void ZGenerationYoung::concurrent_process_non_strong_references() {
+  ZStatTimerYoung timer(ZPhaseConcurrentProcessNonStrongYoung);
+  process_non_strong_references();
 }
 
 void ZGenerationYoung::concurrent_reset_relocation_set() {
@@ -847,6 +907,9 @@ void ZGenerationYoung::concurrent_relocate() {
 void ZGenerationYoung::mark_start() {
   assert(SafepointSynchronize::is_at_safepoint(), "Should be at safepoint");
 
+  // Verification
+  ClassLoaderDataGraph::verify_claimed_marks_cleared(ClassLoaderData::_claim_young_strong);
+
   // Change good colors
   flip_mark_start();
 
@@ -858,6 +921,9 @@ void ZGenerationYoung::mark_start() {
 
   // Reset allocated/reclaimed/used statistics
   reset_statistics();
+
+  // Reset encountered/dropped/enqueued statistics
+  _reference_processor.reset_statistics();
 
   // Increment sequence number
   _seqnum++;
@@ -901,10 +967,56 @@ bool ZGenerationYoung::mark_end() {
   // Update statistics
   stat_heap()->at_mark_end(_page_allocator->stats(this));
 
+  // Block resurrection of weak/phantom references
+  resurrection_block();
+
   // Notify JVMTI that some tagmap entry objects may have died.
   JvmtiTagMap::set_needs_cleaning();
 
   return true;
+}
+
+void ZGenerationYoung::process_non_strong_references() {
+  {
+    // Process Weak/Final/PhantomReferences
+    ZStatTimerYoung timer(ZSubPhaseConcurrentReferencesProcessYoung);
+    _reference_processor.process_references();
+  }
+
+  // Process weak roots
+  _weak_roots_processor.process_weak_roots(this);
+
+  // Perform a handshake. This is needed to prevent a race where
+  // a mutator first loads an oop, which is logically null but not
+  // yet cleared. Then this oop gets cleared by the reference processor
+  // and resurrection is unblocked. At this point the mutator could
+  // see the unblocked state and pass this invalid oop through the
+  // normal barrier path, which would incorrectly try to mark the oop.
+  ZRendezvousHandshakeClosure cl;
+  Handshake::execute(&cl);
+
+  // GC threads are not part of the handshake above.
+  // Explicitly "handshake" them.
+  ZRendezvousGCThreads op;
+  VMThread::execute(&op);
+
+  // Unblock resurrection of weak/phantom references
+  resurrection_unblock();
+
+  {
+    // Enqueue Soft/Weak/Final/PhantomReferences. Note that this
+    // must be done after unblocking resurrection. Otherwise the
+    // Finalizer thread could call Reference.get() on the Finalizers
+    // that were just enqueued, which would incorrectly return null
+    // during the resurrection block window, since such referents
+    // are only Finalizable marked.
+    ZStatTimerYoung timer(ZSubPhaseConcurrentReferencesEnqueueYoung);
+    _reference_processor.enqueue_references();
+  }
+
+  // Clear young markings claim bits.
+  // Note: Clearing _claim_young_strong also clears _claim_young_finalizable.
+  ClassLoaderDataGraph::clear_claimed_marks(ClassLoaderData::_claim_young_strong);
 }
 
 void ZGenerationYoung::relocate_start() {
@@ -964,8 +1076,6 @@ ZGenerationTracer* ZGenerationYoung::jfr_tracer() {
 
 ZGenerationOld::ZGenerationOld(ZPageTable* page_table, ZPageAllocator* page_allocator)
   : ZGeneration(ZGenerationId::old, page_table, page_allocator),
-    _reference_processor(&_workers),
-    _weak_roots_processor(&_workers),
     _unload(&_workers),
     _total_collections_at_start(0),
     _young_seqnum_at_reloc_start(0),
@@ -1004,21 +1114,27 @@ void ZGenerationOld::collect(ConcurrentGCTimer* timer) {
 
   abortpoint();
 
-  // Phase 2: Pause Mark End
-  while (!pause_mark_end()) {
-    // Phase 2.5: Concurrent Mark Continue
-    concurrent_mark_continue();
+  {
+    ZDriverLocker locker;
+
+    // Phase 2: Pause Mark End
+    while (!pause_mark_end()) {
+      ZDriverUnlocker unlocker;
+
+      // Phase 2.5: Concurrent Mark Continue
+      concurrent_mark_continue();
+
+      abortpoint();
+    }
+
+    // Phase 3: Concurrent Process Non-Strong References
+    concurrent_process_non_strong_references();
 
     abortpoint();
+
+    // Phase 4: Concurrent Mark Free
+    concurrent_mark_free();
   }
-
-  // Phase 3: Concurrent Mark Free
-  concurrent_mark_free();
-
-  abortpoint();
-
-  // Phase 4: Concurrent Process Non-Strong References
-  concurrent_process_non_strong_references();
 
   abortpoint();
 
@@ -1261,7 +1377,7 @@ bool ZGenerationOld::mark_end() {
   stat_heap()->at_mark_end(_page_allocator->stats(this));
 
   // Block resurrection of weak/phantom references
-  ZResurrection::block();
+  resurrection_block();
 
   // Prepare to unload stale metadata and nmethods
   _unload.prepare();
@@ -1277,49 +1393,15 @@ bool ZGenerationOld::mark_end() {
   return true;
 }
 
-void ZGenerationOld::set_soft_reference_policy(bool clear) {
-  _reference_processor.set_soft_reference_policy(clear);
-}
-
-class ZRendezvousHandshakeClosure : public HandshakeClosure {
-public:
-  ZRendezvousHandshakeClosure()
-    : HandshakeClosure("ZRendezvous") {}
-
-  void do_thread(Thread* thread) {
-    // Does nothing
-  }
-};
-
-class ZRendezvousGCThreads: public VM_Operation {
- public:
-  VMOp_Type type() const { return VMOp_ZRendezvousGCThreads; }
-
-  virtual bool evaluate_at_safepoint() const {
-    // We only care about synchronizing the GC threads.
-    // Leave the Java threads running.
-    return false;
-  }
-
-  virtual bool skip_thread_oop_barriers() const {
-    fatal("Concurrent VMOps should not call this");
-    return true;
-  }
-
-  void doit() {
-    // Light weight "handshake" of the GC threads
-    SuspendibleThreadSet::synchronize();
-    SuspendibleThreadSet::desynchronize();
-  };
-};
-
-
 void ZGenerationOld::process_non_strong_references() {
-  // Process Soft/Weak/Final/PhantomReferences
-  _reference_processor.process_references();
+  {
+    // Process Soft/Weak/Final/PhantomReferences
+    ZStatTimerOld timer(ZSubPhaseConcurrentReferencesProcessOld);
+    _reference_processor.process_references();
+  }
 
   // Process weak roots
-  _weak_roots_processor.process_weak_roots();
+  _weak_roots_processor.process_weak_roots(this);
 
   ClassUnloadingContext ctx(_workers.active_workers(),
                             true /* unregister_nmethods_during_purge */,
@@ -1345,18 +1427,21 @@ void ZGenerationOld::process_non_strong_references() {
   VMThread::execute(&op);
 
   // Unblock resurrection of weak/phantom references
-  ZResurrection::unblock();
+  resurrection_unblock();
 
   // Purge stale metadata and nmethods that were unlinked
   _unload.purge();
 
-  // Enqueue Soft/Weak/Final/PhantomReferences. Note that this
-  // must be done after unblocking resurrection. Otherwise the
-  // Finalizer thread could call Reference.get() on the Finalizers
-  // that were just enqueued, which would incorrectly return null
-  // during the resurrection block window, since such referents
-  // are only Finalizable marked.
-  _reference_processor.enqueue_references();
+  {
+    // Enqueue Soft/Weak/Final/PhantomReferences. Note that this
+    // must be done after unblocking resurrection. Otherwise the
+    // Finalizer thread could call Reference.get() on the Finalizers
+    // that were just enqueued, which would incorrectly return null
+    // during the resurrection block window, since such referents
+    // are only Finalizable marked.
+    ZStatTimerOld timer(ZSubPhaseConcurrentReferencesEnqueueOld);
+    _reference_processor.enqueue_references();
+  }
 
   // Clear old markings claim bits.
   // Note: Clearing _claim_strong also clears _claim_finalizable.
@@ -1516,4 +1601,8 @@ uint ZGenerationOld::total_collections_at_start() const {
 
 ZGenerationTracer* ZGenerationOld::jfr_tracer() {
   return &_jfr_tracer;
+}
+
+void ZGenerationOld::set_soft_reference_policy(bool clear) {
+  _reference_processor.set_soft_reference_policy(clear);
 }

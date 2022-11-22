@@ -94,19 +94,23 @@ private:
 
   // Fast paths in increasing strength level
   static bool is_load_good_or_null_fast_path(zpointer ptr);
+  static bool is_finalizable_young_good_fast_path(zpointer ptr);
+  static bool is_finalizable_old_good_fast_path(zpointer ptr);
   static bool is_mark_good_fast_path(zpointer ptr);
   static bool is_store_good_fast_path(zpointer ptr);
   static bool is_store_good_or_null_fast_path(zpointer ptr);
   static bool is_store_good_or_null_any_fast_path(zpointer ptr);
 
   static bool is_mark_young_good_fast_path(zpointer ptr);
-  static bool is_finalizable_good_fast_path(zpointer ptr);
+  static bool is_mark_old_good_fast_path(zpointer ptr);
 
   // Slow paths
-  static zaddress blocking_keep_alive_on_weak_slow_path(volatile zpointer* p, zaddress addr);
-  static zaddress blocking_keep_alive_on_phantom_slow_path(volatile zpointer* p, zaddress addr);
-  static zaddress blocking_load_barrier_on_weak_slow_path(volatile zpointer* p, zaddress addr);
-  static zaddress blocking_load_barrier_on_phantom_slow_path(volatile zpointer* p, zaddress addr);
+  static zaddress no_keep_alive_load_barrier_on_weak_oop_field_slow_path(zaddress addr);
+  static zaddress no_keep_alive_load_barrier_on_phantom_oop_field_slow_path(zaddress addr);
+  static zaddress load_barrier_on_weak_oop_field_slow_path(zaddress addr);
+  static zaddress load_barrier_on_phantom_oop_field_slow_path(zaddress addr);
+  static zaddress blocking_load_barrier_on_weak_slow_path(zaddress addr);
+  static zaddress blocking_load_barrier_on_phantom_slow_path(zaddress addr);
 
   static zaddress verify_old_object_live_slow_path(zaddress addr);
 
@@ -123,12 +127,6 @@ private:
   static zaddress no_keep_alive_heap_store_slow_path(volatile zpointer* p, zaddress addr);
 
   static zaddress promote_slow_path(zaddress addr);
-
-  // Helpers for non-strong oop refs barriers
-  static zaddress blocking_keep_alive_load_barrier_on_weak_oop_field_preloaded(volatile zpointer* p, zpointer o);
-  static zaddress blocking_keep_alive_load_barrier_on_phantom_oop_field_preloaded(volatile zpointer* p, zpointer o);
-  static zaddress blocking_load_barrier_on_weak_oop_field_preloaded(volatile zpointer* p, zpointer o);
-  static zaddress blocking_load_barrier_on_phantom_oop_field_preloaded(volatile zpointer* p, zpointer o);
 
   // Verification
   static void verify_on_weak(volatile zpointer* referent_addr) NOT_DEBUG_RETURN;
@@ -147,13 +145,13 @@ public:
   template <bool resurrect, bool gc_thread, bool follow>
   static void mark_young(zaddress addr);
   template <bool resurrect, bool gc_thread, bool follow>
+  static void mark_old(zaddress addr);
+  template <bool resurrect, bool gc_thread, bool follow>
   static void mark_if_young(zaddress addr);
 
   // Load barrier
   static zaddress load_barrier_on_oop_field(volatile zpointer* p);
   static zaddress load_barrier_on_oop_field_preloaded(volatile zpointer* p, zpointer o);
-
-  static zaddress keep_alive_load_barrier_on_oop_field_preloaded(volatile zpointer* p, zpointer o);
 
   // Load barriers on non-strong oop refs
   static zaddress load_barrier_on_weak_oop_field_preloaded(volatile zpointer* p, zpointer o);
@@ -163,16 +161,18 @@ public:
   static zaddress no_keep_alive_load_barrier_on_phantom_oop_field_preloaded(volatile zpointer* p, zpointer o);
 
   // Reference processor / weak cleaning barriers
-  static bool clean_barrier_on_weak_oop_field(volatile zpointer* p);
-  static bool clean_barrier_on_phantom_oop_field(volatile zpointer* p);
-  static bool clean_barrier_on_final_oop_field(volatile zpointer* p);
+  static bool clean_barrier_on_weak_oop_field(volatile zpointer* p, ZGeneration* generation);
+  static bool clean_barrier_on_phantom_oop_field(volatile zpointer* p, ZGeneration* generation);
+  static bool clean_barrier_on_final_oop_field(volatile zpointer* p, ZGeneration* generation);
+  static bool clean_barrier_on_phantom_root_oop_field(volatile zpointer* p, ZGeneration* generation);
 
   // Mark barrier
-  static void mark_barrier_on_young_oop_field(volatile zpointer* p);
+  static void mark_barrier_on_young_oop_field(volatile zpointer* p, bool finalizable);
   static void mark_barrier_on_old_oop_field(volatile zpointer* p, bool finalizable);
   static void mark_barrier_on_oop_field(volatile zpointer* p, bool finalizable);
   static void mark_young_good_barrier_on_oop_field(volatile zpointer* p);
   static zaddress remset_barrier_on_oop_field(volatile zpointer* p);
+  static zaddress mark_young_good_barrier_on_old_oop_field(volatile zpointer* p);
   static void promote_barrier_on_young_oop_field(volatile zpointer* p);
 
   // Store barrier

@@ -40,9 +40,6 @@
 #include "runtime/mutexLocker.hpp"
 #include "runtime/os.hpp"
 
-static const ZStatSubPhase ZSubPhaseConcurrentReferencesProcess("Concurrent References Process", ZGenerationId::old);
-static const ZStatSubPhase ZSubPhaseConcurrentReferencesEnqueue("Concurrent References Enqueue", ZGenerationId::old);
-
 static ReferenceType reference_type(zaddress reference) {
   return InstanceKlass::cast(to_oop(reference)->klass())->reference_type();
 }
@@ -91,7 +88,11 @@ static void reference_set_next(zaddress reference, zaddress next) {
   java_lang_ref_Reference::set_next(to_oop(reference), to_oop(next));
 }
 
-static void soft_reference_update_clock() {
+void ZReferenceProcessor::soft_reference_update_clock() {
+  if (!_generation->is_old()) {
+    // Handle soft references in the old generation
+    return;
+  }
   SuspendibleThreadSetJoiner sts_joiner;
   const jlong now = os::javaTimeNanos() / NANOSECS_PER_MILLISEC;
   java_lang_ref_SoftReference::set_clock(now);
@@ -110,8 +111,9 @@ static void list_append(zaddress& head, zaddress& tail, zaddress reference) {
   tail = reference;
 }
 
-ZReferenceProcessor::ZReferenceProcessor(ZWorkers* workers)
-  : _workers(workers),
+ZReferenceProcessor::ZReferenceProcessor(ZWorkers* workers, ZGeneration* generation)
+  : _generation(generation),
+    _workers(workers),
     _soft_reference_policy(nullptr),
     _clear_all_soft_refs(false),
     _encountered_count(),
@@ -152,8 +154,7 @@ bool ZReferenceProcessor::is_inactive(zaddress reference, oop referent, Referenc
 }
 
 bool ZReferenceProcessor::is_strongly_live(oop referent) const {
-  const zaddress addr = to_zaddress(referent);
-  return ZHeap::heap()->is_young(addr) || ZHeap::heap()->is_object_strongly_live(to_zaddress(referent));
+  return ZHeap::heap()->is_object_strongly_live(to_zaddress(referent));
 }
 
 bool ZReferenceProcessor::is_softly_live(zaddress reference, ReferenceType type) const {
@@ -162,11 +163,20 @@ bool ZReferenceProcessor::is_softly_live(zaddress reference, ReferenceType type)
     return false;
   }
 
+  if (!_generation->is_old()) {
+    // This will end up in the old generation; clear it there instead.
+    return true;
+  }
+
   // Ask SoftReference policy
   const jlong clock = java_lang_ref_SoftReference::clock();
   assert(clock != 0, "Clock not initialized");
   assert(_soft_reference_policy != nullptr, "Policy not initialized");
   return !_soft_reference_policy->should_clear_reference(to_oop(reference), clock);
+}
+
+bool ZReferenceProcessor::is_inter_generational_live(zaddress referent) const {
+  return _generation->is_young() != ZHeap::heap()->is_young(referent);
 }
 
 bool ZReferenceProcessor::should_discover(zaddress reference, ReferenceType type) const {
@@ -177,7 +187,7 @@ bool ZReferenceProcessor::should_discover(zaddress reference, ReferenceType type
     return false;
   }
 
-  if (ZHeap::heap()->is_young(reference)) {
+  if (is_inter_generational_live(to_zaddress(referent))) {
     return false;
   }
 
@@ -213,11 +223,11 @@ bool ZReferenceProcessor::try_make_inactive(zaddress reference, ReferenceType ty
   // Cleaning the referent will fail if the object it points to is
   // still alive, in which case we should drop the reference.
   if (type == REF_SOFT || type == REF_WEAK) {
-    return ZBarrier::clean_barrier_on_weak_oop_field(referent_addr);
+    return ZBarrier::clean_barrier_on_weak_oop_field(referent_addr, _generation);
   } else if (type == REF_PHANTOM) {
-    return ZBarrier::clean_barrier_on_phantom_oop_field(referent_addr);
+    return ZBarrier::clean_barrier_on_phantom_oop_field(referent_addr, _generation);
   } else if (type == REF_FINAL) {
-    if (ZBarrier::clean_barrier_on_final_oop_field(referent_addr)) {
+    if (ZBarrier::clean_barrier_on_final_oop_field(referent_addr, _generation)) {
       // The referent in a FinalReference will not be cleared, instead it is
       // made inactive by self-looping the next field. An application can't
       // call FinalReference.enqueue(), so there is no race to worry about
@@ -243,12 +253,16 @@ void ZReferenceProcessor::discover(zaddress reference, ReferenceType type) {
     // Mark referent (and its reachable subgraph) finalizable. This avoids
     // the problem of later having to mark those objects if the referent is
     // still final reachable during processing.
-    volatile zpointer* const referent_addr = reference_referent_addr(reference);
-    ZBarrier::mark_barrier_on_old_oop_field(referent_addr, true /* finalizable */);
+    if (_generation->is_young()) {
+      volatile zpointer* const referent_addr = reference_referent_addr(reference);
+      ZBarrier::mark_barrier_on_young_oop_field(referent_addr, true /* finalizable */);
+    } else {
+      volatile zpointer* const referent_addr = reference_referent_addr(reference);
+      ZBarrier::mark_barrier_on_old_oop_field(referent_addr, true /* finalizable */);
+    }
   }
 
   // Add reference to discovered list
-  assert(ZHeap::heap()->is_old(reference), "Must be old");
   assert(is_null(reference_discovered(reference)), "Already discovered");
   zaddress* const list = _discovered_list.addr();
   reference_set_discovered(reference, *list);
@@ -286,8 +300,6 @@ void ZReferenceProcessor::process_worker_discovered_list(zaddress discovered_lis
   // Iterate over the discovered list and unlink them as we go, potentially
   // appending them to the keep list
   for (zaddress reference = discovered_list; !is_null(reference); ) {
-    assert(ZHeap::heap()->is_old(reference), "Must be old");
-
     const ReferenceType type = reference_type(reference);
     const zaddress next = reference_discovered(reference);
     reference_set_discovered(reference, zaddress::null);
@@ -321,8 +333,6 @@ void ZReferenceProcessor::process_worker_discovered_list(zaddress discovered_lis
     if (is_null(old_pending_list)) {
       // Old list was empty. First to prepend to list, record tail
       _pending_list_tail = keep_tail;
-    } else {
-      assert(ZHeap::heap()->is_old(old_pending_list), "Must be old");
     }
   }
 }
@@ -410,10 +420,11 @@ void ZReferenceProcessor::collect_statistics() {
   }
 
   // Update statistics
-  ZStatReferences::set_soft(encountered[REF_SOFT], discovered[REF_SOFT], enqueued[REF_SOFT]);
-  ZStatReferences::set_weak(encountered[REF_WEAK], discovered[REF_WEAK], enqueued[REF_WEAK]);
-  ZStatReferences::set_final(encountered[REF_FINAL], discovered[REF_FINAL], enqueued[REF_FINAL]);
-  ZStatReferences::set_phantom(encountered[REF_PHANTOM], discovered[REF_PHANTOM], enqueued[REF_PHANTOM]);
+  ZStatReferences* stat_references = _generation->stat_references();
+  stat_references->set_soft(encountered[REF_SOFT], discovered[REF_SOFT], enqueued[REF_SOFT]);
+  stat_references->set_weak(encountered[REF_WEAK], discovered[REF_WEAK], enqueued[REF_WEAK]);
+  stat_references->set_final(encountered[REF_FINAL], discovered[REF_FINAL], enqueued[REF_FINAL]);
+  stat_references->set_phantom(encountered[REF_PHANTOM], discovered[REF_PHANTOM], enqueued[REF_PHANTOM]);
 
   // Trace statistics
   const ReferenceProcessorStats stats(discovered[REF_SOFT],
@@ -438,8 +449,6 @@ public:
 };
 
 void ZReferenceProcessor::process_references() {
-  ZStatTimerOld timer(ZSubPhaseConcurrentReferencesProcess);
-
   if (_clear_all_soft_refs) {
     log_info(gc, ref)("Clearing All SoftReferences");
   }
@@ -485,8 +494,6 @@ zaddress ZReferenceProcessor::swap_pending_list(zaddress pending_list) {
 }
 
 void ZReferenceProcessor::enqueue_references() {
-  ZStatTimerOld timer(ZSubPhaseConcurrentReferencesEnqueue);
-
   if (is_null(_pending_list.get())) {
     // Nothing to enqueue
     return;

@@ -65,77 +65,111 @@ static void keep_alive_young(zaddress addr) {
   }
 }
 
-zaddress ZBarrier::blocking_keep_alive_on_weak_slow_path(volatile zpointer* p, zaddress addr) {
-  if (is_null(addr)) {
-    return zaddress::null;
+static void keep_alive_old(zaddress addr) {
+  if (ZGeneration::old()->is_phase_mark()) {
+    ZBarrier::mark_old<ZMark::Resurrect, ZMark::AnyThread, ZMark::Follow>(addr);
   }
-
-  if (ZHeap::heap()->is_old(addr)) {
-    if (!ZHeap::heap()->is_object_strongly_live(addr)) {
-      return zaddress::null;
-    }
-  } else {
-    // Young gen objects are never blocked, need to keep alive
-    keep_alive_young(addr);
-  }
-
-  // Strongly live
-  return addr;
 }
 
-zaddress ZBarrier::blocking_keep_alive_on_phantom_slow_path(volatile zpointer* p, zaddress addr) {
+zaddress ZBarrier::load_barrier_on_weak_oop_field_slow_path(zaddress addr) {
   if (is_null(addr)) {
     return zaddress::null;
   }
 
   if (ZHeap::heap()->is_old(addr)) {
-    if (!ZHeap::heap()->is_object_live(addr)) {
-      return zaddress::null;
+    if (ZGeneration::old()->is_resurrection_blocked()) {
+      return blocking_load_barrier_on_weak_slow_path(addr);
     }
+
+    keep_alive_old(addr);
   } else {
-    // Young gen objects are never blocked, need to keep alive
-    keep_alive_young(addr);
-  }
-
-  // Strongly live
-  return addr;
-}
-
-zaddress ZBarrier::blocking_load_barrier_on_weak_slow_path(volatile zpointer* p, zaddress addr) {
-  if (is_null(addr)) {
-    return zaddress::null;
-  }
-
-  if (ZHeap::heap()->is_old(addr)) {
-    if (!ZHeap::heap()->is_object_strongly_live(addr)) {
-      return zaddress::null;
+    if (ZGeneration::young()->is_resurrection_blocked()) {
+      return blocking_load_barrier_on_weak_slow_path(addr);
     }
-  } else {
-    // Young objects are never considered non-strong
-    // Note: Should not need to keep object alive in this operation,
-    //       but the barrier colors the pointer mark good, so we need
-    //       to mark the object accordingly.
+
     keep_alive_young(addr);
   }
 
   return addr;
 }
 
-zaddress ZBarrier::blocking_load_barrier_on_phantom_slow_path(volatile zpointer* p, zaddress addr) {
+zaddress ZBarrier::load_barrier_on_phantom_oop_field_slow_path(zaddress addr) {
   if (is_null(addr)) {
     return zaddress::null;
   }
 
   if (ZHeap::heap()->is_old(addr)) {
-    if (!ZHeap::heap()->is_object_live(addr)) {
-      return zaddress::null;
+    if (ZGeneration::old()->is_resurrection_blocked()) {
+      return blocking_load_barrier_on_phantom_slow_path(addr);
+    }
+
+    keep_alive_old(addr);
+  } else {
+    if (ZGeneration::young()->is_resurrection_blocked()) {
+      return blocking_load_barrier_on_phantom_slow_path(addr);
+    }
+
+    keep_alive_young(addr);
+  }
+
+  return addr;
+}
+
+zaddress ZBarrier::no_keep_alive_load_barrier_on_weak_oop_field_slow_path(zaddress addr) {
+  if (is_null(addr)) {
+    return zaddress::null;
+  }
+
+  if (ZHeap::heap()->is_old(addr)) {
+    if (ZGeneration::old()->is_resurrection_blocked()) {
+      return blocking_load_barrier_on_weak_slow_path(addr);
     }
   } else {
-    // Young objects are never considered non-strong
-    // Note: Should not need to keep object alive in this operation,
-    //       but the barrier colors the pointer mark good, so we need
-    //       to mark the object accordingly.
-    keep_alive_young(addr);
+    if (ZGeneration::young()->is_resurrection_blocked()) {
+      return blocking_load_barrier_on_weak_slow_path(addr);
+    }
+  }
+
+  return addr;
+}
+
+zaddress ZBarrier::no_keep_alive_load_barrier_on_phantom_oop_field_slow_path(zaddress addr) {
+  if (is_null(addr)) {
+    return zaddress::null;
+  }
+
+  if (ZHeap::heap()->is_old(addr)) {
+    if (ZGeneration::old()->is_resurrection_blocked()) {
+      return blocking_load_barrier_on_phantom_slow_path(addr);
+    }
+  } else {
+    if (ZGeneration::young()->is_resurrection_blocked()) {
+      return blocking_load_barrier_on_phantom_slow_path(addr);
+    }
+  }
+
+  return addr;
+}
+
+zaddress ZBarrier::blocking_load_barrier_on_weak_slow_path(zaddress addr) {
+  if (is_null(addr)) {
+    return zaddress::null;
+  }
+
+  if (!ZHeap::heap()->is_object_strongly_live(addr)) {
+    return zaddress::null;
+  }
+
+  return addr;
+}
+
+zaddress ZBarrier::blocking_load_barrier_on_phantom_slow_path(zaddress addr) {
+  if (is_null(addr)) {
+    return zaddress::null;
+  }
+
+  if (!ZHeap::heap()->is_object_live(addr)) {
+    return zaddress::null;
   }
 
   return addr;

@@ -130,44 +130,52 @@ constexpr uintptr_t z_pointer_bit(size_t shift, size_t offset) {
 }
 
 // Reserved bits
-const size_t      ZPointerReservedShift   = 0;
-const size_t      ZPointerReservedBits    = 4;
-const uintptr_t   ZPointerReservedMask    = z_pointer_mask(ZPointerReservedShift, ZPointerReservedBits);
+const size_t      ZPointerReservedShift     = 0;
+const size_t      ZPointerReservedBits      = 2;
+const uintptr_t   ZPointerReservedMask      = z_pointer_mask(ZPointerReservedShift, ZPointerReservedBits);
 
-const uintptr_t   ZPointerReserved0       = z_pointer_bit(ZPointerReservedShift, 0);
-const uintptr_t   ZPointerReserved1       = z_pointer_bit(ZPointerReservedShift, 1);
-const uintptr_t   ZPointerReserved2       = z_pointer_bit(ZPointerReservedShift, 2);
-const uintptr_t   ZPointerReserved3       = z_pointer_bit(ZPointerReservedShift, 3);
+const uintptr_t   ZPointerReserved0         = z_pointer_bit(ZPointerReservedShift, 0);
+const uintptr_t   ZPointerReserved1         = z_pointer_bit(ZPointerReservedShift, 1);
+const uintptr_t   ZPointerReserved2         = z_pointer_bit(ZPointerReservedShift, 2);
+const uintptr_t   ZPointerReserved3         = z_pointer_bit(ZPointerReservedShift, 3);
 
 // Remembered set bits
-const size_t      ZPointerRememberedShift = ZPointerReservedShift + ZPointerReservedBits;
-const size_t      ZPointerRememberedBits  = 2;
-const uintptr_t   ZPointerRememberedMask  = z_pointer_mask(ZPointerRememberedShift, ZPointerRememberedBits);
+const size_t      ZPointerRememberedShift   = ZPointerReservedShift + ZPointerReservedBits;
+const size_t      ZPointerRememberedBits    = 2;
+const uintptr_t   ZPointerRememberedMask    = z_pointer_mask(ZPointerRememberedShift, ZPointerRememberedBits);
 
-const uintptr_t   ZPointerRemembered0     = z_pointer_bit(ZPointerRememberedShift, 0);
-const uintptr_t   ZPointerRemembered1     = z_pointer_bit(ZPointerRememberedShift, 1);
+const uintptr_t   ZPointerRemembered0       = z_pointer_bit(ZPointerRememberedShift, 0);
+const uintptr_t   ZPointerRemembered1       = z_pointer_bit(ZPointerRememberedShift, 1);
+
+// Finalizable bits
+const size_t      ZPointerFinalizableShift  = ZPointerRememberedShift + ZPointerRememberedBits;
+const size_t      ZPointerFinalizableBits   = 4;
+const uintptr_t   ZPointerFinalizableMask   = z_pointer_mask(ZPointerFinalizableShift, ZPointerFinalizableBits);
+
+const uintptr_t   ZPointerFinalizableYoung0 = z_pointer_bit(ZPointerFinalizableShift, 0);
+const uintptr_t   ZPointerFinalizableYoung1 = z_pointer_bit(ZPointerFinalizableShift, 1);
+const uintptr_t   ZPointerFinalizableOld0   = z_pointer_bit(ZPointerFinalizableShift, 2);
+const uintptr_t   ZPointerFinalizableOld1   = z_pointer_bit(ZPointerFinalizableShift, 3);
 
 // Marked bits
-const size_t      ZPointerMarkedShift     = ZPointerRememberedShift + ZPointerRememberedBits;
-const size_t      ZPointerMarkedBits      = 6;
-const uintptr_t   ZPointerMarkedMask      = z_pointer_mask(ZPointerMarkedShift, ZPointerMarkedBits);
+const size_t      ZPointerMarkedShift       = ZPointerFinalizableShift + ZPointerFinalizableBits;
+const size_t      ZPointerMarkedBits        = 4;
+const uintptr_t   ZPointerMarkedMask        = z_pointer_mask(ZPointerMarkedShift, ZPointerMarkedBits);
 
-const uintptr_t   ZPointerFinalizable0    = z_pointer_bit(ZPointerMarkedShift, 0);
-const uintptr_t   ZPointerFinalizable1    = z_pointer_bit(ZPointerMarkedShift, 1);
-const uintptr_t   ZPointerMarkedYoung0    = z_pointer_bit(ZPointerMarkedShift, 2);
-const uintptr_t   ZPointerMarkedYoung1    = z_pointer_bit(ZPointerMarkedShift, 3);
-const uintptr_t   ZPointerMarkedOld0      = z_pointer_bit(ZPointerMarkedShift, 4);
-const uintptr_t   ZPointerMarkedOld1      = z_pointer_bit(ZPointerMarkedShift, 5);
+const uintptr_t   ZPointerMarkedYoung0      = z_pointer_bit(ZPointerMarkedShift, 0);
+const uintptr_t   ZPointerMarkedYoung1      = z_pointer_bit(ZPointerMarkedShift, 1);
+const uintptr_t   ZPointerMarkedOld0        = z_pointer_bit(ZPointerMarkedShift, 2);
+const uintptr_t   ZPointerMarkedOld1        = z_pointer_bit(ZPointerMarkedShift, 3);
 
 // Remapped bits
-const size_t      ZPointerRemappedShift   = ZPointerMarkedShift + ZPointerMarkedBits;
-const size_t      ZPointerRemappedBits    = 4;
-const uintptr_t   ZPointerRemappedMask    = z_pointer_mask(ZPointerRemappedShift, ZPointerRemappedBits);
+const size_t      ZPointerRemappedShift     = ZPointerMarkedShift + ZPointerMarkedBits;
+const size_t      ZPointerRemappedBits      = 4;
+const uintptr_t   ZPointerRemappedMask      = z_pointer_mask(ZPointerRemappedShift, ZPointerRemappedBits);
 
-const uintptr_t   ZPointerRemapped00      = z_pointer_bit(ZPointerRemappedShift, 0);
-const uintptr_t   ZPointerRemapped01      = z_pointer_bit(ZPointerRemappedShift, 1);
-const uintptr_t   ZPointerRemapped10      = z_pointer_bit(ZPointerRemappedShift, 2);
-const uintptr_t   ZPointerRemapped11      = z_pointer_bit(ZPointerRemappedShift, 3);
+const uintptr_t   ZPointerRemapped00        = z_pointer_bit(ZPointerRemappedShift, 0);
+const uintptr_t   ZPointerRemapped01        = z_pointer_bit(ZPointerRemappedShift, 1);
+const uintptr_t   ZPointerRemapped10        = z_pointer_bit(ZPointerRemappedShift, 2);
+const uintptr_t   ZPointerRemapped11        = z_pointer_bit(ZPointerRemappedShift, 3);
 
 // The shift table is tightly coupled with the zpointer layout given above
 constexpr int     ZPointerLoadShiftTable[] = {
@@ -183,16 +191,18 @@ constexpr int     ZPointerLoadShiftTable[] = {
 };
 
 // Barrier metadata masks
-const uintptr_t   ZPointerLoadMetadataMask  = ZPointerRemappedMask;
-const uintptr_t   ZPointerMarkMetadataMask  = ZPointerLoadMetadataMask | ZPointerMarkedMask;
-const uintptr_t   ZPointerStoreMetadataMask = ZPointerMarkMetadataMask | ZPointerRememberedMask;
-const uintptr_t   ZPointerAllMetadataMask   = ZPointerStoreMetadataMask;
+const uintptr_t   ZPointerLoadMetadataMask        = ZPointerRemappedMask;
+const uintptr_t   ZPointerFinalizableMetadataMask = ZPointerLoadMetadataMask | ZPointerFinalizableMask;
+const uintptr_t   ZPointerMarkMetadataMask        = ZPointerFinalizableMetadataMask | ZPointerMarkedMask;
+const uintptr_t   ZPointerStoreMetadataMask       = ZPointerMarkMetadataMask | ZPointerRememberedMask;
+const uintptr_t   ZPointerAllMetadataMask         = ZPointerStoreMetadataMask;
 
 // The current expected bit
 extern uintptr_t  ZPointerRemapped;
+extern uintptr_t  ZPointerFinalizableOld;
 extern uintptr_t  ZPointerMarkedOld;
+extern uintptr_t  ZPointerFinalizableYoung;
 extern uintptr_t  ZPointerMarkedYoung;
-extern uintptr_t  ZPointerFinalizable;
 extern uintptr_t  ZPointerRemembered;
 
 // The current expected remap bit for the young (or old) collection is either of two bits.
@@ -203,6 +213,9 @@ extern uintptr_t  ZPointerRemappedOldMask;
 // Good/bad masks
 extern uintptr_t  ZPointerLoadGoodMask;
 extern uintptr_t  ZPointerLoadBadMask;
+
+extern uintptr_t  ZPointerFinalizableGoodMask;
+extern uintptr_t  ZPointerFinalizableBadMask;
 
 extern uintptr_t  ZPointerMarkGoodMask;
 extern uintptr_t  ZPointerMarkBadMask;
@@ -257,6 +270,10 @@ public:
   static bool is_old_load_good(zpointer ptr);
   static bool is_young_load_good(zpointer ptr);
 
+  static bool is_finalizable_bad(zpointer ptr);
+  static bool is_finalizable_good(zpointer ptr);
+  static bool is_finalizable_good_or_null(zpointer ptr);
+
   static bool is_mark_bad(zpointer ptr);
   static bool is_mark_good(zpointer ptr);
   static bool is_mark_good_or_null(zpointer ptr);
@@ -265,9 +282,10 @@ public:
   static bool is_store_good(zpointer ptr);
   static bool is_store_good_or_null(zpointer ptr);
 
-  static bool is_marked_finalizable(zpointer ptr);
-  static bool is_marked_old(zpointer ptr);
   static bool is_marked_young(zpointer ptr);
+  static bool is_marked_old(zpointer ptr);
+  static bool is_marked_finalizable_young(zpointer ptr);
+  static bool is_marked_finalizable_old(zpointer ptr);
   static bool is_marked_any_old(zpointer ptr);
   static bool is_remapped(zpointer ptr);
   static bool is_remembered_exact(zpointer ptr);
@@ -286,10 +304,11 @@ public:
   static zoffset offset(zaddress_unsafe addr);
 
   static zpointer load_good(zaddress addr, zpointer prev);
-  static zpointer finalizable_good(zaddress addr, zpointer prev);
+  static zpointer finalizable_young_good(zaddress addr, zpointer prev);
+  static zpointer finalizable_old_good(zaddress addr, zpointer prev);
   static zpointer mark_good(zaddress addr, zpointer prev);
-  static zpointer mark_old_good(zaddress addr, zpointer prev);
   static zpointer mark_young_good(zaddress addr, zpointer prev);
+  static zpointer mark_old_good(zaddress addr, zpointer prev);
   static zpointer store_good(zaddress addr);
   static zpointer store_good_or_null(zaddress addr);
 };

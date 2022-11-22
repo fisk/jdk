@@ -58,8 +58,20 @@ public:
     zaddress_unsafe addr = Atomic::load(ZUncoloredRoot::cast(p));
     ZUncoloredRoot::process_no_keepalive(&addr, _color);
 
-    if (!is_null(addr) && ZHeap::heap()->is_old(safe(addr)) && !ZHeap::heap()->is_object_live(safe(addr))) {
-      _is_unloading = true;
+    if (is_null(addr)) {
+      return;
+    }
+
+    zaddress addr_safe = safe(addr);
+
+    if (ZHeap::heap()->is_old(addr_safe)) {
+      if (ZGeneration::old()->is_resurrection_blocked() && !ZHeap::heap()->is_object_live(addr_safe)) {
+        _is_unloading = true;
+      }
+    } else {
+      if (ZGeneration::young()->is_resurrection_blocked() && !ZHeap::heap()->is_object_live(addr_safe)) {
+        _is_unloading = true;
+      }
     }
   }
 

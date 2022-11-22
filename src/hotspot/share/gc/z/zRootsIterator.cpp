@@ -199,6 +199,10 @@ void ZRootsIteratorAllColored::apply(OopClosure* cl,
   _clds_all.apply(cld_cl);
 }
 
+void ZRootsIteratorAllCLDs::apply(CLDClosure* cld_cl) {
+  _clds_all.apply(cld_cl);
+}
+
 void ZRootsIteratorAllUncolored::apply(ThreadClosure* thread_cl,
                                        NMethodClosure* nm_cl) {
   _java_threads.apply(thread_cl);

@@ -39,6 +39,7 @@ private:
   static const size_t reference_type_count = REF_PHANTOM + 1;
   typedef size_t Counters[reference_type_count];
 
+  ZGeneration* const   _generation;
   ZWorkers* const      _workers;
   ReferencePolicy*     _soft_reference_policy;
   bool                 _clear_all_soft_refs;
@@ -49,9 +50,12 @@ private:
   ZContended<zaddress> _pending_list;
   zaddress             _pending_list_tail;
 
+  void soft_reference_update_clock();
+
   bool is_inactive(zaddress reference, oop referent, ReferenceType type) const;
   bool is_strongly_live(oop referent) const;
   bool is_softly_live(zaddress reference, ReferenceType type) const;
+  bool is_inter_generational_live(zaddress reference) const;
 
   bool should_discover(zaddress reference, ReferenceType type) const;
   bool try_make_inactive(zaddress reference, ReferenceType type) const;
@@ -67,7 +71,7 @@ private:
   zaddress swap_pending_list(zaddress pending_list);
 
 public:
-  ZReferenceProcessor(ZWorkers* workers);
+  ZReferenceProcessor(ZWorkers* workers, ZGeneration* generation);
 
   void set_soft_reference_policy(bool clear);
   void reset_statistics();

@@ -40,13 +40,17 @@ size_t     ZAddressOffsetMax;
 uintptr_t  ZPointerRemapped;
 uintptr_t  ZPointerRemappedYoungMask;
 uintptr_t  ZPointerRemappedOldMask;
+uintptr_t  ZPointerFinalizableYoung;
+uintptr_t  ZPointerFinalizableOld;
 uintptr_t  ZPointerMarkedYoung;
 uintptr_t  ZPointerMarkedOld;
-uintptr_t  ZPointerFinalizable;
 uintptr_t  ZPointerRemembered;
 
 uintptr_t  ZPointerLoadGoodMask;
 uintptr_t  ZPointerLoadBadMask;
+
+uintptr_t  ZPointerFinalizableGoodMask;
+uintptr_t  ZPointerFinalizableBadMask;
 
 uintptr_t  ZPointerMarkGoodMask;
 uintptr_t  ZPointerMarkBadMask;
@@ -74,13 +78,15 @@ static void set_vector_mask(uintptr_t vector_mask[], uintptr_t mask) {
 void ZGlobalsPointers::set_good_masks() {
   ZPointerRemapped = ZPointerRemappedOldMask & ZPointerRemappedYoungMask;
 
-  ZPointerLoadGoodMask  = ZPointer::remap_bits(ZPointerRemapped);
-  ZPointerMarkGoodMask  = ZPointerLoadGoodMask | ZPointerMarkedYoung | ZPointerMarkedOld;
-  ZPointerStoreGoodMask = ZPointerMarkGoodMask | ZPointerRemembered;
+  ZPointerLoadGoodMask        = ZPointer::remap_bits(ZPointerRemapped);
+  ZPointerFinalizableGoodMask = ZPointerLoadGoodMask | ZPointerFinalizableYoung | ZPointerFinalizableOld;
+  ZPointerMarkGoodMask        = ZPointerFinalizableGoodMask | ZPointerMarkedYoung | ZPointerMarkedOld;
+  ZPointerStoreGoodMask       = ZPointerMarkGoodMask | ZPointerRemembered;
 
-  ZPointerLoadBadMask  = ZPointerLoadGoodMask  ^ ZPointerLoadMetadataMask;
-  ZPointerMarkBadMask  = ZPointerMarkGoodMask  ^ ZPointerMarkMetadataMask;
-  ZPointerStoreBadMask = ZPointerStoreGoodMask ^ ZPointerStoreMetadataMask;
+  ZPointerLoadBadMask        = ZPointerLoadGoodMask        ^ ZPointerLoadMetadataMask;
+  ZPointerFinalizableBadMask = ZPointerFinalizableGoodMask ^ ZPointerFinalizableMetadataMask;
+  ZPointerMarkBadMask        = ZPointerMarkGoodMask        ^ ZPointerMarkMetadataMask;
+  ZPointerStoreBadMask       = ZPointerStoreGoodMask       ^ ZPointerStoreMetadataMask;
 
   set_vector_mask(ZPointerVectorLoadBadMask, ZPointerLoadBadMask);
   set_vector_mask(ZPointerVectorStoreBadMask, ZPointerStoreBadMask);
@@ -117,9 +123,10 @@ void ZGlobalsPointers::initialize() {
 
   ZPointerRemappedYoungMask = ZPointerRemapped10 | ZPointerRemapped00;
   ZPointerRemappedOldMask = ZPointerRemapped01 | ZPointerRemapped00;
+  ZPointerFinalizableYoung = ZPointerFinalizableYoung0;
+  ZPointerFinalizableOld = ZPointerFinalizableOld0;
   ZPointerMarkedYoung = ZPointerMarkedYoung0;
   ZPointerMarkedOld = ZPointerMarkedOld0;
-  ZPointerFinalizable = ZPointerFinalizable0;
   ZPointerRemembered = ZPointerRemembered0;
 
   set_good_masks();
@@ -129,6 +136,7 @@ void ZGlobalsPointers::initialize() {
 
 void ZGlobalsPointers::flip_young_mark_start() {
   ZPointerMarkedYoung ^= (ZPointerMarkedYoung0 | ZPointerMarkedYoung1);
+  ZPointerFinalizableYoung ^= (ZPointerFinalizableYoung0 | ZPointerFinalizableYoung1);
   ZPointerRemembered ^= (ZPointerRemembered0 | ZPointerRemembered1);
   set_good_masks();
 }
@@ -140,7 +148,7 @@ void ZGlobalsPointers::flip_young_relocate_start() {
 
 void ZGlobalsPointers::flip_old_mark_start() {
   ZPointerMarkedOld ^= (ZPointerMarkedOld0 | ZPointerMarkedOld1);
-  ZPointerFinalizable ^= (ZPointerFinalizable0 | ZPointerFinalizable1);
+  ZPointerFinalizableOld ^= (ZPointerFinalizableOld0 | ZPointerFinalizableOld1);
   set_good_masks();
 }
 

@@ -43,6 +43,10 @@ inline bool ZGeneration::is_phase_mark_complete() const {
   return _phase == Phase::MarkComplete;
 }
 
+inline bool ZGeneration::is_resurrection_blocked() const {
+  return _resurrection.is_blocked();
+}
+
 inline uint32_t ZGeneration::seqnum() const {
   return _seqnum;
 }
@@ -107,6 +111,10 @@ inline ZStatRelocation* ZGeneration::stat_relocation() {
   return &_stat_relocation;
 }
 
+inline ZStatReferences* ZGeneration::stat_references() {
+  return &_stat_references;
+}
+
 inline ZPageTable* ZGeneration::page_table() const {
   return _page_table;
 }
@@ -150,6 +158,10 @@ inline zaddress ZGeneration::remap_object(zaddress_unsafe addr) {
   return _relocate.forward_object(forwarding, addr);
 }
 
+inline ReferenceDiscoverer* ZGeneration::reference_discoverer() {
+  return &_reference_processor;
+}
+
 inline ZYoungType ZGenerationYoung::type() const {
   assert(_active_type != ZYoungType::none, "Invalid type");
   return _active_type;
@@ -165,10 +177,6 @@ inline void ZGenerationYoung::scan_remembered_field(volatile zpointer* p) {
 
 inline bool ZGenerationYoung::is_remembered(volatile zpointer* p) const {
   return _remembered.is_remembered(p);
-}
-
-inline ReferenceDiscoverer* ZGenerationOld::reference_discoverer() {
-  return &_reference_processor;
 }
 
 inline bool ZGenerationOld::active_remset_is_current() const {

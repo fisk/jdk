@@ -28,7 +28,7 @@
 
 #include "runtime/atomic.hpp"
 
-inline bool ZResurrection::is_blocked() {
+inline bool ZResurrection::is_blocked() const {
   return Atomic::load(&_blocked);
 }
 

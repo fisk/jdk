@@ -728,9 +728,7 @@ void ZStatPhaseGeneration::register_end(ConcurrentGCTimer* timer, const Ticks& s
   generation->stat_mark()->print();
   ZStatNMethods::print();
   ZStatMetaspace::print();
-  if (generation->is_old()) {
-    ZStatReferences::print();
-  }
+  generation->stat_references()->print();
 
   generation->stat_relocation()->print_page_summary();
   if (generation->is_young()) {
@@ -1642,11 +1640,6 @@ void ZStatMetaspace::print() {
 //
 // Stat references
 //
-ZStatReferences::ZCount ZStatReferences::_soft;
-ZStatReferences::ZCount ZStatReferences::_weak;
-ZStatReferences::ZCount ZStatReferences::_final;
-ZStatReferences::ZCount ZStatReferences::_phantom;
-
 void ZStatReferences::set(ZCount* count, size_t encountered, size_t discovered, size_t enqueued) {
   count->encountered = encountered;
   count->discovered = discovered;

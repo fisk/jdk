@@ -116,8 +116,8 @@ GCCause::Cause ZDriver::gc_cause() {
   return _gc_cause;
 }
 
-ZDriverMinor::ZDriverMinor()
-  : ZDriver(),
+ZDriverMinor::ZDriverMinor() :
+    ZDriver(),
     _port(),
     _gc_timer(),
     _jfr_tracer(),
@@ -244,11 +244,13 @@ static bool should_clear_soft_references(GCCause::Cause cause) {
   case GCCause::_dcmd_gc_run:
   case GCCause::_java_lang_system_gc:
   case GCCause::_full_gc_alot:
+  case GCCause::_scavenge_alot:
   case GCCause::_jvmti_force_gc:
   case GCCause::_z_timer:
   case GCCause::_z_warmup:
   case GCCause::_z_allocation_rate:
   case GCCause::_z_proactive:
+  case GCCause::_z_high_usage:
   case GCCause::_metadata_GC_threshold:
   case GCCause::_codecache_GC_threshold:
   case GCCause::_codecache_GC_aggressive:

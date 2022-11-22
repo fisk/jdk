@@ -207,10 +207,21 @@ inline bool is_valid(zpointer ptr, bool assert_on_failure = false) {
   }
 
   const uintptr_t store_metadata = (value & (ZPointerStoreMetadataMask ^ ZPointerLoadMetadataMask));
+  const uintptr_t finalizable_young_metadata = store_metadata & (ZPointerFinalizableYoung0 | ZPointerFinalizableYoung1);
+  const uintptr_t finalizable_old_metadata = store_metadata & (ZPointerFinalizableOld0 | ZPointerFinalizableOld1);
   const uintptr_t marked_young_metadata = store_metadata & (ZPointerMarkedYoung0 | ZPointerMarkedYoung1);
-  const uintptr_t marked_old_metadata = store_metadata & (ZPointerMarkedOld0 | ZPointerMarkedOld1 |
-                                                          ZPointerFinalizable0 | ZPointerFinalizable1);
+  const uintptr_t marked_old_metadata = store_metadata & (ZPointerMarkedOld0 | ZPointerMarkedOld1);
   const uintptr_t remembered_metadata = store_metadata & (ZPointerRemembered0 | ZPointerRemembered1);
+  if (!is_power_of_2(finalizable_young_metadata)) {
+    report_is_valid_failure("Must have exactly one finalizable young metadata bit");
+    return false;
+  }
+
+  if (!is_power_of_2(finalizable_old_metadata)) {
+    report_is_valid_failure("Must have exactly one finalizable old metadata bit");
+    return false;
+  }
+
   if (!is_power_of_2(marked_young_metadata)) {
     report_is_valid_failure("Must have exactly one marked young metadata bit");
     return false;
@@ -226,8 +237,10 @@ inline bool is_valid(zpointer ptr, bool assert_on_failure = false) {
     return false;
   }
 
-  if ((marked_young_metadata | marked_old_metadata | remembered_metadata) != store_metadata) {
-    report_is_valid_failure("Must have exactly three sets of store metadata bits");
+  if ((finalizable_young_metadata | finalizable_old_metadata |
+       marked_young_metadata | marked_old_metadata |
+       remembered_metadata) != store_metadata) {
+    report_is_valid_failure("Must have exactly 5 sets of store metadata bits");
     return false;
   }
 
@@ -492,6 +505,27 @@ inline bool ZPointer::is_old_load_good(zpointer ptr) {
   return (remap_bits(untype(ptr)) & ZPointerRemappedOldMask) != 0;
 }
 
+inline bool ZPointer::is_finalizable_bad(zpointer ptr) {
+  return untype(ptr) & ZPointerFinalizableBadMask;
+}
+
+inline bool ZPointer::is_finalizable_good(zpointer ptr) {
+  return !is_finalizable_bad(ptr) && !is_null(ptr);
+}
+
+inline bool ZPointer::is_finalizable_good_or_null(zpointer ptr) {
+  // Checking if an address is "not bad" is an optimized version of
+  // checking if it's "good or null", which eliminates an explicit
+  // null check. However, the implicit null check only checks that
+  // the mask bits are zero, not that the entire address is zero.
+  // This means that an address without mask bits would pass through
+  // the barrier as if it was null. This should be harmless as such
+  // addresses should ever be passed through the barrier.
+  const bool result = !is_finalizable_bad(ptr);
+  assert((is_finalizable_good(ptr) || is_null(ptr)) == result, "Bad address");
+  return result;
+}
+
 inline bool ZPointer::is_mark_bad(zpointer ptr) {
   return untype(ptr) & ZPointerMarkBadMask;
 }
@@ -534,22 +568,27 @@ inline bool ZPointer::is_store_good_or_null(zpointer ptr) {
   return result;
 }
 
-inline bool ZPointer::is_marked_finalizable(zpointer ptr) {
+inline bool ZPointer::is_marked_finalizable_old(zpointer ptr) {
   assert(!is_null(ptr), "must not be null");
-  return untype(ptr) & ZPointerFinalizable;
+  return untype(ptr) & ZPointerFinalizableOld;
+}
+
+inline bool ZPointer::is_marked_finalizable_young(zpointer ptr) {
+  assert(!is_null(ptr), "must not be null");
+  return untype(ptr) & ZPointerFinalizableYoung;
 }
 
 inline bool ZPointer::is_marked_old(zpointer ptr) {
-  return untype(ptr) & (ZPointerMarkedOld);
+  return untype(ptr) & ZPointerMarkedOld;
 }
 
 inline bool ZPointer::is_marked_young(zpointer ptr) {
-  return untype(ptr) & (ZPointerMarkedYoung);
+  return untype(ptr) & ZPointerMarkedYoung;
 }
 
 inline bool ZPointer::is_marked_any_old(zpointer ptr) {
   return untype(ptr) & (ZPointerMarkedOld |
-                        ZPointerFinalizable);
+                        ZPointerFinalizableOld);
 }
 
 inline bool ZPointer::is_remapped(zpointer ptr) {
@@ -598,14 +637,24 @@ inline zpointer ZAddress::load_good(zaddress addr, zpointer prev) {
   return color(addr, ZPointerLoadGoodMask | non_load_prev_bits | ZPointerRememberedMask);
 }
 
-inline zpointer ZAddress::finalizable_good(zaddress addr, zpointer prev) {
+inline zpointer ZAddress::finalizable_young_good(zaddress addr, zpointer prev) {
   if (is_null_any(prev)) {
     return color_null();
   }
 
-  const uintptr_t non_mark_bits_mask = ZPointerMarkMetadataMask ^ ZPointerAllMetadataMask;
-  const uintptr_t non_mark_prev_bits = untype(prev) & non_mark_bits_mask;
-  return color(addr, ZPointerLoadGoodMask | ZPointerMarkedYoung | ZPointerFinalizable | non_mark_prev_bits | ZPointerRememberedMask);
+  const uintptr_t young_marked_mask = ZPointerMarkedYoung0 | ZPointerMarkedYoung1;
+  const uintptr_t bad_mark_young = ZPointerMarkedYoung ^ young_marked_mask;
+  return color(addr, ZPointerFinalizableGoodMask | bad_mark_young | ZPointerMarkedOld | ZPointerRemembered);
+}
+
+inline zpointer ZAddress::finalizable_old_good(zaddress addr, zpointer prev) {
+  if (is_null_any(prev)) {
+    return color_null();
+  }
+
+  const uintptr_t old_marked_mask = ZPointerMarkedOld0 | ZPointerMarkedOld1;
+  const uintptr_t bad_mark_old = ZPointerMarkedOld ^ old_marked_mask;
+  return color(addr, ZPointerFinalizableGoodMask | bad_mark_old | ZPointerMarkedYoung | ZPointerRememberedMask);
 }
 
 inline zpointer ZAddress::mark_good(zaddress addr, zpointer prev) {
@@ -613,9 +662,22 @@ inline zpointer ZAddress::mark_good(zaddress addr, zpointer prev) {
     return color_null();
   }
 
-  const uintptr_t non_mark_bits_mask = ZPointerMarkMetadataMask ^ ZPointerAllMetadataMask;
-  const uintptr_t non_mark_prev_bits = untype(prev) & non_mark_bits_mask;
-  return color(addr, ZPointerLoadGoodMask | ZPointerMarkedYoung | ZPointerMarkedOld | non_mark_prev_bits | ZPointerRememberedMask);
+  return color(addr, ZPointerMarkGoodMask | ZPointerRememberedMask);
+}
+
+inline zpointer ZAddress::mark_young_good(zaddress addr, zpointer prev) {
+  if (is_null_any(prev)) {
+    return color_null();
+  }
+
+  const uintptr_t prev_color = untype(prev);
+
+  const uintptr_t old_marked_mask = ZPointerMarkedOld0 | ZPointerMarkedOld1;
+  const uintptr_t old_finalizable_mask = ZPointerFinalizableOld0 | ZPointerFinalizableOld1;
+  const uintptr_t old_marked = prev_color & (old_marked_mask);
+  const uintptr_t old_finalizable = prev_color & (old_finalizable_mask);
+
+  return color(addr, ZPointerLoadGoodMask | ZPointerFinalizableYoung | ZPointerMarkedYoung | old_finalizable | old_marked | ZPointerRememberedMask);
 }
 
 inline zpointer ZAddress::mark_old_good(zaddress addr, zpointer prev) {
@@ -626,22 +688,11 @@ inline zpointer ZAddress::mark_old_good(zaddress addr, zpointer prev) {
   const uintptr_t prev_color = untype(prev);
 
   const uintptr_t young_marked_mask = ZPointerMarkedYoung0 | ZPointerMarkedYoung1;
-  const uintptr_t young_marked = prev_color & young_marked_mask;
+  const uintptr_t young_finalizable_mask = ZPointerFinalizableYoung0 | ZPointerFinalizableYoung1;
+  const uintptr_t young_marked = prev_color & (young_marked_mask);
+  const uintptr_t young_finalizable = prev_color & (young_finalizable_mask);
 
-  return color(addr, ZPointerLoadGoodMask | ZPointerMarkedOld | young_marked | ZPointerRememberedMask);
-}
-
-inline zpointer ZAddress::mark_young_good(zaddress addr, zpointer prev) {
-  if (is_null_any(prev)) {
-    return color_null();
-  }
-
-  const uintptr_t prev_color = untype(prev);
-
-  const uintptr_t old_marked_mask = ZPointerMarkedMask ^ (ZPointerMarkedYoung0 | ZPointerMarkedYoung1);
-  const uintptr_t old_marked = prev_color & old_marked_mask;
-
-  return color(addr, ZPointerLoadGoodMask | ZPointerMarkedYoung | old_marked | ZPointerRememberedMask);
+  return color(addr, ZPointerLoadGoodMask | ZPointerFinalizableOld | ZPointerMarkedOld | young_finalizable | young_marked | ZPointerRememberedMask);
 }
 
 inline zpointer ZAddress::store_good(zaddress addr) {

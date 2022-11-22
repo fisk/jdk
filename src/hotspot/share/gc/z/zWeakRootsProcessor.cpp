@@ -35,9 +35,15 @@
 #include "utilities/debug.hpp"
 
 class ZPhantomCleanOopClosure : public OopClosure {
+private:
+  ZGeneration* _generation;
+
 public:
+  ZPhantomCleanOopClosure(ZGeneration* generation) :
+      _generation(generation) {}
+
   virtual void do_oop(oop* p) {
-    ZBarrier::clean_barrier_on_phantom_oop_field((zpointer*)p);
+    ZBarrier::clean_barrier_on_phantom_root_oop_field((zpointer*)p, _generation);
     SuspendibleThreadSet::yield();
   }
 
@@ -52,11 +58,15 @@ ZWeakRootsProcessor::ZWeakRootsProcessor(ZWorkers* workers)
 class ZProcessWeakRootsTask : public ZTask {
 private:
   ZRootsIteratorWeakColored _roots_weak_colored;
+  ZGeneration*              _generation;
 
 public:
-  ZProcessWeakRootsTask()
+  ZProcessWeakRootsTask(ZGeneration* generation)
     : ZTask("ZProcessWeakRootsTask"),
-      _roots_weak_colored(ZGenerationIdOptional::old) {}
+      _roots_weak_colored(generation->is_young() ?
+                          ZGenerationIdOptional::young :
+                          ZGenerationIdOptional::old),
+      _generation(generation) {}
 
   ~ZProcessWeakRootsTask() {
     _roots_weak_colored.report_num_dead();
@@ -64,12 +74,12 @@ public:
 
   virtual void work() {
     SuspendibleThreadSetJoiner sts_joiner;
-    ZPhantomCleanOopClosure cl;
+    ZPhantomCleanOopClosure cl(_generation);
     _roots_weak_colored.apply(&cl);
   }
 };
 
-void ZWeakRootsProcessor::process_weak_roots() {
-  ZProcessWeakRootsTask task;
+void ZWeakRootsProcessor::process_weak_roots(ZGeneration* generation) {
+  ZProcessWeakRootsTask task(generation);
   _workers->run(&task);
 }

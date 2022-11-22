@@ -55,7 +55,7 @@ import jdk.test.whitebox.gc.GC;
 public class StringTableCleaningTest {
     public static void main(String[] args) throws Exception {
         List<String> subargs = new ArrayList<String>();
-        subargs.addAll(List.of("-Xlog:gc,gc+start,stringtable*=trace", "-Xmx1g"));
+        subargs.addAll(List.of("-Xlog:gc,gc+start,gc+phases,stringtable*=trace", "-Xmx1g"));
         subargs.add(Tester.class.getName());
         subargs.addAll(Arrays.asList(args));
         OutputAnalyzer output = ProcessTools.executeTestJava(subargs);
@@ -81,11 +81,13 @@ public class StringTableCleaningTest {
     // All G1 pauses except Cleanup do weak reference clearing.
     private static final String g1Suffix = "Pause(?! Cleanup)";
 
-    // For ZGC only major collections clean the string table. ZGC prints the
-    // start message without using the start tag, hence the special prefix.
-    private static final String zStartPrefix = gcPrefix + gcMiddle;
-    private static final String zStartSuffix = "Major Collection \\(.*\\)$";
-    private static final String zEndSuffix = "Major Collection \\(.*\\) .*->.*$";
+    // For ZGC all generation collections clean the string table. ZGC prints the
+    // start message without using the start tag, and generation collection logging
+    // is under gc+phases, hence the special handing here.
+    private static final String zStartPrefix = gcPrefix + ",phases" + gcMiddle;
+    private static final String zStartSuffix = "(Y|O): (Young|Old) Generation$";
+    private static final String zEndPrefix = gcPrefix + ",phases" + gcMiddle;
+    private static final String zEndSuffix = "(Y|O): (Young|Old) Generation.*\\(.*\\).*->.*$";
 
     // Suffix for ZGC (non generational).
     private static final String xStartSuffix = "Garbage Collection (.*)$";
