@@ -27,6 +27,7 @@
 #include "gc/z/zAddress.hpp"
 #include "gc/z/zAllocationFlags.hpp"
 #include "gc/z/zArray.hpp"
+#include "gc/z/zCommitter.hpp"
 #include "gc/z/zGenerationId.hpp"
 #include "gc/z/zGranuleMap.hpp"
 #include "gc/z/zList.hpp"
@@ -53,6 +54,7 @@ class ZSegmentStash;
 class ZSinglePartitionAllocation;
 class ZVirtualMemory;
 class ZWorkers;
+enum class ZPageAllocationAttempt;
 
 class ZPartition {
   friend class VMStructs;
@@ -62,15 +64,20 @@ private:
   ZPageAllocator* const _page_allocator;
   ZMappedCache          _cache;
   ZUncommitter          _uncommitter;
+  ZCommitter            _committer;
   const size_t          _min_capacity;
-  const size_t          _max_capacity;
+  const size_t          _static_max_capacity;
+  size_t                _committed;
+  size_t                _observed_max_committed;
+  volatile size_t       _heuristic_max_capacity;
   volatile size_t       _current_max_capacity;
   volatile size_t       _capacity;
   volatile size_t       _claimed;
   size_t                _used;
-  double                _last_commit;
-  double                _last_uncommit;
+  volatile double       _last_commit;
+  volatile double       _last_uncommit;
   size_t                _to_uncommit;
+  volatile uint64_t     _last_uncommit_delay;
   const uint32_t        _numa_id;
 
   const ZVirtualMemoryManager& virtual_memory_manager() const;
@@ -79,30 +86,69 @@ private:
   const ZPhysicalMemoryManager& physical_memory_manager() const;
   ZPhysicalMemoryManager& physical_memory_manager();
 
+  ZLock* lock() const;
+
   void verify_virtual_memory_multi_partition_association(const ZVirtualMemory& vmem) const NOT_DEBUG_RETURN;
   void verify_virtual_memory_association(const ZVirtualMemory& vmem, bool check_multi_partition = false) const NOT_DEBUG_RETURN;
   void verify_virtual_memory_association(const ZArray<ZVirtualMemory>* vmems) const NOT_DEBUG_RETURN;
   void verify_memory_allocation_association(const ZMemoryAllocation* allocation) const NOT_DEBUG_RETURN;
 
+
+  template <typename Decider>
+  size_t uncommit(Decider&& decide);
+
 public:
-  ZPartition(uint32_t numa_id, ZPageAllocator* page_allocator);
+  ZPartition(uint32_t numa_id,
+             ZPageAllocator* page_allocator,
+             size_t min_capacity,
+             size_t initial_capacity,
+             size_t static_max_capacity);
+
+  void set_heuristic_max_capacity(size_t heuristic_max_capacity);
+
+  void set_current_max_capacity();
+  size_t dynamic_max_capacity() const;
+  size_t current_max_capacity() const;
+  size_t heuristic_max_capacity() const;
+  size_t capacity() const;
+
+  void increase_committed(size_t increment, bool commit_failed);
+  void decrease_committed(size_t decrement);
+
+  const ZUncommitter& uncommitter() const;
+  ZUncommitter& uncommitter();
+
+  const ZCommitter& committer() const;
+  ZCommitter& committer();
 
   uint32_t numa_id() const;
 
   size_t available() const;
+  size_t available(ZPageAllocationAttempt attempt) const;
+  size_t available_from_increase_capacity() const;
+  size_t available_from_cache() const;
+  size_t available_from_observed_max_committed() const;
 
+  size_t increase_capacity(size_t size, ZPageAllocationAttempt attempt);
   size_t increase_capacity(size_t size);
   void decrease_capacity(size_t size, bool set_max_capacity);
 
   void increase_used(size_t size);
   void decrease_used(size_t size);
 
+  void heat_memory(const ZVirtualMemory& vmem) const;
+
   void free_memory(const ZVirtualMemory& vmem);
 
-  void claim_from_cache_or_increase_capacity(ZMemoryAllocation* allocation);
-  bool claim_capacity(ZMemoryAllocation* allocation);
+  void claim_from_cache_or_increase_capacity(ZMemoryAllocation* allocation, ZPageAllocationAttempt attempt);
+  bool claim_capacity(ZMemoryAllocation* allocation, ZPageAllocationAttempt attempt);
 
-  size_t uncommit(uint64_t* timeout);
+  size_t commit(size_t size);
+  size_t uncommit(uint64_t* timeout, size_t limit);
+  size_t uncommit(size_t limit);
+
+  bool should_wake_uncommitter_early(size_t total_memory, size_t used_memory) const;
+  bool is_uncommitting(size_t total_memory, size_t used_memory) const;
 
   void sort_segments_physical(const ZVirtualMemory& vmem);
 
@@ -111,7 +157,7 @@ public:
   size_t commit_physical(const ZVirtualMemory& vmem);
   size_t uncommit_physical(const ZVirtualMemory& vmem);
 
-  void map_virtual(const ZVirtualMemory& vmem);
+  void map_virtual(const ZVirtualMemory& vmem, bool heat_memory = true);
   void unmap_virtual(const ZVirtualMemory& vmem);
 
   void map_virtual_from_multi_partition(const ZVirtualMemory& vmem);
@@ -157,7 +203,8 @@ private:
   ZVirtualMemoryManager       _virtual;
   ZPhysicalMemoryManager      _physical;
   const size_t                _min_capacity;
-  const size_t                _max_capacity;
+  const size_t                _static_max_capacity;
+  volatile size_t             _heuristic_max_capacity;
   volatile size_t             _used;
   volatile size_t             _used_generations[2];
   struct {
@@ -170,12 +217,12 @@ private:
   bool                        _initialized;
 
   bool alloc_page_stall(ZPageAllocation* allocation);
-  ZPage* alloc_page_inner(ZPageAllocation* allocation);
+  ZPage* alloc_page_inner(ZPageAllocation* allocation, ZPageAllocationAttempt attempt);
 
-  bool claim_capacity_or_stall(ZPageAllocation* allocation);
-  bool claim_capacity(ZPageAllocation* allocation);
-  bool claim_capacity_single_partition(ZSinglePartitionAllocation* single_partition_allocation, uint32_t partition_id);
-  void claim_capacity_multi_partition(ZMultiPartitionAllocation* multi_partition_allocation, uint32_t start_partition);
+  bool claim_capacity_or_stall(ZPageAllocation* allocation, ZPageAllocationAttempt attempt);
+  bool claim_capacity(ZPageAllocation* allocation, ZPageAllocationAttempt attempt);
+  bool claim_capacity_single_partition(ZSinglePartitionAllocation* single_partition_allocation, uint32_t partition_id, ZPageAllocationAttempt attempt);
+  void claim_capacity_multi_partition(ZMultiPartitionAllocation* multi_partition_allocation, uint32_t start_partition, ZPageAllocationAttempt attempt);
 
   ZVirtualMemory satisfied_from_cache_vmem(const ZPageAllocation* allocation) const;
 
@@ -227,7 +274,7 @@ private:
   ZPartition&       partition_from_partition_id(uint32_t partition_id);
   ZPartition&       partition_from_vmem(const ZVirtualMemory& vmem);
 
-  size_t sum_available() const;
+  size_t sum_available(ZPageAllocationAttempt attempt) const;
 
   void increase_used(size_t size);
   void decrease_used(size_t size);
@@ -241,20 +288,28 @@ public:
   ZPageAllocator(size_t min_capacity,
                  size_t initial_capacity,
                  size_t soft_max_capacity,
-                 size_t max_capacity);
+                 size_t initial_max_capacity,
+                 size_t static_max_capacity);
 
   bool is_initialized() const;
 
   bool prime_cache(ZWorkers* workers, size_t size);
+  void heat_memory(zoffset start, size_t size) const;
 
+  size_t initial_capacity() const;
   size_t min_capacity() const;
-  size_t max_capacity() const;
-  size_t soft_max_capacity() const;
+  size_t static_max_capacity() const;
+  size_t dynamic_max_capacity() const;
   size_t current_max_capacity() const;
+  size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;
   size_t used_generation(ZGenerationId id) const;
   size_t unused() const;
+
+  // Automatic heap sizing
+  void adapt_heuristic_max_capacity(ZGenerationId generation);
+  void adjust_capacity(size_t used_soon);
 
   void increase_used_generation(ZGenerationId id, size_t size);
   void decrease_used_generation(ZGenerationId id, size_t size);
@@ -291,8 +346,7 @@ public:
 class ZPageAllocatorStats {
 private:
   const size_t _min_capacity;
-  const size_t _max_capacity;
-  const size_t _soft_max_capacity;
+  const size_t _heuristic_max_capacity;
   const size_t _capacity;
   const size_t _used;
   const size_t _used_high;
@@ -305,8 +359,7 @@ private:
 
 public:
   ZPageAllocatorStats(size_t min_capacity,
-                      size_t max_capacity,
-                      size_t soft_max_capacity,
+                      size_t heuristic_max_capacity,
                       size_t capacity,
                       size_t used,
                       size_t used_high,
@@ -318,8 +371,7 @@ public:
                       size_t allocation_stalls);
 
   size_t min_capacity() const;
-  size_t max_capacity() const;
-  size_t soft_max_capacity() const;
+  size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;
   size_t used_high() const;

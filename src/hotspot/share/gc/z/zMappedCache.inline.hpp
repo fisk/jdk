@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -21,36 +21,13 @@
  * questions.
  */
 
-#include "gc/z/zTask.hpp"
-#include "gc/z/zWorkers.hpp"
+#ifndef SHARE_GC_Z_ZMAPPEDCACHE_INLINE_HPP
+#define SHARE_GC_Z_ZMAPPEDCACHE_INLINE_HPP
 
-ZTask::Task::Task(ZTask* task, const char* name)
-  : WorkerTask(name),
-    _task(task) {}
+#include "gc/z/zMappedCache.hpp"
 
-void ZTask::Task::work(uint worker_id) {
-  double start = os::elapsedVTime();
-  _task->work();
-  double elapsed = os::elapsedVTime() - start;
-  _workers->add_accumulated_vtime(elapsed);
+inline size_t ZMappedCache::size() const {
+  return _size;
 }
 
-ZTask::ZTask(const char* name)
-  : _worker_task(this, name) {}
-
-const char* ZTask::name() const {
-  return _worker_task.name();
-}
-
-WorkerTask* ZTask::worker_task() {
-  return &_worker_task;
-}
-
-void ZTask::set_workers(ZWorkers* workers) {
-  _worker_task._workers = workers;
-}
-
-ZRestartableTask::ZRestartableTask(const char* name)
-  : ZTask(name) {}
-
-void ZRestartableTask::resize_workers(uint nworkers) {}
+#endif // SHARE_GC_Z_ZMAPPEDCACHE_INLINE_HPP

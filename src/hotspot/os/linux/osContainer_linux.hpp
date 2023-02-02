@@ -64,6 +64,7 @@ class OSContainer: AllStatic {
   static char * cpu_cpuset_cpus();
   static char * cpu_cpuset_memory_nodes();
 
+  static jlong cpu_usage_in_micros();
   static int cpu_quota();
   static int cpu_period();
 

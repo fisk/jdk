@@ -62,7 +62,7 @@ CgroupSubsystem* CgroupSubsystemFactory::create() {
   CgroupV1MemoryController* memory = nullptr;
   CgroupV1Controller* cpuset = nullptr;
   CgroupV1CpuController* cpu = nullptr;
-  CgroupV1Controller* cpuacct = nullptr;
+  CgroupV1CpuacctController* cpuacct = nullptr;
   CgroupV1Controller* pids = nullptr;
   CgroupInfo cg_infos[CG_INFO_LENGTH];
   u1 cg_type_flags = INVALID_CGROUPS_GENERIC;
@@ -105,9 +105,10 @@ CgroupSubsystem* CgroupSubsystemFactory::create() {
     CgroupV2CpuController* cpu = new CgroupV2CpuController(CgroupV2Controller(cg_infos[CPU_IDX]._mount_path,
                                                                               cg_infos[CPU_IDX]._cgroup_path,
                                                                               cg_infos[CPU_IDX]._read_only));
+    CgroupV2CpuacctController* cpuacct = new CgroupV2CpuacctController(cpu);
     log_debug(os, container)("Detected cgroups v2 unified hierarchy");
     cleanup(cg_infos);
-    return new CgroupV2Subsystem(memory, cpu, mem_other);
+    return new CgroupV2Subsystem(memory, cpu, cpuacct, mem_other);
   }
 
   /*
@@ -150,7 +151,7 @@ CgroupSubsystem* CgroupSubsystemFactory::create() {
         cpu = new CgroupV1CpuController(CgroupV1Controller(info._root_mount_path, info._mount_path, info._read_only));
         cpu->set_subsystem_path(info._cgroup_path);
       } else if (strcmp(info._name, "cpuacct") == 0) {
-        cpuacct = new CgroupV1Controller(info._root_mount_path, info._mount_path, info._read_only);
+        cpuacct = new CgroupV1CpuacctController(CgroupV1Controller(info._root_mount_path, info._mount_path, info._read_only));
         cpuacct->set_subsystem_path(info._cgroup_path);
       } else if (strcmp(info._name, "pids") == 0) {
         pids = new CgroupV1Controller(info._root_mount_path, info._mount_path, info._read_only);
@@ -869,6 +870,10 @@ jlong CgroupSubsystem::rss_usage_in_bytes() {
 
 jlong CgroupSubsystem::cache_usage_in_bytes() {
   return memory_controller()->controller()->cache_usage_in_bytes();
+}
+
+jlong CgroupSubsystem::cpu_usage_in_micros() {
+  return cpuacct_controller()->cpu_usage_in_micros();
 }
 
 int CgroupSubsystem::cpu_quota() {

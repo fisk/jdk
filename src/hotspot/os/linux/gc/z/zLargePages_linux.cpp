@@ -25,12 +25,42 @@
 #include "hugepages.hpp"
 #include "os_linux.hpp"
 #include "runtime/globals.hpp"
+#include "runtime/globals_extension.hpp"
+
+#include "sys/mman.h"
+
+static bool madv_collapse_available() {
+  void* const res = mmap(0, 2 * M, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+  if (res == MAP_FAILED) {
+    return false;
+  }
+
+  os::pretouch_memory(res, (void*)(((char*)res) + os::vm_page_size()));
+
+  bool result = os::Linux::madvise_collapse_transparent_huge_pages(res, 2 * M);
+
+  munmap(res, 2 * M);
+
+  return result;
+}
 
 void ZLargePages::pd_initialize() {
+  bool can_collapse = madv_collapse_available();
+
   if (os::Linux::thp_requested()) {
+    if (can_collapse) {
+      _state = Collapse;
+      return;
+    }
     // Check if the OS config turned off transparent huge pages for shmem.
     _os_enforced_transparent_mode = HugePages::shmem_thp_info().is_disabled();
     _state = _os_enforced_transparent_mode ? Disabled : Transparent;
+    return;
+  }
+
+  if (FLAG_IS_DEFAULT(UseTransparentHugePages) && can_collapse) {
+    _state = Collapse;
     return;
   }
 

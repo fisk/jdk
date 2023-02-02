@@ -69,7 +69,7 @@ class LRUCurrentHeapPolicy : public ReferencePolicy {
 };
 
 class LRUMaxHeapPolicy : public ReferencePolicy {
- private:
+ protected:
   jlong _max_interval;
 
  public:

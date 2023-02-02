@@ -58,9 +58,39 @@ class CgroupV2CpuController: public CgroupCpuController {
   public:
     CgroupV2CpuController(const CgroupV2Controller& reader) : _reader(reader) {
     }
+
+    jlong cpu_usage_in_micros();
+
     int cpu_quota() override;
     int cpu_period() override;
     int cpu_shares() override;
+    bool is_read_only() override {
+      return reader()->is_read_only();
+    }
+    const char* subsystem_path() override {
+      return reader()->subsystem_path();
+    }
+    bool needs_hierarchy_adjustment() override {
+      return reader()->needs_hierarchy_adjustment();
+    }
+    void set_subsystem_path(const char* cgroup_path) override {
+      reader()->set_subsystem_path(cgroup_path);
+    }
+    const char* mount_point() override { return reader()->mount_point(); }
+    const char* cgroup_path() override { return reader()->cgroup_path(); }
+};
+
+class CgroupV2CpuacctController: public CgroupCpuacctController {
+  private:
+    CgroupV2CpuController* _reader;
+    CgroupV2CpuController* reader() { return _reader; }
+  public:
+    CgroupV2CpuacctController(CgroupV2CpuController* reader) : _reader(reader) {
+    }
+
+    // In cgroup v2, cpu usage comes from the cpu controller
+    jlong cpu_usage_in_micros() override { return reader()->cpu_usage_in_micros(); }
+
     bool is_read_only() override {
       return reader()->is_read_only();
     }
@@ -117,12 +147,14 @@ class CgroupV2Subsystem: public CgroupSubsystem {
     /* Caching wrappers for cpu/memory metrics */
     CachingCgroupController<CgroupMemoryController>* _memory = nullptr;
     CachingCgroupController<CgroupCpuController>* _cpu = nullptr;
+    CgroupCpuacctController* _cpuacct = nullptr;
 
     CgroupV2Controller* unified() { return &_unified; }
 
   public:
     CgroupV2Subsystem(CgroupV2MemoryController * memory,
                       CgroupV2CpuController* cpu,
+                      CgroupV2CpuacctController* cpuacct,
                       CgroupV2Controller unified);
 
     char * cpu_cpuset_cpus() override;
@@ -137,6 +169,7 @@ class CgroupV2Subsystem: public CgroupSubsystem {
     }
     CachingCgroupController<CgroupMemoryController>* memory_controller() override { return _memory; }
     CachingCgroupController<CgroupCpuController>* cpu_controller() override { return _cpu; }
+    CgroupCpuacctController* cpuacct_controller() override { return _cpuacct; }
 };
 
 #endif // CGROUP_V2_SUBSYSTEM_LINUX_HPP

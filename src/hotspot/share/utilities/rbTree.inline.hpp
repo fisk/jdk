@@ -617,7 +617,19 @@ inline void AbstractRBTree<K, NodeType, COMPARATOR>::visit_range_in_order(const 
 
   if (start != nullptr) {
     assert_leq(from, start);
-    assert_geq(to, start);
+    if (cursor_start.found()) {
+      assert_geq(to, start);
+    }
+    if (cursor_end.found()) {
+      assert_leq(from, cursor_end.node());
+    }
+    if (!cursor_start.found() && !cursor_end.found()) {
+      assert((end == nullptr) || // to after right-most, from is not
+             (start == end)   || // their next nodes should at least be ordered,
+             (cmp(start, end)),  // start <= end, from <= to may still be false,
+                                 // but we do not have the tools too check.
+             "expected: from <= to");
+    }
   } else {
     assert(end == nullptr, "end node found but not start node");
   }

@@ -45,6 +45,8 @@ protected:
 
 public:
   ZUncommitter(uint32_t id, ZPartition* partition);
+
+  void wake_up();
 };
 
 #endif // SHARE_GC_Z_ZUNCOMMITTER_HPP
