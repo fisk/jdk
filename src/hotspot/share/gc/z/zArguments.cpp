@@ -23,33 +23,66 @@
 
 #include "gc/shared/gcArguments.hpp"
 #include "gc/z/zAddressSpaceLimit.hpp"
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zArguments.hpp"
 #include "gc/z/zCollectedHeap.hpp"
 #include "gc/z/zGlobals.hpp"
+#include "gc/z/zHeap.hpp"
 #include "gc/z/zHeuristics.hpp"
 #include "gc/z/zUtils.inline.hpp"
 #include "runtime/globals.hpp"
 #include "runtime/globals_extension.hpp"
 #include "runtime/java.hpp"
+#include "runtime/os.hpp"
+#ifdef LINUX
+#include "os_linux.hpp"
+#endif
 
 void ZArguments::initialize_alignments() {
   SpaceAlignment = ZGranuleSize;
   HeapAlignment = SpaceAlignment;
 }
 
+void ZArguments::set_heap_size() {
+  const size_t default_min_heap_size_bytes = 2 * M;
+  const double default_max_heap_size_percent = (1.0 - ZMemoryCriticalThreshold) * 100.0;
+
+  const bool explicit_max_heap_size =  FLAG_IS_CMDLINE(MaxHeapSize) ||
+                                       FLAG_IS_CMDLINE(MaxRAMPercentage);
+  const bool explicit_min_heap_size =  FLAG_IS_CMDLINE(MinHeapSize) ||
+                                       FLAG_IS_CMDLINE(MinRAMPercentage);
+  const bool explicit_init_heap_size = FLAG_IS_CMDLINE(InitialHeapSize) ||
+                                       FLAG_IS_CMDLINE(InitialRAMPercentage);
+
+  ZAdaptiveHeap::initialize(explicit_max_heap_size);
+
+  if (Atomic::load(&ZGCPressure) == 0.0) {
+    // When automatic heap sizing is disabled, don't try to prepare the default
+    // heap size in the automatic heap sizing friendly way.
+    return;
+  }
+
+  // If automatic heap sizing is not explicitly turned off, adjust the default
+  // heap ergonomics to be less constraining; the constraints are dynamic.
+  if (!explicit_max_heap_size) {
+    FLAG_SET_ERGO(MaxRAMPercentage, default_max_heap_size_percent);
+  }
+  if (!explicit_min_heap_size) {
+    FLAG_SET_ERGO(MinHeapSize, default_min_heap_size_bytes);
+  }
+  if (!explicit_init_heap_size) {
+    FLAG_SET_ERGO(InitialHeapSize, default_min_heap_size_bytes);
+  }
+}
+
 void ZArguments::initialize_heap_flags_and_sizes() {
   GCArguments::initialize_heap_flags_and_sizes();
 
-  if (!FLAG_IS_CMDLINE(MaxHeapSize) &&
-      !FLAG_IS_CMDLINE(MaxRAMPercentage) &&
-      !FLAG_IS_CMDLINE(SoftMaxHeapSize)) {
-    // We are really just guessing how much memory the program needs.
-    // When that is the case, we don't want the soft and hard limits to be the same
-    // as it can cause flakyness in the number of GC threads used, in order to keep
-    // to a random number we just pulled out of thin air.
-    FLAG_SET_ERGO(SoftMaxHeapSize, MaxHeapSize * 90 / 100);
+  if (!FLAG_IS_CMDLINE(SoftMaxHeapSize)) {
+    // This denotes there is no soft max heap size set.
+    FLAG_SET_ERGO(SoftMaxHeapSize, 0);
   }
-}
+};
 
 void ZArguments::select_max_gc_threads() {
   // Select number of parallel threads

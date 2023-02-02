@@ -37,6 +37,9 @@
   product(double, ZAllocationSpikeTolerance, 2.0,                           \
           "Allocation spike tolerance factor")                              \
                                                                             \
+  product(double, ZGCPressure, 5, MANAGEABLE,                               \
+          "Level of GC pressure, used for automatic heap sizing policies")  \
+                                                                            \
   product(double, ZFragmentationLimit, 5.0,                                 \
           "Maximum allowed heap fragmentation")                             \
           range(0, 100)                                                     \

@@ -22,6 +22,7 @@
  */
 
 #include "gc/shared/gc_globals.hpp"
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zGlobals.hpp"
 #include "gc/z/zHeap.inline.hpp"
 #include "gc/z/zLock.inline.hpp"
@@ -31,12 +32,16 @@
 #include "gc/z/zUncommitter.hpp"
 #include "jfr/jfrEvents.hpp"
 #include "logging/log.hpp"
+#include "runtime/init.hpp"
 #include "utilities/align.hpp"
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/ticks.hpp"
 
 #include <cmath>
+#include <limits>
+
+// TODO: Change the code
 
 static const ZStatCounter ZCounterUncommit("Memory", "Uncommit", ZStatUnitBytesPerSecond);
 
@@ -90,7 +95,7 @@ bool ZUncommitter::wait(uint64_t timeout) const {
 
 bool ZUncommitter::should_continue() const {
   ZLocker<ZConditionLock> locker(&_lock);
-  return !_stop;
+  return is_init_completed() && !_stop;
 }
 
 void ZUncommitter::update_statistics(size_t uncommitted, Ticks start, Tickspan* accumulated_time) const {
@@ -155,7 +160,7 @@ void ZUncommitter::run_thread() {
       }
 
       log_info(gc, heap)("Uncommitter (%u) Uncommitted: %zuM(%.0f%%) in %.3fms",
-                         _id, _uncommitted / M, percent_of(_uncommitted, ZHeap::heap()->max_capacity()),
+                         _id, _uncommitted / M, percent_of(_uncommitted, ZHeap::heap()->heuristic_max_capacity()),
                          accumulated_time.seconds() * MILLIUNITS);
     }
 
@@ -375,7 +380,7 @@ size_t ZUncommitter::uncommit() {
     // We flush out and uncommit chunks at a time (~0.8% of the max capacity,
     // but at least one granule and at most 256M), in case demand for memory
     // increases while we are uncommitting.
-    const size_t current_max_capacity = _partition->_current_max_capacity;
+    const size_t current_max_capacity = _partition->current_max_capacity();
     const size_t limit_upper_bound = MAX2(ZGranuleSize, align_down(256 * M / ZNUMA::count(), ZGranuleSize));
     const size_t limit = MIN2(align_up(current_max_capacity >> 7, ZGranuleSize), limit_upper_bound);
 
@@ -417,9 +422,36 @@ size_t ZUncommitter::uncommit() {
 
     // Adjust claimed and capacity to reflect the uncommit
     Atomic::sub(&_partition->_claimed, flushed);
-    _partition->decrease_capacity(flushed, false /* set_max_capacity */);
+    _partition->decrease_capacity(flushed);
     register_uncommit(flushed);
   }
 
   return flushed;
+}
+
+bool ZUncommitter::should_wake_uncommitter_early(size_t total_memory, size_t used_memory) const {
+  // TODO: FIX
+  return false;
+  //const uint64_t delay = ZAdaptiveHeap::uncommit_delay(used_memory, total_memory);
+  //const uint64_t last_uncommit_delay = Atomic::load(&_last_uncommit_delay);
+
+  //return last_uncommit_delay > delay;
+}
+
+bool ZUncommitter::is_uncommitting(size_t total_memory, size_t used_memory) const {
+  // TODO: FIX PLX
+  return false;
+  //const double last_commit = Atomic::load(&_last_commit);
+  //const double last_uncommit = Atomic::load(&_last_uncommit);
+
+  //if (last_uncommit < last_commit) {
+  //  // Committed since last uncommit
+  //  return false;
+  //}
+
+  //const uint64_t delay = ZAdaptiveHeap::uncommit_delay(used_memory, total_memory);
+  //const double expires = last_uncommit + double(delay);
+  //const double now = os::elapsedTime();
+
+  //return now < expires;
 }

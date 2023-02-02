@@ -83,8 +83,8 @@ bool ZPhysicalMemoryManager::is_initialized() const {
   return _backing.is_initialized();
 }
 
-void ZPhysicalMemoryManager::warn_commit_limits(size_t max_capacity) const {
-  _backing.warn_commit_limits(max_capacity);
+void ZPhysicalMemoryManager::warn_commit_limits(size_t expected_capacity, size_t max_capacity) const {
+  _backing.warn_commit_limits(expected_capacity, max_capacity);
 }
 
 void ZPhysicalMemoryManager::try_enable_uncommit(size_t min_capacity, size_t max_capacity) {
@@ -378,4 +378,10 @@ void ZPhysicalMemoryManager::restore_segments(const ZArraySlice<const ZVirtualMe
   }
 
   assert(stash_index == stash.length(), "Must have emptied the stash");
+}
+
+void ZPhysicalMemoryManager::collapse(const ZVirtualMemory& vmem) const {
+  const zaddress_unsafe addr = ZOffset::address_unsafe(vmem.start());
+
+  _backing.collapse(addr, vmem.size());
 }

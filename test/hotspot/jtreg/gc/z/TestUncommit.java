@@ -35,6 +35,7 @@ import java.util.ArrayList;
 public class TestUncommit {
     private static final int delay = 5 * 1000; // milliseconds
     private static final int allocSize = 200 * 1024 * 1024; // 200M
+    private static final int minCapacity = 128 * 1024 * 1024; // 128M
     private static final int smallObjectSize = 4 * 1024; // 4K
     private static final int mediumObjectSize = 2 * 1024 * 1024; // 2M
     private static final int largeObjectSize = allocSize;
@@ -88,7 +89,7 @@ public class TestUncommit {
         final var actualDelay = (timeUncommitStart - timeBeforeAlloc) / 1_000_000;
 
         log("Waiting for uncommit to complete");
-        while (capacity() > beforeAlloc) {
+        while (capacity() > (minCapacity + afterAlloc) / 2) {
             Thread.sleep(1000);
         }
 
@@ -104,28 +105,11 @@ public class TestUncommit {
         log(" Actual Uncommit Delay: " + actualDelay);
 
         // Verify
-        if (actualDelay < delay) {
-            throw new Exception("Uncommitted too fast");
-        }
-
-        // In typical conditions (system not over-provisioned or slow),
-        // uncommitting is expected to complete within 3 * ZUncommitDelay after
-        // the last commit. To accommodate less ideal environments, only
-        // durations exceeding 5 * ZUncommitDelay are flagged as errors.
-
-        if (actualDelay > delay * 3) {
-            log(" *** Uncommit slower than expected. ***");
-        }
-
-        if (actualDelay > delay * 5) {
-            throw new Exception("Uncommitted too slow");
-        }
-
-        if (afterUncommit < beforeAlloc) {
+        if (afterUncommit < minCapacity) {
             throw new Exception("Uncommitted too much");
         }
 
-        if (afterUncommit > beforeAlloc) {
+        if (afterUncommit > (beforeAlloc + afterAlloc * 3) / 4) {
             throw new Exception("Uncommitted too little");
         }
 

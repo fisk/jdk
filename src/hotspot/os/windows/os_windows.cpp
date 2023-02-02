@@ -102,6 +102,8 @@
 #include <fcntl.h>
 #include <io.h>
 #include <process.h>              // For _beginthreadex(), _endthreadex()
+#include <processthreadsapi.h>
+#include <timezoneapi.h>
 #include <imagehlp.h>             // For os::dll_address_to_function_name
 // for enumerating dll libraries
 #include <vdmdbg.h>
@@ -1217,6 +1219,22 @@ double os::elapsed_process_cpu_time() {
                           double(kernel_total.wMilliseconds) / 1000.0;
 
   return user_seconds + kernel_seconds;
+}
+
+double os::elapsed_system_cpu_time() {
+  FILETIME idle, kernel, user;
+  if (GetSystemTimes(&idle, &kernel, &user) == 0) {
+    assert(false, "this should not fail");
+    return 0.0;
+  }
+
+  // Kernel time includes idle time
+  jlong ticks = windows_to_time_ticks(user) +
+                windows_to_time_ticks(kernel) -
+                windows_to_time_ticks(idle);
+
+  // Ticks are 100 ns
+  return double(ticks) / 10000000.0;
 }
 
 jlong os::javaTimeMillis() {

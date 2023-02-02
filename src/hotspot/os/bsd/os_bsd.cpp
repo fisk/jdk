@@ -161,6 +161,22 @@ julong os::Bsd::available_memory() {
   return available;
 }
 
+julong os::Bsd::compressed_memory() {
+  uint64_t compressed = 0;
+#ifdef __APPLE__
+  mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+  vm_statistics64_data_t vmstat;
+  kern_return_t kerr = host_statistics64(mach_host_self(), HOST_VM_INFO64,
+                                         (host_info64_t)&vmstat, &count);
+  assert(kerr == KERN_SUCCESS,
+         "host_statistics64 failed - check mach_host_self() and count");
+  if (kerr == KERN_SUCCESS) {
+    compressed = vmstat.compressor_page_count * os::vm_page_size();
+  }
+#endif
+  return compressed;
+}
+
 // for more info see :
 // https://man.openbsd.org/sysctl.2
 void os::Bsd::print_uptime_info(outputStream* st) {
@@ -782,6 +798,29 @@ void os::free_thread(OSThread* osthread) {
 
 ////////////////////////////////////////////////////////////////////////////////
 // time support
+
+#ifdef __APPLE__
+double os::elapsed_system_cpu_time() {
+  mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
+  host_cpu_load_info_data_t load_data;
+
+  kern_return_t ret = host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, (host_info_t)&load_data, &count);
+  if (ret != KERN_SUCCESS) {
+    assert(false, "This should never happen");
+    return 0.0;
+  }
+
+  natural_t ticks = load_data.cpu_ticks[CPU_STATE_USER] +
+                    load_data.cpu_ticks[CPU_STATE_NICE] +
+                    load_data.cpu_ticks[CPU_STATE_SYSTEM];
+
+  return double(ticks) / CLK_TCK;
+}
+#else
+double os::elapsed_system_cpu_time() {
+  return 0.0;
+}
+#endif
 
 #ifdef __APPLE__
 void os::Bsd::clock_init() {

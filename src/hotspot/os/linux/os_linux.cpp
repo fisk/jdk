@@ -468,6 +468,20 @@ bool os::Linux::get_tick_information(CPUPerfTicks* pticks, int which_logical_cpu
   return true;
 }
 
+double os::elapsed_system_cpu_time() {
+  if (OSContainer::is_containerized()) {
+    jlong result = OSContainer::cpu_usage_in_micros();
+    if (result != OSCONTAINER_ERROR) {
+      return double(result) / 1000000;
+    }
+  }
+
+  os::Linux::CPUPerfTicks ticks;
+  os::Linux::get_tick_information(&ticks, -1);
+  uint64_t sum = ticks.used + ticks.usedKernel;
+  return double(sum) / os::Posix::clock_tics_per_second();
+}
+
 #ifndef SYS_gettid
 // i386: 224, amd64: 186, sparc: 143
   #if defined(__i386__)
@@ -2866,6 +2880,11 @@ void os::pd_commit_memory_or_exit(char* addr, size_t size, bool exec,
   STATIC_ASSERT(MADV_POPULATE_WRITE == MADV_POPULATE_WRITE_value);
 #endif
 
+// Define MADV_COLLAPSE here so we can build HotSpot on old systems.
+#ifndef MADV_COLLAPSE
+#define MADV_COLLAPSE 25
+#endif
+
 // Note that the value for MAP_FIXED_NOREPLACE differs between architectures, but all architectures
 // supported by OpenJDK share the same flag value.
 #define MAP_FIXED_NOREPLACE_value 0x100000
@@ -2906,6 +2925,22 @@ void os::Linux::madvise_transparent_huge_pages(void* addr, size_t bytes) {
   // We don't check the return value: madvise(MADV_HUGEPAGE) may not
   // be supported or the memory may already be backed by huge pages.
   ::madvise(addr, bytes, MADV_HUGEPAGE);
+}
+
+bool os::Linux::madvise_collapse_transparent_huge_pages(void* addr, size_t bytes) {
+  // When MADV_COLLAPSE races with THP khugepaged, you sometimes get
+  // EAGAIN. We just do it again then.
+  for (;;) {
+    int result = ::madvise(addr, bytes, MADV_COLLAPSE);
+    if (result == 0) {
+      return true;
+    }
+    if (result == -1 && errno == EAGAIN) {
+      continue;
+    }
+
+    return false;
+  }
 }
 
 void os::pd_realign_memory(char *addr, size_t bytes, size_t alignment_hint) {
