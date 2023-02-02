@@ -58,6 +58,14 @@ void ZSharedArguments::initialize() {
   }
 }
 
+void ZSharedArguments::set_heap_size() {
+  GCArguments::set_heap_size();
+
+  if (ZGenerational) {
+    ZArguments::set_heap_size();
+  }
+}
+
 size_t ZSharedArguments::heap_virtual_to_physical_ratio() {
   if (ZGenerational) {
     return ZArguments::heap_virtual_to_physical_ratio();
