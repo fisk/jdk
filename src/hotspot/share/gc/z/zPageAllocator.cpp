@@ -24,6 +24,7 @@
 #include "precompiled.hpp"
 #include "gc/shared/gcLogPrecious.hpp"
 #include "gc/shared/suspendibleThreadSet.hpp"
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zArray.inline.hpp"
 #include "gc/z/zDriver.hpp"
 #include "gc/z/zFuture.inline.hpp"
@@ -189,6 +190,7 @@ ZPageAllocator::ZPageAllocator(size_t min_capacity,
     _initial_capacity(initial_capacity),
     _max_capacity(max_capacity),
     _current_max_capacity(max_capacity),
+    _heuristic_max_capacity(initial_capacity),
     _capacity(0),
     _claimed(0),
     _used(0),
@@ -296,7 +298,27 @@ size_t ZPageAllocator::soft_max_capacity() const {
   // Note that SoftMaxHeapSize is a manageable flag
   const size_t soft_max_capacity = Atomic::load(&SoftMaxHeapSize);
   const size_t current_max_capacity = Atomic::load(&_current_max_capacity);
-  return MIN2(soft_max_capacity, current_max_capacity);
+  const size_t heuristic_max_capacity = ZAdaptiveHeap::is_enabled() ? Atomic::load(&_heuristic_max_capacity)
+                                                                    : soft_max_capacity;
+  return MIN2(heuristic_max_capacity, current_max_capacity);
+}
+
+void ZPageAllocator::resize_heap(double resize_factor) {
+  const size_t soft_max_capacity = Atomic::load(&SoftMaxHeapSize);
+  const size_t current_max_capacity = Atomic::load(&_current_max_capacity);
+  const size_t heuristic_capacity = Atomic::load(&_heuristic_max_capacity);
+  const size_t suggested_capacity = heuristic_capacity * resize_factor;
+  const size_t current_capacity = Atomic::load(&_capacity);
+
+  const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
+  const size_t lower_bound = MIN2(size_t(used() * 1.1), upper_bound);
+
+  const size_t selected_capacity = clamp(suggested_capacity, lower_bound, upper_bound);
+
+  log_info(gc, adaptive)("Updated heap size: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
+                         selected_capacity / M, double(selected_capacity) / double(heuristic_capacity) * 100.0 - 100.0, current_capacity / M);
+
+  Atomic::store(&_heuristic_max_capacity, selected_capacity);
 }
 
 size_t ZPageAllocator::capacity() const {

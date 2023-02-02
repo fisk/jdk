@@ -72,6 +72,7 @@ private:
   const size_t               _initial_capacity;
   const size_t               _max_capacity;
   volatile size_t            _current_max_capacity;
+  volatile size_t            _heuristic_max_capacity;
   volatile size_t            _capacity;
   volatile size_t            _claimed;
   volatile size_t            _used;
@@ -141,6 +142,7 @@ public:
   size_t used() const;
   size_t used_generation(ZGenerationId id) const;
   size_t unused() const;
+  void resize_heap(double resize_factor);
 
   void promote_used(size_t size);
 

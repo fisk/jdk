@@ -29,6 +29,7 @@
 #include "gc/shared/gcVMOperations.hpp"
 #include "gc/shared/isGCActiveMark.hpp"
 #include "gc/shared/suspendibleThreadSet.hpp"
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zAllocator.inline.hpp"
 #include "gc/z/zBarrierSet.hpp"
 #include "gc/z/zBarrierSetAssembler.hpp"
@@ -380,6 +381,9 @@ void ZGeneration::at_collection_start(ConcurrentGCTimer* gc_timer) {
 
 void ZGeneration::at_collection_end() {
   workers()->set_inactive();
+  if (should_record_stats() && ZAdaptiveHeap::is_enabled()) {
+    ZAdaptiveHeap::adapt(_id);
+  }
   stat_cycle()->at_end(stat_workers(), should_record_stats());
   // The heap at collection end data is gathered at relocate end
   clear_gc_timer();

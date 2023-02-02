@@ -23,9 +23,11 @@
 
 #include "precompiled.hpp"
 #include "gc/z/zAddressSpaceLimit.hpp"
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zArguments.hpp"
 #include "gc/z/zCollectedHeap.hpp"
 #include "gc/z/zGlobals.hpp"
+#include "gc/z/zHeap.hpp"
 #include "gc/z/zHeuristics.hpp"
 #include "gc/shared/gcArguments.hpp"
 #include "runtime/globals.hpp"
@@ -38,16 +40,47 @@ void ZArguments::initialize_alignments() {
 }
 
 void ZArguments::initialize_heap_flags_and_sizes() {
-  if (!FLAG_IS_CMDLINE(MaxHeapSize) &&
-      !FLAG_IS_CMDLINE(MaxRAMPercentage) &&
-      !FLAG_IS_CMDLINE(SoftMaxHeapSize)) {
+  const double default_adaptive_max_heap_size_percent = 75.0;
+  const double default_adaptive_cpu_overhead_percent = 15.0;
+  const size_t default_adaptive_min_heap_size_bytes = 16 * M;
+
+  const bool unspecified_max_heap_size =  !FLAG_IS_CMDLINE(MaxHeapSize) &&
+                                          !FLAG_IS_CMDLINE(MaxRAMPercentage) &&
+                                          !FLAG_IS_CMDLINE(MaxRAM) &&
+                                          !FLAG_IS_CMDLINE(ErgoHeapSizeLimit);
+  const bool unspecified_min_heap_size =  !FLAG_IS_CMDLINE(MinHeapSize) &&
+                                          !FLAG_IS_CMDLINE(MinRAMPercentage);
+  const bool unspecified_init_heap_size = !FLAG_IS_CMDLINE(InitialHeapSize) &&
+                                          !FLAG_IS_CMDLINE(InitialRAMPercentage);
+  const bool unspecified_cpu_overhead =   !FLAG_IS_CMDLINE(ZCPUOverheadPercent);
+
+  if (unspecified_max_heap_size) {
     // We are really just guessing how much memory the program needs.
-    // When that is the case, we don't want the soft and hard limits to be the same
-    // as it can cause flakyness in the number of GC threads used, in order to keep
-    // to a random number we just pulled out of thin air.
-    FLAG_SET_ERGO(SoftMaxHeapSize, MaxHeapSize * 90 / 100);
+    // Let's guess something high but try to keep it down adaptively.
+    FLAG_SET_ERGO(MaxRAMPercentage, default_adaptive_max_heap_size_percent);
+    ZAdaptiveHeap::try_enable();
+  } else if (!unspecified_cpu_overhead) {
+    // There is a max heap size, but the user explicitly opted in to
+    // adaptive heap sizing.
+    ZAdaptiveHeap::try_enable();
   }
-}
+
+  if (!ZAdaptiveHeap::is_enabled()) {
+    // If adaptive heap sizing is switched off, we are done here.
+    return;
+  }
+
+  // Adaptive heap sizing is set up; figure out some defaults.
+  if (unspecified_cpu_overhead) {
+    FLAG_SET_ERGO(ZCPUOverheadPercent, default_adaptive_cpu_overhead_percent);
+  }
+  if (unspecified_min_heap_size) {
+    FLAG_SET_ERGO(MinHeapSize, default_adaptive_min_heap_size_bytes);
+  }
+  if (unspecified_init_heap_size) {
+    FLAG_SET_ERGO(InitialHeapSize, default_adaptive_min_heap_size_bytes);
+  }
+};
 
 void ZArguments::select_max_gc_threads() {
   // Select number of parallel threads
