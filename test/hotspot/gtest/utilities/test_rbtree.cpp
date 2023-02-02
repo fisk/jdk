@@ -194,6 +194,41 @@ public:
   }
 
   void test_visitors() {
+    {
+      RBTreeInt rbtree;
+      using Node = RBTreeIntNode;
+
+      rbtree.upsert(2, 0);
+      rbtree.upsert(5, 0);
+
+      rbtree.visit_range_in_order(0, 0, [&](const Node* x) {
+        EXPECT_TRUE(false) << "Range should not visit nodes";
+      });
+      rbtree.visit_range_in_order(0, 1, [&](const Node* x) {
+        EXPECT_TRUE(false) << "Range should not visit nodes";
+      });
+      rbtree.visit_range_in_order(1, 1, [&](const Node* x) {
+        EXPECT_TRUE(false) << "Range should not visit nodes";
+      });
+      rbtree.visit_range_in_order(3, 3, [&](const Node* x) {
+        EXPECT_TRUE(false) << "Range should not visit nodes";
+      });
+      rbtree.visit_range_in_order(3, 4, [&](const Node* x) {
+        EXPECT_TRUE(false) << "Range should not visit nodes";
+      });
+      rbtree.visit_range_in_order(4, 4, [&](const Node* x) {
+        EXPECT_TRUE(false) << "Range should not visit nodes";
+      });
+      rbtree.visit_range_in_order(6,6, [&](const Node* x) {
+        EXPECT_TRUE(false) << "Range should not visit nodes";
+      });
+      rbtree.visit_range_in_order(6, 7, [&](const Node* x) {
+        EXPECT_TRUE(false) << "Range should not visit nodes";
+      });
+      rbtree.visit_range_in_order(7, 7, [&](const Node* x) {
+        EXPECT_TRUE(false) << "Range should not visit nodes";
+      });
+    }
     { // Tests with 'default' ordering (ascending)
       RBTreeInt rbtree;
       const RBTreeInt& rbtree_const = rbtree;

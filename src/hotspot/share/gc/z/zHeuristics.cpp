@@ -55,7 +55,7 @@ void ZHeuristics::set_medium_page_size() {
 size_t ZHeuristics::relocation_headroom() {
   // Calculate headroom needed to avoid in-place relocation. Each worker will try
   // to allocate a small page, and all workers will share a single medium page.
-  return (ConcGCThreads * ZPageSizeSmall) + ZPageSizeMedium;
+  return (nconcurrent_workers() * ZPageSizeSmall) + ZPageSizeMedium;
 }
 
 bool ZHeuristics::use_per_cpu_shared_small_pages() {

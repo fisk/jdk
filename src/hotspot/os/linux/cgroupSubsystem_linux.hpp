@@ -216,6 +216,18 @@ class CgroupCpuController: public CHeapObj<mtInternal> {
     virtual const char* cgroup_path() = 0;
 };
 
+// Pure virtual class representing version agnostic CPU accounting controllers
+class CgroupCpuacctController: public CHeapObj<mtInternal> {
+  public:
+    virtual jlong cpu_usage_in_micros() = 0;
+    virtual bool needs_hierarchy_adjustment() = 0;
+    virtual bool is_read_only() = 0;
+    virtual const char* subsystem_path() = 0;
+    virtual void set_subsystem_path(const char* cgroup_path) = 0;
+    virtual const char* mount_point() = 0;
+    virtual const char* cgroup_path() = 0;
+};
+
 // Pure virtual class representing version agnostic memory controllers
 class CgroupMemoryController: public CHeapObj<mtInternal> {
   public:
@@ -250,6 +262,7 @@ class CgroupSubsystem: public CHeapObj<mtInternal> {
     virtual const char * container_type() = 0;
     virtual CachingCgroupController<CgroupMemoryController>* memory_controller() = 0;
     virtual CachingCgroupController<CgroupCpuController>* cpu_controller() = 0;
+    virtual CgroupCpuacctController* cpuacct_controller() = 0;
 
     int cpu_quota();
     int cpu_period();
@@ -262,6 +275,7 @@ class CgroupSubsystem: public CHeapObj<mtInternal> {
     jlong memory_max_usage_in_bytes();
     jlong rss_usage_in_bytes();
     jlong cache_usage_in_bytes();
+    jlong cpu_usage_in_micros();
     void print_version_specific_info(outputStream* st);
 };
 

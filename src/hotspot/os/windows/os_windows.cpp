@@ -104,6 +104,8 @@
 #include <fcntl.h>
 #include <io.h>
 #include <process.h>              // For _beginthreadex(), _endthreadex()
+#include <processthreadsapi.h>
+#include <timezoneapi.h>
 #include <imagehlp.h>             // For os::dll_address_to_function_name
 // for enumerating dll libraries
 #include <vdmdbg.h>
@@ -1192,6 +1194,52 @@ double os::elapsedVTime() {
   } else {
     return elapsedTime();
   }
+}
+
+double os::elapsed_process_vtime() {
+  FILETIME create;
+  FILETIME exit;
+  FILETIME kernel;
+  FILETIME user;
+
+  guarantee(GetProcessTimes(GetCurrentProcess(), &create, &exit, &kernel, &user) != 0,
+            "wrong arguments to GetProcessTimes");
+
+  SYSTEMTIME user_total;
+  guarantee(FileTimeToSystemTime(&user, &user_total) != 0,
+            "wrong arguments to FileTimeToSystemTime");
+
+  SYSTEMTIME kernel_total;
+  guarantee(FileTimeToSystemTime(&kernel, &kernel_total) != 0,
+            "wrong arguments to FileTimeToSystemTime");
+
+  double user_seconds = double(user_total.wHour) * 3600.0 +
+    double(user_total.wMinute) * 60.0 +
+    double(user_total.wSecond) +
+    double(user_total.wMilliseconds) / 1000.0;
+
+  double kernel_seconds = double(kernel_total.wHour) * 3600.0 +
+    double(kernel_total.wMinute) * 60.0 +
+    double(kernel_total.wSecond) +
+    double(kernel_total.wMilliseconds) / 1000.0;
+
+  return user_seconds + kernel_seconds;
+}
+
+double os::elapsed_system_vtime() {
+  FILETIME idle, kernel, user;
+  if (GetSystemTimes(&idle, &kernel, &user) == 0) {
+    assert(false, "this should not fail");
+    return 0.0;
+  }
+
+  // Kernel time includes idle time
+  jlong ticks = windows_to_time_ticks(user) +
+                windows_to_time_ticks(kernel) -
+                windows_to_time_ticks(idle);
+
+  // Ticks are 100 ns
+  return double(ticks) / 10000000.0;
 }
 
 jlong os::javaTimeMillis() {
