@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -21,28 +21,33 @@
  * questions.
  */
 
-#ifndef SHARE_GC_Z_ZARGUMENTS_HPP
-#define SHARE_GC_Z_ZARGUMENTS_HPP
+#ifndef SHARE_GC_Z_ZCOMMITTER_HPP
+#define SHARE_GC_Z_ZCOMMITTER_HPP
 
-#include "gc/shared/gcArguments.hpp"
+#include "gc/z/zList.hpp"
+#include "gc/z/zLock.hpp"
+#include "gc/z/zThread.hpp"
 
-class CollectedHeap;
+class ZPage;
+class ZPageAllocator;
 
-class ZArguments : AllStatic {
+class ZCommitter : public ZThread {
 private:
-  static void select_max_gc_threads();
+  ZPageAllocator* const _page_allocator;
+  ZConditionLock        _lock;
+  volatile size_t       _target_capacity;
+  bool                  _stop;
+
+  bool dequeue();
+
+protected:
+  virtual void run_thread();
+  virtual void terminate();
 
 public:
-  static void initialize_alignments();
-  static void initialize_heap_flags_and_sizes();
-  static void set_heap_size();
-  static void initialize();
-  static size_t heap_virtual_to_physical_ratio();
-  static CollectedHeap* create_heap();
+  ZCommitter(ZPageAllocator* page_allocator);
 
-  static bool is_supported();
-
-  static bool is_os_supported();
+  void set_target_capacity(size_t target_capacity);
 };
 
-#endif // SHARE_GC_Z_ZARGUMENTS_HPP
+#endif // SHARE_GC_Z_ZCOMMITTER_HPP

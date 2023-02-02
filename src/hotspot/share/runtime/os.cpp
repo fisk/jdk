@@ -78,10 +78,12 @@
 #include "utilities/macros.hpp"
 #include "utilities/powerOfTwo.hpp"
 
+#ifdef __APPLE__
+# include "os_bsd.hpp"
+#endif
 #ifdef LINUX
 #include "osContainer_linux.hpp"
 #endif
-
 #ifndef _WINDOWS
 # include <poll.h>
 #endif
@@ -2073,6 +2075,13 @@ julong os::used_memory() {
   return os::physical_memory() - os::available_memory();
 }
 
+julong os::compressed_memory() {// TODO: Move somewhere better
+#ifdef __APPLE__
+  return os::Bsd::compressed_memory();
+#else
+  return 0;
+#endif
+}
 
 bool os::commit_memory(char* addr, size_t bytes, bool executable) {
   assert_nonempty_range(addr, bytes);
