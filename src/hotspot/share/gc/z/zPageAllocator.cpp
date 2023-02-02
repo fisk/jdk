@@ -24,6 +24,7 @@
 #include "precompiled.hpp"
 #include "gc/shared/gcLogPrecious.hpp"
 #include "gc/shared/suspendibleThreadSet.hpp"
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zArray.inline.hpp"
 #include "gc/z/zDriver.hpp"
 #include "gc/z/zFuture.inline.hpp"
@@ -31,6 +32,7 @@
 #include "gc/z/zGenerationId.hpp"
 #include "gc/z/zGlobals.hpp"
 #include "gc/z/zLock.inline.hpp"
+#include "gc/z/zMapper.hpp"
 #include "gc/z/zPage.inline.hpp"
 #include "gc/z/zPageAge.hpp"
 #include "gc/z/zPageAllocator.inline.hpp"
@@ -48,6 +50,8 @@
 #include "runtime/java.hpp"
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
+
+#include <math.h>
 
 static const ZStatCounter       ZCounterMutatorAllocationRate("Memory", "Allocation Rate", ZStatUnitBytesPerSecond);
 static const ZStatCounter       ZCounterPageCacheFlush("Memory", "Page Cache Flush", ZStatUnitBytesPerSecond);
@@ -189,12 +193,14 @@ ZPageAllocator::ZPageAllocator(size_t min_capacity,
     _initial_capacity(initial_capacity),
     _max_capacity(max_capacity),
     _current_max_capacity(max_capacity),
+    _heuristic_max_capacity(initial_capacity),
     _capacity(0),
     _claimed(0),
     _used(0),
     _used_generations{0, 0},
     _collection_stats{{0, 0}, {0, 0}},
     _stalled(),
+    _mapper(new ZMapper(this)),
     _unmapper(new ZUnmapper(this)),
     _uncommitter(new ZUncommitter(this)),
     _safe_destroy(),
@@ -280,6 +286,24 @@ bool ZPageAllocator::prime_cache(ZWorkers* workers, size_t size) {
   return true;
 }
 
+void ZPageAllocator::prime_alloc_page(size_t size) {
+  ZAllocationFlags flags;
+  flags.set_non_blocking();
+  flags.set_low_address();
+  flags.set_no_cache();
+
+  ZPage* const page = alloc_page(ZPageType::large, size, flags, ZPageAge::eden);
+  if (page == nullptr) {
+    return;
+  }
+
+  // Pre-touch page
+  _physical.pretouch(page->start(), size);
+
+  // Populate page cache
+  free_page(page);
+}
+
 size_t ZPageAllocator::initial_capacity() const {
   return _initial_capacity;
 }
@@ -292,11 +316,41 @@ size_t ZPageAllocator::max_capacity() const {
   return _max_capacity;
 }
 
-size_t ZPageAllocator::soft_max_capacity() const {
+size_t ZPageAllocator::heuristic_max_capacity() const {
   // Note that SoftMaxHeapSize is a manageable flag
   const size_t soft_max_capacity = Atomic::load(&SoftMaxHeapSize);
   const size_t current_max_capacity = Atomic::load(&_current_max_capacity);
-  return MIN2(soft_max_capacity, current_max_capacity);
+  const size_t heuristic_max_capacity = ZAdaptiveHeap::is_enabled() ? Atomic::load(&_heuristic_max_capacity)
+                                                                    : soft_max_capacity;
+  return MIN2(heuristic_max_capacity, current_max_capacity);
+}
+
+void ZPageAllocator::set_target_capacity(size_t target_capacity) {
+  _mapper->set_target_capacity(target_capacity);
+}
+
+void ZPageAllocator::adapt_heuristic_max_capacity(ZGenerationId generation) {
+  const size_t current_max_capacity = Atomic::load(&_current_max_capacity);
+  const size_t soft_max_capacity = MIN2(Atomic::load(&SoftMaxHeapSize), current_max_capacity);
+  const size_t heuristic_max_capacity = MIN2(Atomic::load(&_heuristic_max_capacity), soft_max_capacity);
+  const size_t min_capacity = MIN2(_min_capacity, soft_max_capacity);
+  const size_t current_capacity = Atomic::load(&_capacity);
+  const size_t used = Atomic::load(&_used);
+  const double alloc_rate = ZStatMutatorAllocRate::stats()._avg;
+
+  ZHeapResizeMetrics metrics = {
+    soft_max_capacity,
+    current_max_capacity,
+    heuristic_max_capacity,
+    min_capacity,
+    current_capacity,
+    used,
+    alloc_rate
+  };
+
+  const size_t selected_capacity = ZAdaptiveHeap::compute_heap_size(&metrics, generation);
+
+  Atomic::store(&_heuristic_max_capacity, selected_capacity);
 }
 
 size_t ZPageAllocator::capacity() const {
@@ -323,7 +377,7 @@ ZPageAllocatorStats ZPageAllocator::stats(ZGeneration* generation) const {
   ZLocker<ZLock> locker(&_lock);
   return ZPageAllocatorStats(_min_capacity,
                              _max_capacity,
-                             soft_max_capacity(),
+                             heuristic_max_capacity(),
                              _capacity,
                              _used,
                              _collection_stats[(int)generation->id()]._used_high,
@@ -462,19 +516,20 @@ void ZPageAllocator::destroy_page(ZPage* page) {
   safe_destroy_page(page);
 }
 
-bool ZPageAllocator::is_alloc_allowed(size_t size) const {
-  const size_t available = _current_max_capacity - _used - _claimed;
+bool ZPageAllocator::is_alloc_allowed(size_t size, bool use_cache) const {
+  const size_t unavailable = use_cache ? _used : _capacity;
+  const size_t available = _current_max_capacity - unavailable - _claimed;
   return available >= size;
 }
 
-bool ZPageAllocator::alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages) {
-  if (!is_alloc_allowed(size)) {
+bool ZPageAllocator::alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages, bool use_cache) {
+  if (!is_alloc_allowed(size, use_cache)) {
     // Out of memory
     return false;
   }
 
   // Try allocate from the page cache
-  ZPage* const page = _cache.alloc_page(type, size);
+  ZPage* const page = use_cache ? _cache.alloc_page(type, size) : nullptr;
   if (page != nullptr) {
     // Success
     pages->insert_last(page);
@@ -500,7 +555,7 @@ bool ZPageAllocator::alloc_page_common(ZPageAllocation* allocation) {
   const ZAllocationFlags flags = allocation->flags();
   ZList<ZPage>* const pages = allocation->pages();
 
-  if (!alloc_page_common_inner(type, size, pages)) {
+  if (!alloc_page_common_inner(type, size, pages, flags.use_cache())) {
     // Out of memory
     return false;
   }
@@ -858,6 +913,12 @@ void ZPageAllocator::free_pages_alloc_failed(ZPageAllocation* allocation) {
   satisfy_stalled();
 }
 
+void ZPageAllocator::maybe_uncommit() {
+  if (_cache.may_uncommit()) {
+    _uncommitter->wake_up();
+  }
+}
+
 size_t ZPageAllocator::uncommit(uint64_t* timeout) {
   // We need to join the suspendible thread set while manipulating capacity and
   // used, to make sure GC safepoints will have a consistent view.
@@ -871,9 +932,10 @@ size_t ZPageAllocator::uncommit(uint64_t* timeout) {
     // Never uncommit below min capacity. We flush out and uncommit chunks at
     // a time (~0.8% of the max capacity, but at least one granule and at most
     // 256M), in case demand for memory increases while we are uncommitting.
-    const size_t retain = MAX2(_used, _min_capacity);
-    const size_t release = _capacity - retain;
-    const size_t limit = MIN2(align_up(_current_max_capacity >> 7, ZGranuleSize), 256 * M);
+    const size_t heuristic_max = heuristic_max_capacity();
+    const size_t retain = clamp(size_t(_used * 1.05), _min_capacity, _max_capacity);
+    const size_t release = align_down(_capacity - retain, ZGranuleSize);
+    const size_t limit = MIN2(align_up(heuristic_max >> 7, ZGranuleSize), 256 * M);
     const size_t flush = MIN2(release, limit);
 
     // Flush pages to uncommit
@@ -881,6 +943,14 @@ size_t ZPageAllocator::uncommit(uint64_t* timeout) {
     if (flushed == 0) {
       // Nothing flushed
       return 0;
+    }
+
+    if (heuristic_max > _capacity) {
+      // The heap has shrunk; update heuristic heap size to reflect if necessary
+      log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
+                          _capacity / M, double(_capacity) / double(heuristic_max) * 100.0 - 100.0, _capacity / M);
+      set_target_capacity(_capacity);
+      Atomic::store(&_heuristic_max_capacity, _capacity);
     }
 
     // Record flushed pages as claimed
@@ -994,6 +1064,7 @@ void ZPageAllocator::handle_alloc_stalling_for_old(bool cleared_soft_refs) {
 }
 
 void ZPageAllocator::threads_do(ThreadClosure* tc) const {
+  tc->do_thread(_mapper);
   tc->do_thread(_unmapper);
   tc->do_thread(_uncommitter);
 }

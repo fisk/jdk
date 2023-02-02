@@ -23,6 +23,7 @@
 
 #include "precompiled.hpp"
 #include "gc/shared/gc_globals.hpp"
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zHeap.inline.hpp"
 #include "gc/z/zLock.inline.hpp"
 #include "gc/z/zStat.hpp"
@@ -92,5 +93,10 @@ void ZUncommitter::run_thread() {
 void ZUncommitter::terminate() {
   ZLocker<ZConditionLock> locker(&_lock);
   _stop = true;
+  _lock.notify_all();
+}
+
+void ZUncommitter::wake_up() {
+  ZLocker<ZConditionLock> locker(&_lock);
   _lock.notify_all();
 }

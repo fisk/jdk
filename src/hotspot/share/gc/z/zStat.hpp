@@ -352,6 +352,7 @@ struct ZStatMutatorAllocRateStats {
   double _avg;
   double _predict;
   double _sd;
+  size_t _sampling_granule;
 };
 
 //
@@ -603,7 +604,7 @@ private:
   } _at_initialize;
 
   struct ZAtGenerationCollectionStart {
-    size_t soft_max_capacity;
+    size_t heuristic_max_capacity;
     size_t capacity;
     size_t free;
     size_t used;
@@ -611,7 +612,7 @@ private:
   } _at_collection_start;
 
   struct ZAtMarkStart {
-    size_t soft_max_capacity;
+    size_t heuristic_max_capacity;
     size_t capacity;
     size_t free;
     size_t used;

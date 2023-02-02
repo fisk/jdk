@@ -37,6 +37,7 @@
 
 class ThreadClosure;
 class ZGeneration;
+class ZMapper;
 class ZPageAllocation;
 class ZPageAllocator;
 class ZPageAllocatorStats;
@@ -60,6 +61,7 @@ public:
 
 class ZPageAllocator {
   friend class VMStructs;
+  friend class ZMapper;
   friend class ZUnmapper;
   friend class ZUncommitter;
 
@@ -72,6 +74,7 @@ private:
   const size_t               _initial_capacity;
   const size_t               _max_capacity;
   volatile size_t            _current_max_capacity;
+  volatile size_t            _heuristic_max_capacity;
   volatile size_t            _capacity;
   volatile size_t            _claimed;
   volatile size_t            _used;
@@ -81,6 +84,7 @@ private:
     size_t                   _used_low;
   } _collection_stats[2];
   ZList<ZPageAllocation>     _stalled;
+  ZMapper*                   _mapper;
   ZUnmapper*                 _unmapper;
   ZUncommitter*              _uncommitter;
   mutable ZSafeDelete<ZPage> _safe_destroy;
@@ -102,11 +106,13 @@ private:
   void map_page(const ZPage* page) const;
   void unmap_page(const ZPage* page) const;
 
+  void prime_alloc_page(size_t size);
+
   void destroy_page(ZPage* page);
 
-  bool is_alloc_allowed(size_t size) const;
+  bool is_alloc_allowed(size_t size, bool use_cache) const;
 
-  bool alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages);
+  bool alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages, bool use_cache);
   bool alloc_page_common(ZPageAllocation* allocation);
   bool alloc_page_stall(ZPageAllocation* allocation);
   bool alloc_page_or_stall(ZPageAllocation* allocation);
@@ -136,11 +142,16 @@ public:
   size_t initial_capacity() const;
   size_t min_capacity() const;
   size_t max_capacity() const;
-  size_t soft_max_capacity() const;
+  size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;
   size_t used_generation(ZGenerationId id) const;
   size_t unused() const;
+
+  // Automatic heap sizing
+  void set_target_capacity(size_t target_capacity); // TODO: Do we need both this and maybe_uncommit?!
+  void adapt_heuristic_max_capacity(ZGenerationId generation);
+  void maybe_uncommit();
 
   void promote_used(size_t size);
 
@@ -172,7 +183,7 @@ class ZPageAllocatorStats {
 private:
   size_t _min_capacity;
   size_t _max_capacity;
-  size_t _soft_max_capacity;
+  size_t _heuristic_max_capacity;
   size_t _capacity;
   size_t _used;
   size_t _used_high;
@@ -186,7 +197,7 @@ private:
 public:
   ZPageAllocatorStats(size_t min_capacity,
                       size_t max_capacity,
-                      size_t soft_max_capacity,
+                      size_t heuristic_max_capacity,
                       size_t capacity,
                       size_t used,
                       size_t used_high,
@@ -199,7 +210,7 @@ public:
 
   size_t min_capacity() const;
   size_t max_capacity() const;
-  size_t soft_max_capacity() const;
+  size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;
   size_t used_high() const;

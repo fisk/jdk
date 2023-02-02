@@ -351,9 +351,7 @@ void ZPhysicalMemoryBacking::warn_max_map_count(size_t max_capacity) const {
   // The required max map count is impossible to calculate exactly since subsystems
   // other than ZGC are also creating memory mappings, and we have no control over that.
   // However, ZGC tends to create the most mappings and dominate the total count.
-  // In the worst cases, ZGC will map each granule three times, i.e. once per heap view.
-  // We speculate that we need another 20% to allow for non-ZGC subsystems to map memory.
-  const size_t required_max_map_count = (max_capacity / ZGranuleSize) * 3 * 1.2;
+  const size_t required_max_map_count = (max_capacity / ZGranuleSize) * 1.2;
   if (actual_max_map_count < required_max_map_count) {
     log_warning_p(gc)("***** WARNING! INCORRECT SYSTEM CONFIGURATION DETECTED! *****");
     log_warning_p(gc)("The system limit on number of memory mappings per process might be too low for the given");
@@ -366,6 +364,7 @@ void ZPhysicalMemoryBacking::warn_max_map_count(size_t max_capacity) const {
 }
 
 void ZPhysicalMemoryBacking::warn_commit_limits(size_t max_capacity) const {
+  // TODO: Find way of disabling this when xmx not specified
   // Warn if available space is too low
   warn_available_space(max_capacity);
 
