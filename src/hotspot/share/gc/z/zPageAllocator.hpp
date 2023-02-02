@@ -37,6 +37,7 @@
 
 class ThreadClosure;
 class ZGeneration;
+class ZCommitter;
 class ZPageAllocation;
 class ZPageAllocator;
 class ZPageAllocatorStats;
@@ -60,6 +61,7 @@ public:
 
 class ZPageAllocator {
   friend class VMStructs;
+  friend class ZCommitter;
   friend class ZUnmapper;
   friend class ZUncommitter;
 
@@ -70,8 +72,8 @@ private:
   ZPhysicalMemoryManager     _physical;
   const size_t               _min_capacity;
   const size_t               _initial_capacity;
-  const size_t               _max_capacity;
-  volatile size_t            _current_max_capacity;
+  const size_t               _static_max_capacity;
+  volatile size_t            _heuristic_max_capacity;
   volatile size_t            _capacity;
   volatile size_t            _claimed;
   volatile size_t            _used;
@@ -82,13 +84,14 @@ private:
   } _collection_stats[2];
   ZList<ZPageAllocation>     _stalled;
   ZUnmapper*                 _unmapper;
+  ZCommitter*                _committer;
   ZUncommitter*              _uncommitter;
   mutable ZSafeDelete<ZPage> _safe_destroy;
   mutable ZSafePageRecycle   _safe_recycle;
   bool                       _initialized;
 
-  size_t increase_capacity(size_t size);
-  void decrease_capacity(size_t size, bool set_max_capacity);
+  size_t increase_capacity(size_t size, size_t curr_max_capacity);
+  void decrease_capacity(size_t size);
 
   void increase_used(size_t size);
   void decrease_used(size_t size);
@@ -102,14 +105,17 @@ private:
   void map_page(const ZPage* page) const;
   void unmap_page(const ZPage* page) const;
 
+  bool prime_alloc_page(size_t size);
+  void request_alloc_heating(ZPage* page, ZPageAllocation* allocation);
+
   void destroy_page(ZPage* page);
 
   bool should_defragment(const ZPage* page) const;
   ZPage* defragment_page(ZPage* page);
 
-  bool is_alloc_allowed(size_t size) const;
+  bool is_alloc_allowed(size_t size, size_t curr_max_capacity, bool use_cache) const;
 
-  bool alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages);
+  bool alloc_page_common_inner(ZPageType type, size_t size, size_t curr_max_capacity, ZList<ZPage>* pages, bool use_cache);
   bool alloc_page_common(ZPageAllocation* allocation);
   bool alloc_page_stall(ZPageAllocation* allocation);
   bool alloc_page_or_stall(ZPageAllocation* allocation);
@@ -120,7 +126,7 @@ private:
 
   void satisfy_stalled();
 
-  size_t uncommit(uint64_t* timeout);
+  size_t uncommit(uint64_t* timeout, size_t limit);
 
   void notify_out_of_memory();
   void restart_gc() const;
@@ -129,20 +135,28 @@ public:
   ZPageAllocator(size_t min_capacity,
                  size_t initial_capacity,
                  size_t soft_max_capacity,
-                 size_t max_capacity);
+                 size_t initial_max_capacity,
+                 size_t static_max_capacity);
 
   bool is_initialized() const;
 
   bool prime_cache(ZWorkers* workers, size_t size);
+  void heat_memory(zoffset start, size_t size) const;
 
   size_t initial_capacity() const;
   size_t min_capacity() const;
-  size_t max_capacity() const;
-  size_t soft_max_capacity() const;
+  size_t static_max_capacity() const;
+  size_t dynamic_max_capacity() const;
+  size_t current_max_capacity() const;
+  size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;
   size_t used_generation(ZGenerationId id) const;
   size_t unused() const;
+
+  // Automatic heap sizing
+  void adapt_heuristic_max_capacity(ZGenerationId generation);
+  void adjust_capacity(size_t used_soon);
 
   void promote_used(size_t size);
 
@@ -174,8 +188,7 @@ public:
 class ZPageAllocatorStats {
 private:
   size_t _min_capacity;
-  size_t _max_capacity;
-  size_t _soft_max_capacity;
+  size_t _heuristic_max_capacity;
   size_t _capacity;
   size_t _used;
   size_t _used_high;
@@ -188,8 +201,7 @@ private:
 
 public:
   ZPageAllocatorStats(size_t min_capacity,
-                      size_t max_capacity,
-                      size_t soft_max_capacity,
+                      size_t heuristic_max_capacity,
                       size_t capacity,
                       size_t used,
                       size_t used_high,
@@ -201,8 +213,7 @@ public:
                       size_t allocation_stalls);
 
   size_t min_capacity() const;
-  size_t max_capacity() const;
-  size_t soft_max_capacity() const;
+  size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;
   size_t used_high() const;

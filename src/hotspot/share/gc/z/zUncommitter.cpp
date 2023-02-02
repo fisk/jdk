@@ -22,12 +22,16 @@
  */
 
 #include "gc/shared/gc_globals.hpp"
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zHeap.inline.hpp"
 #include "gc/z/zLock.inline.hpp"
 #include "gc/z/zStat.hpp"
 #include "gc/z/zUncommitter.hpp"
 #include "jfr/jfrEvents.hpp"
 #include "logging/log.hpp"
+#include "runtime/init.hpp"
+
+#include <limits>
 
 static const ZStatCounter ZCounterUncommit("Memory", "Uncommit", ZStatUnitBytesPerSecond);
 
@@ -45,7 +49,15 @@ bool ZUncommitter::wait(uint64_t timeout) const {
     _lock.wait();
   }
 
-  if (!_stop && timeout > 0) {
+  if (_stop) {
+    // Stop
+    return false;
+  }
+
+  if (timeout == std::numeric_limits<uint64_t>::max()) {
+    log_debug(gc, heap)("Uncommit Timeout: infinity");
+    _lock.wait();
+  } else if (timeout > 0) {
     log_debug(gc, heap)("Uncommit Timeout: " UINT64_FORMAT "s", timeout);
     _lock.wait(timeout * MILLIUNITS);
   }
@@ -55,7 +67,7 @@ bool ZUncommitter::wait(uint64_t timeout) const {
 
 bool ZUncommitter::should_continue() const {
   ZLocker<ZConditionLock> locker(&_lock);
-  return !_stop;
+  return is_init_completed() && !_stop;
 }
 
 void ZUncommitter::run_thread() {
@@ -67,7 +79,9 @@ void ZUncommitter::run_thread() {
 
     while (should_continue()) {
       // Uncommit chunk
-      const size_t flushed = _page_allocator->uncommit(&timeout);
+      const size_t heuristic_max = ZHeap::heap()->heuristic_max_capacity();
+      const size_t uncommit_request = MIN2(align_up(heuristic_max >> 7, ZGranuleSize), 256 * M);
+      const size_t flushed = _page_allocator->uncommit(&timeout, uncommit_request);
       if (flushed == 0) {
         // Done
         break;
@@ -80,7 +94,7 @@ void ZUncommitter::run_thread() {
       // Update statistics
       ZStatInc(ZCounterUncommit, uncommitted);
       log_info(gc, heap)("Uncommitted: %zuM(%.0f%%)",
-                         uncommitted / M, percent_of(uncommitted, ZHeap::heap()->max_capacity()));
+                         uncommitted / M, percent_of(uncommitted, ZHeap::heap()->dynamic_max_capacity()));
 
       // Send event
       event.commit(uncommitted);
@@ -91,5 +105,10 @@ void ZUncommitter::run_thread() {
 void ZUncommitter::terminate() {
   ZLocker<ZConditionLock> locker(&_lock);
   _stop = true;
+  _lock.notify_all();
+}
+
+void ZUncommitter::wake_up() {
+  ZLocker<ZConditionLock> locker(&_lock);
   _lock.notify_all();
 }

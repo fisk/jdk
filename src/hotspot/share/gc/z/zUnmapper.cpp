@@ -84,7 +84,7 @@ bool ZUnmapper::try_enqueue(ZPage* page) {
 }
 
 size_t ZUnmapper::queue_capacity() const {
-  return align_up((size_t)(_page_allocator->max_capacity() * ZAsyncUnmappingLimit / 100.0), ZGranuleSize);
+  return align_up((size_t)(_page_allocator->capacity() * ZAsyncUnmappingLimit / 100.0), ZGranuleSize);
 }
 
 bool ZUnmapper::is_saturated() const {

@@ -38,13 +38,15 @@ public:
 
   bool is_initialized() const;
 
-  void warn_commit_limits(size_t max_capacity) const;
+  void warn_commit_limits(size_t expected_capacity, size_t max_capacity) const;
 
   size_t commit(zoffset offset, size_t length) const;
   size_t uncommit(zoffset offset, size_t length) const;
 
   void map(zaddress_unsafe addr, size_t size, zoffset offset) const;
   void unmap(zaddress_unsafe addr, size_t size) const;
+
+  void collapse(zaddress_unsafe addr, size_t size) const;
 };
 
 #endif // OS_BSD_GC_Z_ZPHYSICALMEMORYBACKING_BSD_HPP

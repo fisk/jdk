@@ -26,6 +26,7 @@
 #include "gc/shared/gcLogPrecious.hpp"
 #include "gc/shared/locationPrinter.hpp"
 #include "gc/shared/tlab_globals.hpp"
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zAddress.inline.hpp"
 #include "gc/z/zArray.inline.hpp"
 #include "gc/z/zGeneration.inline.hpp"
@@ -47,6 +48,7 @@
 #include "memory/metaspaceUtils.hpp"
 #include "memory/resourceArea.hpp"
 #include "runtime/javaThread.hpp"
+#include "runtime/os.hpp"
 #include "utilities/debug.hpp"
 
 static const ZStatCounter ZCounterUndoPageAllocation("Memory", "Undo Page Allocation", ZStatUnitOpsPerSecond);
@@ -54,12 +56,32 @@ static const ZStatCounter ZCounterOutOfMemory("Memory", "Out Of Memory", ZStatUn
 
 ZHeap* ZHeap::_heap = nullptr;
 
+// The maximum heap size ever achievable on this system, during its lifetime.
+static size_t compute_static_max_capacity() {
+  if (ZAdaptiveHeap::explicit_max_capacity()) {
+    return MaxHeapSize;
+  }
+
+  // We might need to scale up to most of the underlying machine memory. Note that
+  // container sizes may change, so we need to prepare for sizing up larger than
+  // the container size reported by os::physical_memory.
+  size_t machine_memory;
+#ifdef LINUX
+  machine_memory = os::Linux::physical_memory();
+#else
+  machine_memory = os::physical_memory();
+#endif
+
+  const size_t max = align_down(size_t(machine_memory * (1.0 - ZMemoryCriticalThreshold)), ZGranuleSize);
+  return MAX2(max, MinHeapSize);
+}
+
 ZHeap::ZHeap()
-  : _page_allocator(MinHeapSize, InitialHeapSize, SoftMaxHeapSize, MaxHeapSize),
+  : _page_allocator(MinHeapSize, InitialHeapSize, SoftMaxHeapSize, MaxHeapSize, compute_static_max_capacity()),
     _page_table(),
     _allocator_eden(),
     _allocator_relocation(),
-    _serviceability(initial_capacity(), min_capacity(), max_capacity()),
+    _serviceability(initial_capacity(), min_capacity(), MaxHeapSize),
     _old(&_page_table, &_page_allocator),
     _young(&_page_table, _old.forwarding_table(), &_page_allocator),
     _initialized(false) {
@@ -83,8 +105,8 @@ ZHeap::ZHeap()
   }
 
   // Update statistics
-  _young.stat_heap()->at_initialize(_page_allocator.min_capacity(), _page_allocator.max_capacity());
-  _old.stat_heap()->at_initialize(_page_allocator.min_capacity(), _page_allocator.max_capacity());
+  _young.stat_heap()->at_initialize(_page_allocator.min_capacity(), MaxHeapSize);
+  _old.stat_heap()->at_initialize(_page_allocator.min_capacity(), MaxHeapSize);
 
   // Successfully initialized
   _initialized = true;
@@ -102,12 +124,20 @@ size_t ZHeap::min_capacity() const {
   return _page_allocator.min_capacity();
 }
 
-size_t ZHeap::max_capacity() const {
-  return _page_allocator.max_capacity();
+size_t ZHeap::static_max_capacity() const {
+  return _page_allocator.static_max_capacity();
 }
 
-size_t ZHeap::soft_max_capacity() const {
-  return _page_allocator.soft_max_capacity();
+size_t ZHeap::dynamic_max_capacity() const {
+  return _page_allocator.dynamic_max_capacity();
+}
+
+size_t ZHeap::current_max_capacity() const {
+  return _page_allocator.current_max_capacity();
+}
+
+size_t ZHeap::heuristic_max_capacity() const {
+  return _page_allocator.heuristic_max_capacity();
 }
 
 size_t ZHeap::capacity() const {
@@ -116,6 +146,14 @@ size_t ZHeap::capacity() const {
 
 size_t ZHeap::used() const {
   return _page_allocator.used();
+}
+
+void ZHeap::adapt_heuristic_max_capacity(ZGenerationId generation) {
+  _page_allocator.adapt_heuristic_max_capacity(generation);
+}
+
+void ZHeap::adjust_capacity(size_t used_soon) {
+  _page_allocator.adjust_capacity(used_soon);
 }
 
 size_t ZHeap::used_generation(ZGenerationId id) const {
@@ -322,7 +360,7 @@ void ZHeap::print_on(outputStream* st) const {
   st->print_cr(" ZHeap           used %zuM, capacity %zuM, max capacity %zuM",
                used() / M,
                capacity() / M,
-               max_capacity() / M);
+               dynamic_max_capacity() / M);
   MetaspaceUtils::print_on(st);
 }
 

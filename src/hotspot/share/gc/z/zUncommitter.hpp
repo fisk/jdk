@@ -44,6 +44,8 @@ protected:
 
 public:
   ZUncommitter(ZPageAllocator* page_allocator);
+
+  void wake_up();
 };
 
 #endif // SHARE_GC_Z_ZUNCOMMITTER_HPP

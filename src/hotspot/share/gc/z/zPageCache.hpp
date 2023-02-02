@@ -36,7 +36,7 @@ private:
   ZPerNUMA<ZList<ZPage> > _small;
   ZList<ZPage>            _medium;
   ZList<ZPage>            _large;
-  uint64_t                _last_commit;
+  volatile uint64_t       _last_commit;
 
   ZPage* alloc_small_page();
   ZPage* alloc_medium_page();
@@ -58,8 +58,10 @@ public:
   void free_page(ZPage* page);
 
   void flush_for_allocation(size_t requested, ZList<ZPage>* to);
+  size_t flush_for_uncommit(size_t requested, ZList<ZPage>* to);
   size_t flush_for_uncommit(size_t requested, ZList<ZPage>* to, uint64_t* timeout);
 
+  bool may_uncommit();
   void set_last_commit();
 };
 

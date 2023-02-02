@@ -245,8 +245,8 @@ bool ZPhysicalMemoryManager::is_initialized() const {
   return _backing.is_initialized();
 }
 
-void ZPhysicalMemoryManager::warn_commit_limits(size_t max_capacity) const {
-  _backing.warn_commit_limits(max_capacity);
+void ZPhysicalMemoryManager::warn_commit_limits(size_t expected_capacity, size_t max_capacity) const {
+  _backing.warn_commit_limits(expected_capacity, max_capacity);
 }
 
 void ZPhysicalMemoryManager::try_enable_uncommit(size_t min_capacity, size_t max_capacity) {
@@ -383,4 +383,10 @@ void ZPhysicalMemoryManager::unmap(zoffset offset, size_t size) const {
   const zaddress_unsafe addr = ZOffset::address_unsafe(offset);
 
   _backing.unmap(addr, size);
+}
+
+void ZPhysicalMemoryManager::collapse(zoffset offset, size_t size) const {
+   const zaddress_unsafe addr = ZOffset::address_unsafe(offset);
+
+   _backing.collapse(addr, size);
 }

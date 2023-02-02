@@ -74,6 +74,7 @@
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <spawn.h>
+#include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/times.h>
 #include <sys/types.h>
@@ -1498,6 +1499,13 @@ jlong os::elapsed_frequency() {
 }
 
 bool os::supports_vtime() { return true; }
+
+double os::elapsed_process_vtime() {
+  struct rusage usage;
+  int retval = getrusage(RUSAGE_SELF, &usage);
+  guarantee(retval == 0, "wrong arguments to getrusage");
+  return usage.ru_utime.tv_sec + usage.ru_stime.tv_sec + (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / (1000.0 * 1000.0);
+}
 
 // Return the real, user, and system times in seconds from an
 // arbitrary fixed point in the past.
