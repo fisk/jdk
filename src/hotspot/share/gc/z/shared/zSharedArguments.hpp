@@ -34,6 +34,7 @@ private:
   virtual void initialize_heap_flags_and_sizes();
 
   virtual void initialize();
+  virtual void set_heap_size();
   virtual size_t conservative_max_heap_alignment();
   virtual size_t heap_virtual_to_physical_ratio();
   virtual CollectedHeap* create_heap();

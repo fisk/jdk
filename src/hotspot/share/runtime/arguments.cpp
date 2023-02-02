@@ -3653,6 +3653,8 @@ jint Arguments::apply_ergo() {
   jint result = set_ergonomics_flags();
   if (result != JNI_OK) return result;
 
+  GCConfig::arguments()->set_heap_size(); // TODO: Move function below into this one
+
   // Set heap size based on available physical memory
   set_heap_size();
 

@@ -949,8 +949,8 @@ void ZStatMutatorAllocRate::initialize() {
 
 void ZStatMutatorAllocRate::update_sampling_granule() {
   const size_t sampling_heap_granules = 128;
-  const size_t soft_max_capacity = ZHeap::heap()->soft_max_capacity();
-  _sampling_granule = align_up(soft_max_capacity / sampling_heap_granules, ZGranuleSize);
+  const size_t heuristic_max_capacity = ZHeap::heap()->heuristic_max_capacity();
+  _sampling_granule = align_up(heuristic_max_capacity / sampling_heap_granules, ZGranuleSize);
 }
 
 void ZStatMutatorAllocRate::sample_allocation(size_t allocation_bytes) {
@@ -1012,7 +1012,7 @@ void ZStatMutatorAllocRate::sample_allocation(size_t allocation_bytes) {
 
 ZStatMutatorAllocRateStats ZStatMutatorAllocRate::stats() {
   ZLocker<ZLock> locker(_stat_lock);
-  return {_rate.avg(), _rate.predict_next(), _rate.sd()};
+  return {_rate.avg(), _rate.predict_next(), _rate.sd(), _sampling_granule};
 }
 
 //
@@ -1764,7 +1764,7 @@ void ZStatHeap::at_initialize(size_t min_capacity, size_t max_capacity) {
 void ZStatHeap::at_collection_start(const ZPageAllocatorStats& stats) {
   ZLocker<ZLock> locker(&_stat_lock);
 
-  _at_collection_start.soft_max_capacity = stats.soft_max_capacity();
+  _at_collection_start.heuristic_max_capacity = stats.heuristic_max_capacity();
   _at_collection_start.capacity = stats.capacity();
   _at_collection_start.free = free(stats.used());
   _at_collection_start.used = stats.used();
@@ -1774,7 +1774,7 @@ void ZStatHeap::at_collection_start(const ZPageAllocatorStats& stats) {
 void ZStatHeap::at_mark_start(const ZPageAllocatorStats& stats) {
   ZLocker<ZLock> locker(&_stat_lock);
 
-  _at_mark_start.soft_max_capacity = stats.soft_max_capacity();
+  _at_mark_start.heuristic_max_capacity = stats.heuristic_max_capacity();
   _at_mark_start.capacity = stats.capacity();
   _at_mark_start.free = free(stats.used());
   _at_mark_start.used = stats.used();
@@ -1920,8 +1920,8 @@ void ZStatHeap::print(const ZGeneration* generation) const {
                      ZSIZE_FMT, ZSIZE_ARGS(_at_initialize.min_capacity));
   log_info(gc, heap)("Max Capacity: "
                      ZSIZE_FMT, ZSIZE_ARGS(_at_initialize.max_capacity));
-  log_info(gc, heap)("Soft Max Capacity: "
-                     ZSIZE_FMT, ZSIZE_ARGS(_at_mark_start.soft_max_capacity));
+  log_info(gc, heap)("Heuristic Max Capacity: "
+                     ZSIZE_FMT, ZSIZE_ARGS(_at_mark_start.heuristic_max_capacity));
 
   log_info(gc, heap)("Heap Statistics:");
   ZStatTablePrinter heap_table(10, 18);
