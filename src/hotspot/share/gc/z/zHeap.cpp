@@ -118,6 +118,10 @@ size_t ZHeap::used() const {
   return _page_allocator.used();
 }
 
+void ZHeap::resize_heap(double resize_factor) {
+  _page_allocator.resize_heap(resize_factor);
+}
+
 size_t ZHeap::used_generation(ZGenerationId id) const {
   return _page_allocator.used_generation(id);
 }

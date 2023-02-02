@@ -77,6 +77,7 @@ public:
   size_t used_young() const;
   size_t used_old() const;
   size_t unused() const;
+  void resize_heap(double resize_factor);
 
   size_t tlab_capacity() const;
   size_t tlab_used() const;

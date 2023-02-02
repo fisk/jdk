@@ -309,11 +309,11 @@ template <typename PrintFn = void(*)(size_t, double)>
 static bool is_high_usage(const ZDirectorStats& stats, PrintFn* print_function = nullptr) {
   // Calculate amount of free memory available. Note that we take the
   // relocation headroom into account to avoid in-place relocation.
-  const size_t soft_max_capacity = stats._heap._soft_max_heap_size;
+  const size_t max_capacity = ZHeap::heap()->max_capacity();
   const size_t used = stats._heap._used;
-  const size_t free_including_headroom = soft_max_capacity - MIN2(soft_max_capacity, used);
+  const size_t free_including_headroom = max_capacity - MIN2(max_capacity, used);
   const size_t free = free_including_headroom - MIN2(free_including_headroom, ZHeuristics::relocation_headroom());
-  const double free_percent = percent_of(free, soft_max_capacity);
+  const double free_percent = percent_of(free, max_capacity);
 
   if (print_function != nullptr) {
     (*print_function)(free, free_percent);
@@ -377,11 +377,11 @@ static bool rule_minor_high_usage(const ZDirectorStats& stats) {
   // memory is still slowly but surely heading towards zero. In this situation,
   // we start a GC cycle to avoid a potential allocation stall later.
 
-  const size_t soft_max_capacity = stats._heap._soft_max_heap_size;
+  const size_t max_capacity = ZHeap::heap()->max_capacity();
   const size_t used = stats._heap._used;
-  const size_t free_including_headroom = soft_max_capacity - MIN2(soft_max_capacity, used);
+  const size_t free_including_headroom = max_capacity - MIN2(max_capacity, used);
   const size_t free = free_including_headroom - MIN2(free_including_headroom, ZHeuristics::relocation_headroom());
-  const double free_percent = percent_of(free, soft_max_capacity);
+  const double free_percent = percent_of(free, max_capacity);
 
   auto print_function = [&](size_t free, double free_percent) {
     log_debug(gc, director)("Rule Minor: High Usage, Free: " SIZE_FORMAT "MB(%.1f%%)",

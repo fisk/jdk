@@ -46,6 +46,9 @@
   product(bool, ZCollectionIntervalOnly, false,                             \
           "Only use timers for GC heuristics")                              \
                                                                             \
+  product(double, ZCPUOverheadPercent, 0.0,                                 \
+          "Heuristic target GC CPU overhead for dynamic heap resizing")     \
+                                                                            \
   product(bool, ZBufferStoreBarriers, true, DIAGNOSTIC,                     \
           "Buffer store barriers")                                          \
                                                                             \
