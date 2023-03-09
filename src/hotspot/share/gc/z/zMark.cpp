@@ -167,6 +167,14 @@ void ZMark::finish_work() {
   _nterminateflush += _work_nterminateflush;
 }
 
+void ZMark::follow_work_complete() {
+  follow_work(false /* partial */);
+}
+
+bool ZMark::follow_work_partial() {
+  return follow_work(true /* partial */);
+}
+
 bool ZMark::is_array(zaddress addr) const {
   return to_oop(addr)->is_objArray();
 }
@@ -610,8 +618,7 @@ void ZMark::leave() {
   _terminate.leave();
 }
 
-void ZMark::work() {
-  SuspendibleThreadSetJoiner sts_joiner;
+bool ZMark::follow_work(bool partial) {
   ZMarkStripe* const stripe = _stripes.stripe_for_worker(_nworkers, WorkerThread::worker_id());
   ZMarkThreadLocalStacks* const stacks = ZThreadLocalData::mark_stacks(Thread::current(), _generation->id());
   ZMarkContext context(ZMarkStripesMax, stripe, stacks);
@@ -619,12 +626,16 @@ void ZMark::work() {
   for (;;) {
     if (!drain(&context)) {
       leave();
-      break;
+      return false;
     }
 
     if (try_steal(&context)) {
       // Stole work
       continue;
+    }
+
+    if (partial) {
+      return true;
     }
 
     if (try_proactive_flush()) {
@@ -634,12 +645,9 @@ void ZMark::work() {
 
     if (try_terminate()) {
       // Terminate
-      break;
+      return true;
     }
   }
-
-  // Flush mark stacks
-  ZHeap::heap()->mark_flush_and_free(Thread::current());
 }
 
 class ZMarkOopClosure : public OopClosure {
@@ -884,7 +892,9 @@ public:
   }
 
   virtual void work() {
-    _mark->work();
+    SuspendibleThreadSetJoiner sts_joiner;
+    _mark->follow_work_complete();
+    ZHeap::heap()->mark_flush_and_free(Thread::current());
   }
 
   virtual void resize_workers(uint nworkers) {
@@ -899,22 +909,33 @@ void ZMark::resize_workers(uint nworkers) {
   _terminate.reset(nworkers);
 }
 
-void ZMark::mark_roots() {
+void ZMark::mark_young_roots() {
   SuspendibleThreadSetJoiner sts_joiner;
+  ZMarkYoungRootsTask task(this);
+  workers()->run(&task);
+}
 
-  if (_generation->is_old()) {
-    ZMarkOldRootsTask task(this);
-    workers()->run(&task);
-  } else {
-    // Mark from old-to-young pointers
-    ZGeneration::young()->scan_remembered_sets();
+void ZMark::mark_old_roots() {
+  SuspendibleThreadSetJoiner sts_joiner;
+  ZMarkOldRootsTask task(this);
+  workers()->run(&task);
+}
 
-    ZMarkYoungRootsTask task(this);
+void ZMark::mark_young_follow() {
+  // Mark from old-to-young pointers
+  if (ZAbort::should_abort() || !try_terminate_flush()) {
+    return;
+  }
+  for (;;) {
+    ZMarkTask task(this);
     workers()->run(&task);
+    if (ZAbort::should_abort() || !try_terminate_flush()) {
+      break;
+    }
   }
 }
 
-void ZMark::mark_follow() {
+void ZMark::mark_old_follow() {
   for (;;) {
     ZMarkTask task(this);
     workers()->run(&task);
