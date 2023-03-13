@@ -249,10 +249,11 @@ public:
   // Scan a remembered set entry
   void scan_remembered_field(volatile zpointer* p);
 
+  // Register old pages with remembered set
+  void register_with_remset(ZPage* page);
+
   // Verification
   bool is_remembered(volatile zpointer* p) const;
-
-  void register_with_remset(ZPage* page);
 };
 
 class ZGenerationOld : public ZGeneration {

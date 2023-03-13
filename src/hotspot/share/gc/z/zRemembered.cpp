@@ -218,6 +218,10 @@ struct ZRememberedScanForwardingContext {
       _containing_array(),
       _where() {}
 
+  ~ZRememberedScanForwardingContext() {
+    print();
+  }
+
   void report_retained(const Tickspan& duration) {
     _where[0].report(duration);
   }
@@ -298,6 +302,7 @@ bool ZRemembered::scan_forwarding(ZForwarding* forwarding, void* context_void) c
 
   return result;
 }
+
 // When scanning the remembered set during the young generation marking, we
 // want to visit all old pages. And we want that to be done in parallel and
 // fast.
@@ -379,10 +384,10 @@ private:
 
 public:
   ZRemsetTableIterator(ZRemembered* remembered) :
-    _remembered(remembered),
-    _page_table(remembered->_page_table),
-    _old_forwarding_table(remembered->_old_forwarding_table),
-    _claimed(0) {}
+      _remembered(remembered),
+      _page_table(remembered->_page_table),
+      _old_forwarding_table(remembered->_old_forwarding_table),
+      _claimed(0) {}
 
   // This iterator uses the "found old" optimization.
   bool next(ZRemsetTableEntry* entry_addr)  {
@@ -472,9 +477,8 @@ public:
       return;
     }
 
-    bool do_marking = true;
-
     for (ZRemsetTableEntry entry; _remset_table_iterator.next(&entry);) {
+      bool left_marking = false;
       ZForwarding* forwarding = entry._forwarding;
       ZPage* page = entry._page;
 
@@ -484,7 +488,7 @@ public:
         ZVerify::after_scan(forwarding);
         if (found_roots) {
           // Follow remembered set when possible
-          do_marking = _mark->follow_work_partial();
+          left_marking = !_mark->follow_work_partial();
         }
       }
 
@@ -496,9 +500,9 @@ public:
           // ... and as a side-effect clear the previous entries
           // Follow remembered set when possible
           page->clear_remset_previous();
-          if (found_roots && do_marking) {
+          if (found_roots && !left_marking) {
             // Follow remembered set when possible
-            do_marking = _mark->follow_work_partial();
+            left_marking = !_mark->follow_work_partial();
           }
         }
 
@@ -515,21 +519,22 @@ public:
       }
 
       SuspendibleThreadSet::yield();
-      if (!do_marking) {
-        break;
+      if (left_marking) {
+        // Bail
+        return;
       }
     }
 
-    context.print();
-
-    if (do_marking) {
-      _mark->follow_work_complete();
-    }
+    _mark->follow_work_complete();
   }
 
   virtual void work() {
     SuspendibleThreadSetJoiner sts_joiner;
     work_inner();
+    // We might have found pointers into the other generation, and then we want to
+    // publish such marking stacks to prevent that generation from getting a mark continue.
+    // We also flush in case of a resize where a new worker thread continues the marking
+    // work, causing a mark continue for the collected generation.
     ZHeap::heap()->mark_flush_and_free(Thread::current());
   }
 
@@ -539,8 +544,20 @@ public:
 };
 
 void ZRemembered::scan_and_follow(ZMark* mark) {
-  ZRememberedScanMarkFollowTask task(this, mark);
-  ZGeneration::young()->workers()->run(&task);
+  {
+    // Follow the object graph and lazily scan the remembered set
+    ZRememberedScanMarkFollowTask task(this, mark);
+    ZGeneration::young()->workers()->run(&task);
+  }
+
+  // Try to terminate after following the graph
+  if (ZAbort::should_abort() || !mark->try_terminate_flush()) {
+    return;
+  }
+
+  // If flushing failed, we have to restart marking again, but this time we don't need to
+  // scan the remembered set.
+  mark->mark_follow();
 }
 
 bool ZRemembered::scan_field(volatile zpointer* p) const {

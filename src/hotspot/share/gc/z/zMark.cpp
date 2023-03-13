@@ -618,6 +618,8 @@ void ZMark::leave() {
   _terminate.leave();
 }
 
+// Returning true means marking finished successfully after marking as far as it could.
+// Returning false means that marking finished unsuccessfully due to abort or resizing.
 bool ZMark::follow_work(bool partial) {
   ZMarkStripe* const stripe = _stripes.stripe_for_worker(_nworkers, WorkerThread::worker_id());
   ZMarkThreadLocalStacks* const stacks = ZThreadLocalData::mark_stacks(Thread::current(), _generation->id());
@@ -894,6 +896,10 @@ public:
   virtual void work() {
     SuspendibleThreadSetJoiner sts_joiner;
     _mark->follow_work_complete();
+    // We might have found pointers into the other generation, and then we want to
+    // publish such marking stacks to prevent that generation from getting a mark continue.
+    // We also flush in case of a resize where a new worker thread continues the marking
+    // work, causing a mark continue for the collected generation.
     ZHeap::heap()->mark_flush_and_free(Thread::current());
   }
 
@@ -921,21 +927,7 @@ void ZMark::mark_old_roots() {
   workers()->run(&task);
 }
 
-void ZMark::mark_young_follow() {
-  // Mark from old-to-young pointers
-  if (ZAbort::should_abort() || !try_terminate_flush()) {
-    return;
-  }
-  for (;;) {
-    ZMarkTask task(this);
-    workers()->run(&task);
-    if (ZAbort::should_abort() || !try_terminate_flush()) {
-      break;
-    }
-  }
-}
-
-void ZMark::mark_old_follow() {
+void ZMark::mark_follow() {
   for (;;) {
     ZMarkTask task(this);
     workers()->run(&task);

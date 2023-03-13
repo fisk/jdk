@@ -844,9 +844,9 @@ void ZGenerationYoung::mark_roots() {
 }
 
 void ZGenerationYoung::mark_follow() {
+  // Combine following with scanning the remembered set
   ZStatTimerYoung timer(ZSubPhaseConcurrentMarkFollowYoung);
   _remembered.scan_and_follow(&_mark);
-  _mark.mark_young_follow();
 }
 
 bool ZGenerationYoung::mark_end() {
@@ -1188,7 +1188,7 @@ void ZGenerationOld::mark_roots() {
 
 void ZGenerationOld::mark_follow() {
   ZStatTimerOld timer(ZSubPhaseConcurrentMarkFollowOld);
-  _mark.mark_old_follow();
+  _mark.mark_follow();
 }
 
 bool ZGenerationOld::mark_end() {

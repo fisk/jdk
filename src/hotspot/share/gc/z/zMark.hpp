@@ -86,7 +86,6 @@ private:
   bool try_steal(ZMarkContext* context);
   bool flush();
   bool try_proactive_flush();
-  bool try_terminate_flush();
   bool try_terminate();
   void leave();
   bool try_end();
@@ -109,8 +108,7 @@ public:
   void start();
   void mark_young_roots();
   void mark_old_roots();
-  void mark_young_follow();
-  void mark_old_follow();
+  void mark_follow();
   bool end();
   void free();
 
@@ -123,6 +121,7 @@ public:
   void resize_workers(uint nworkers);
   void follow_work_complete();
   bool follow_work_partial();
+  bool try_terminate_flush();
 };
 
 #endif // SHARE_GC_Z_ZMARK_HPP
