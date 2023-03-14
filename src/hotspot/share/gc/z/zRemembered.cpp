@@ -499,6 +499,12 @@ public:
           bool found_roots = _remembered->scan_page(page);
           // ... and as a side-effect clear the previous entries
           // Follow remembered set when possible
+          if (ZVerifyRemembered) {
+            // Make sure self healing of pointers is ordered before clearing of
+            // the previous bits so that ZVerify::after_scan can detect missing
+            // remset entries accurately.
+            OrderAccess::storestore();
+          }
           page->clear_remset_previous();
           if (found_roots && !left_marking) {
             // Follow remembered set when possible
