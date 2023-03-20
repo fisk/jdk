@@ -65,9 +65,15 @@ static void z_verify_old_oop(zpointer* p) {
   assert(o != zpointer::null, "Old should not contain raw null");
   if (!z_is_null_relaxed(o)) {
     if (!ZPointer::is_mark_good(o)) {
-      // Old to old pointers are allowed to have bad young bits
-      guarantee(ZPointer::is_marked_old(o),  BAD_OOP_ARG(o, p));
-      guarantee(ZHeap::heap()->is_old(p), BAD_OOP_ARG(o, p));
+      const zaddress addr = ZBarrier::load_barrier_on_oop_field_preloaded(nullptr, o);
+      // Old to young pointers might not be mark good if the young
+      // marking has not finished, which is responsible for coloring
+      // these pointers.
+      if (ZHeap::heap()->is_old(addr) || !ZGeneration::young()->is_phase_mark()) {
+        // Old to old pointers are allowed to have bad young bits
+        guarantee(ZPointer::is_marked_old(o),  BAD_OOP_ARG(o, p));
+        guarantee(ZHeap::heap()->is_old(p), BAD_OOP_ARG(o, p));
+      }
     } else {
       const zaddress addr = ZPointer::uncolor(o);
       if (ZHeap::heap()->is_young(addr)) {
