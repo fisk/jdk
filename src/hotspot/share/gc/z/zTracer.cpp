@@ -87,11 +87,36 @@ static void register_jfr_type_serializers() {
 #endif // INCLUDE_JFR
 
 ZMinorTracer::ZMinorTracer() :
-    YoungGCTracer(ZMinor, false /* uses_tenuring_threshold */) {
+    GCTracer(ZMinor) {
 }
 
 ZMajorTracer::ZMajorTracer() :
-    OldGCTracer(ZMajor) {}
+    GCTracer(ZMajor) {}
+
+void ZGenerationTracer::report_start(const Ticks& timestamp) {
+  _start = timestamp;
+}
+
+void ZYoungTracer::report_end(const Ticks& timestamp) {
+  if (!EventZYoungGarbageCollection::is_enabled()) {
+    return;
+  }
+
+  EventZYoungGarbageCollection event;
+  event.set_gcId(GCId::current_or_undefined());
+  event.set_tenuringThreshold(ZGeneration::young()->tenuring_threshold());
+  event.commit();
+}
+
+void ZOldTracer::report_end(const Ticks& timestamp) {
+  if (!EventZOldGarbageCollection::is_enabled()) {
+    return;
+  }
+
+  EventZOldGarbageCollection event;
+  event.set_gcId(GCId::current_or_undefined());
+  event.commit();
+}
 
 void ZTracer::initialize() {
   JFR_ONLY(register_jfr_type_serializers());
