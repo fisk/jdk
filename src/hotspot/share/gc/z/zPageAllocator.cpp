@@ -446,6 +446,15 @@ void ZPageAllocator::unmap_page(const ZPage* page) const {
   _physical.unmap(page->start(), page->size());
 }
 
+void ZPageAllocator::unmap_consecutive_pages(ZArray<ZPage*>* pages) const {
+  // Unmap physical memory
+  ZPage* const first = pages->first();
+  ZPage* const last = pages->last();
+  zoffset start = first->start();
+  zoffset_end end = last->end();
+  _physical.unmap(pages->first()->start(), end - start);
+}
+
 void ZPageAllocator::safe_destroy_page(ZPage* page) {
   // Destroy page safely
   _safe_destroy.schedule_delete(page);

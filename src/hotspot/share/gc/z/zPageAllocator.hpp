@@ -101,6 +101,7 @@ private:
 
   void map_page(const ZPage* page) const;
   void unmap_page(const ZPage* page) const;
+  void unmap_consecutive_pages(ZArray<ZPage*>* pages) const;
 
   void destroy_page(ZPage* page);
 

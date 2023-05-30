@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -21,39 +21,39 @@
  * questions.
  */
 
-#ifndef SHARE_GC_Z_ZUNMAPPER_HPP
-#define SHARE_GC_Z_ZUNMAPPER_HPP
+#ifndef SHARE_GC_Z_ZPRIORITYQUEUE_HPP
+#define SHARE_GC_Z_ZPRIORITYQUEUE_HPP
 
-#include "gc/z/zArray.hpp"
-#include "gc/z/zLock.hpp"
-#include "gc/z/zPriorityQueue.hpp"
-#include "gc/z/zThread.hpp"
+#include "memory/allocation.hpp"
+#include "utilities/growableArray.hpp"
 
-class ZPage;
-class ZPageAllocator;
+// This class implements a binary heap implemented with a growable array as backing storage
+template <typename T>
+class ZPriorityQueue {
+public:
+  // Is a higher priority than b?
+  typedef bool (*IsHigherPriority)(T* a, T* b);
 
-class ZUnmapper : public ZThread {
 private:
-  ZPageAllocator* const _page_allocator;
-  ZConditionLock        _lock;
-  ZPriorityQueue<ZPage> _queue;
-  size_t                _enqueued_bytes;
-  bool                  _stop;
+  GrowableArrayCHeap<T*, mtGC> _array;
+  const IsHigherPriority _is_higher_priority;
 
-  bool try_dequeue(ZArray<ZPage*>* result);
-  bool try_enqueue(ZPage* page);
-  bool is_saturated() const;
-  void do_unmap_and_destroy_consecutive_pages(ZArray<ZPage*>* pages) const;
-  void do_unmap_and_destroy_page(ZPage* page) const;
+  T* elem(int current_index) const;
+  int parent(int current_index) const;
+  int left(int current_index) const;
+  int right(int current_index) const;
 
-protected:
-  virtual void run_thread();
-  virtual void terminate();
+  void swap(int n1_index, int n2_index);
+
+  void move_up(int current_index);
+  void move_down(int current_index);
 
 public:
-  ZUnmapper(ZPageAllocator* page_allocator);
-
-  void unmap_and_destroy_page(ZPage* page);
+  ZPriorityQueue(IsHigherPriority is_higher_priority);
+  void insert(T* element);
+  T* first() const;
+  T* remove_first();
+  int length() const;
 };
 
-#endif // SHARE_GC_Z_ZUNMAPPER_HPP
+#endif // SHARE_GC_Z_ZPRIORITYQUEUE_HPP

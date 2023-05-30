@@ -25,18 +25,29 @@
 #define SHARE_GC_Z_ZPAGECACHE_HPP
 
 #include "gc/z/zList.hpp"
+#include "gc/z/zPriorityQueue.hpp"
 #include "gc/z/zPage.hpp"
 #include "gc/z/zPageType.hpp"
 #include "gc/z/zValue.hpp"
 
 class ZPageCacheFlushClosure;
 
+class ZPagePriorityQueue : public ZPriorityQueue<ZPage> {
+  static bool page_address_priority_function(ZPage* a, ZPage* b) {
+    return a->start() < b->start();
+  }
+
+public:
+  ZPagePriorityQueue()
+    : ZPriorityQueue(&page_address_priority_function) {}
+};
+
 class ZPageCache {
 private:
-  ZPerNUMA<ZList<ZPage> > _small;
-  ZList<ZPage>            _medium;
-  ZList<ZPage>            _large;
-  uint64_t                _last_commit;
+  ZPerNUMA<ZPagePriorityQueue> _small;
+  ZList<ZPage>                 _medium;
+  ZList<ZPage>                 _large;
+  uint64_t                     _last_commit;
 
   ZPage* alloc_small_page();
   ZPage* alloc_medium_page();
@@ -47,8 +58,9 @@ private:
   ZPage* alloc_oversized_page(size_t size);
 
   bool flush_list_inner(ZPageCacheFlushClosure* cl, ZList<ZPage>* from, ZList<ZPage>* to);
+  bool flush_list_inner(ZPageCacheFlushClosure* cl, ZPagePriorityQueue* from, ZList<ZPage>* to);
   void flush_list(ZPageCacheFlushClosure* cl, ZList<ZPage>* from, ZList<ZPage>* to);
-  void flush_per_numa_lists(ZPageCacheFlushClosure* cl, ZPerNUMA<ZList<ZPage> >* from, ZList<ZPage>* to);
+  void flush_per_numa_lists(ZPageCacheFlushClosure* cl, ZPerNUMA<ZPagePriorityQueue>* from, ZList<ZPage>* to);
   void flush(ZPageCacheFlushClosure* cl, ZList<ZPage>* to);
 
 public:

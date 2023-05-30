@@ -27,6 +27,7 @@
 #include "gc/z/zNUMA.hpp"
 #include "gc/z/zPage.inline.hpp"
 #include "gc/z/zPageCache.hpp"
+#include "gc/z/zPriorityQueue.inline.hpp"
 #include "gc/z/zStat.hpp"
 #include "gc/z/zValue.inline.hpp"
 #include "memory/allocation.hpp"
@@ -190,7 +191,7 @@ ZPage* ZPageCache::alloc_page(ZPageType type, size_t size) {
 void ZPageCache::free_page(ZPage* page) {
   const ZPageType type = page->type();
   if (type == ZPageType::small) {
-    _small.get(page->numa_id()).insert_first(page);
+    _small.get(page->numa_id()).insert(page);
   } else if (type == ZPageType::medium) {
     _medium.insert_first(page);
   } else {
@@ -211,18 +212,31 @@ bool ZPageCache::flush_list_inner(ZPageCacheFlushClosure* cl, ZList<ZPage>* from
   return true;
 }
 
+bool ZPageCache::flush_list_inner(ZPageCacheFlushClosure* cl, ZPagePriorityQueue* from, ZList<ZPage>* to) {
+  ZPage* const page = from->first();
+  if (page == nullptr || !cl->do_page(page)) {
+    // Don't flush page
+    return false;
+  }
+
+  // Flush page
+  from->remove_first();
+  to->insert_last(page);
+  return true;
+}
+
 void ZPageCache::flush_list(ZPageCacheFlushClosure* cl, ZList<ZPage>* from, ZList<ZPage>* to) {
   while (flush_list_inner(cl, from, to));
 }
 
-void ZPageCache::flush_per_numa_lists(ZPageCacheFlushClosure* cl, ZPerNUMA<ZList<ZPage> >* from, ZList<ZPage>* to) {
+void ZPageCache::flush_per_numa_lists(ZPageCacheFlushClosure* cl, ZPerNUMA<ZPagePriorityQueue>* from, ZList<ZPage>* to) {
   const uint32_t numa_count = ZNUMA::count();
   uint32_t numa_done = 0;
   uint32_t numa_next = 0;
 
   // Flush lists round-robin
   while (numa_done < numa_count) {
-    ZList<ZPage>* const numa_list = from->addr(numa_next);
+    ZPagePriorityQueue* const numa_list = from->addr(numa_next);
     if (++numa_next == numa_count) {
       numa_next = 0;
     }
