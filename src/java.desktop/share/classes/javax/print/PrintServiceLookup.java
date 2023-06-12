@@ -203,16 +203,17 @@ public abstract class PrintServiceLookup {
      * @return the default {@code PrintService}
      */
     public static final PrintService lookupDefaultPrintService() {
-
-        Iterator<PrintServiceLookup> psIterator = getAllLookupServices().iterator();
-        while (psIterator.hasNext()) {
-            try {
-                PrintServiceLookup lus = psIterator.next();
-                PrintService service = lus.getDefaultPrintService();
-                if (service != null) {
-                    return service;
+        synchronized (PrintServiceLookup.class) {
+            Iterator<PrintServiceLookup> psIterator = getAllLookupServices().iterator();
+            while (psIterator.hasNext()) {
+                try {
+                    PrintServiceLookup lus = psIterator.next();
+                    PrintService service = lus.getDefaultPrintService();
+                    if (service != null) {
+                        return service;
+                    }
+                } catch (Exception e) {
                 }
-            } catch (Exception e) {
             }
         }
         return null;
@@ -350,41 +351,39 @@ public abstract class PrintServiceLookup {
      */
     @SuppressWarnings("removal")
     private static ArrayList<PrintServiceLookup> getAllLookupServices() {
-        synchronized (PrintServiceLookup.class) {
-            ArrayList<PrintServiceLookup> listOfLookupServices = getListOfLookupServices();
-            if (listOfLookupServices != null) {
-                return listOfLookupServices;
-            } else {
-                listOfLookupServices = initListOfLookupServices();
-            }
-            try {
-                java.security.AccessController.doPrivileged(
-                     new java.security.PrivilegedExceptionAction<Object>() {
-                        public Object run() {
-                            Iterator<PrintServiceLookup> iterator =
-                                ServiceLoader.load(PrintServiceLookup.class).
-                                iterator();
-                            ArrayList<PrintServiceLookup> los = getListOfLookupServices();
-                            while (iterator.hasNext()) {
-                                try {
-                                    los.add(iterator.next());
-                                }  catch (ServiceConfigurationError err) {
-                                    /* In the applet case, we continue */
-                                    if (System.getSecurityManager() != null) {
-                                        err.printStackTrace();
-                                    } else {
-                                        throw err;
-                                    }
+        ArrayList<PrintServiceLookup> listOfLookupServices = getListOfLookupServices();
+        if (listOfLookupServices != null) {
+            return listOfLookupServices;
+        } else {
+            listOfLookupServices = initListOfLookupServices();
+        }
+        try {
+            java.security.AccessController.doPrivileged(
+                 new java.security.PrivilegedExceptionAction<Object>() {
+                    public Object run() {
+                        Iterator<PrintServiceLookup> iterator =
+                            ServiceLoader.load(PrintServiceLookup.class).
+                            iterator();
+                        ArrayList<PrintServiceLookup> los = getListOfLookupServices();
+                        while (iterator.hasNext()) {
+                            try {
+                                los.add(iterator.next());
+                            }  catch (ServiceConfigurationError err) {
+                                /* In the applet case, we continue */
+                                if (System.getSecurityManager() != null) {
+                                    err.printStackTrace();
+                                } else {
+                                    throw err;
                                 }
                             }
-                            return null;
                         }
-                });
-            } catch (java.security.PrivilegedActionException e) {
-            }
-
-            return listOfLookupServices;
+                        return null;
+                    }
+            });
+        } catch (java.security.PrivilegedActionException e) {
         }
+
+        return listOfLookupServices;
     }
 
     /**
@@ -401,61 +400,62 @@ public abstract class PrintServiceLookup {
      */
     private static ArrayList<PrintService> getServices(DocFlavor flavor,
                                                        AttributeSet attributes) {
-
-        ArrayList<PrintService> listOfServices = new ArrayList<>();
-        Iterator<PrintServiceLookup> psIterator = getAllLookupServices().iterator();
-        while (psIterator.hasNext()) {
-            try {
-                PrintServiceLookup lus = psIterator.next();
-                PrintService[] services=null;
-                if (flavor == null && attributes == null) {
-                    try {
-                    services = lus.getPrintServices();
-                    } catch (Throwable tr) {
-                    }
-                } else {
-                    services = lus.getPrintServices(flavor, attributes);
-                }
-                if (services == null) {
-                    continue;
-                }
-                for (int i=0; i<services.length; i++) {
-                    listOfServices.add(services[i]);
-                }
-            } catch (Exception e) {
-            }
-        }
-        /*
-         * add any directly registered services
-         */
-        ArrayList<PrintService> registeredServices = null;
-        try {
-          @SuppressWarnings("removal")
-          SecurityManager security = System.getSecurityManager();
-          if (security != null) {
-            security.checkPrintJobAccess();
-          }
-          registeredServices = getRegisteredServices();
-        } catch (SecurityException se) {
-        }
-        if (registeredServices != null) {
-            PrintService[] services = registeredServices.toArray(
-                           new PrintService[registeredServices.size()]);
-            for (int i=0; i<services.length; i++) {
-                if (!listOfServices.contains(services[i])) {
+        synchronized (PrintServiceLookup.class) {
+            ArrayList<PrintService> listOfServices = new ArrayList<>();
+            Iterator<PrintServiceLookup> psIterator = getAllLookupServices().iterator();
+            while (psIterator.hasNext()) {
+                try {
+                    PrintServiceLookup lus = psIterator.next();
+                    PrintService[] services=null;
                     if (flavor == null && attributes == null) {
+                        try {
+                        services = lus.getPrintServices();
+                        } catch (Throwable tr) {
+                        }
+                    } else {
+                        services = lus.getPrintServices(flavor, attributes);
+                    }
+                    if (services == null) {
+                        continue;
+                    }
+                    for (int i=0; i<services.length; i++) {
                         listOfServices.add(services[i]);
-                    } else if (((flavor != null &&
-                                 services[i].isDocFlavorSupported(flavor)) ||
-                                flavor == null) &&
-                               null == services[i].getUnsupportedAttributes(
-                                                      flavor, attributes)) {
-                        listOfServices.add(services[i]);
+                    }
+                } catch (Exception e) {
+                }
+            }
+            /*
+             * add any directly registered services
+             */
+            ArrayList<PrintService> registeredServices = null;
+            try {
+              @SuppressWarnings("removal")
+              SecurityManager security = System.getSecurityManager();
+              if (security != null) {
+                security.checkPrintJobAccess();
+              }
+              registeredServices = getRegisteredServices();
+            } catch (SecurityException se) {
+            }
+            if (registeredServices != null) {
+                PrintService[] services = registeredServices.toArray(
+                               new PrintService[registeredServices.size()]);
+                for (int i=0; i<services.length; i++) {
+                    if (!listOfServices.contains(services[i])) {
+                        if (flavor == null && attributes == null) {
+                            listOfServices.add(services[i]);
+                        } else if (((flavor != null &&
+                                     services[i].isDocFlavorSupported(flavor)) ||
+                                    flavor == null) &&
+                                   null == services[i].getUnsupportedAttributes(
+                                                          flavor, attributes)) {
+                            listOfServices.add(services[i]);
+                        }
                     }
                 }
             }
+            return listOfServices;
         }
-        return listOfServices;
     }
 
     /**
@@ -472,67 +472,67 @@ public abstract class PrintServiceLookup {
      */
     private static ArrayList<MultiDocPrintService> getMultiDocServices(DocFlavor[] flavors,
                                                                        AttributeSet attributes) {
-
-
-        ArrayList<MultiDocPrintService> listOfServices = new ArrayList<>();
-        Iterator<PrintServiceLookup> psIterator = getAllLookupServices().iterator();
-        while (psIterator.hasNext()) {
+        synchronized (PrintServiceLookup.class) {
+            ArrayList<MultiDocPrintService> listOfServices = new ArrayList<>();
+            Iterator<PrintServiceLookup> psIterator = getAllLookupServices().iterator();
+            while (psIterator.hasNext()) {
+                try {
+                    PrintServiceLookup lus = psIterator.next();
+                    MultiDocPrintService[] services  =
+                        lus.getMultiDocPrintServices(flavors, attributes);
+                    if (services == null) {
+                        continue;
+                    }
+                    for (int i=0; i<services.length; i++) {
+                        listOfServices.add(services[i]);
+                    }
+                } catch (Exception e) {
+                }
+            }
+            /*
+             * add any directly registered services
+             */
+            ArrayList<PrintService> registeredServices = null;
             try {
-                PrintServiceLookup lus = psIterator.next();
-                MultiDocPrintService[] services  =
-                    lus.getMultiDocPrintServices(flavors, attributes);
-                if (services == null) {
-                    continue;
-                }
-                for (int i=0; i<services.length; i++) {
-                    listOfServices.add(services[i]);
-                }
+              @SuppressWarnings("removal")
+              SecurityManager security = System.getSecurityManager();
+              if (security != null) {
+                security.checkPrintJobAccess();
+              }
+              registeredServices = getRegisteredServices();
             } catch (Exception e) {
             }
-        }
-        /*
-         * add any directly registered services
-         */
-        ArrayList<PrintService> registeredServices = null;
-        try {
-          @SuppressWarnings("removal")
-          SecurityManager security = System.getSecurityManager();
-          if (security != null) {
-            security.checkPrintJobAccess();
-          }
-          registeredServices = getRegisteredServices();
-        } catch (Exception e) {
-        }
-        if (registeredServices != null) {
-            PrintService[] services =
-                registeredServices.toArray(new PrintService[registeredServices.size()]);
-            for (int i=0; i<services.length; i++) {
-                if (services[i] instanceof MultiDocPrintService &&
-                    !listOfServices.contains(services[i])) {
-                    if (flavors == null || flavors.length == 0) {
-                        listOfServices.add((MultiDocPrintService)services[i]);
-                    } else {
-                        boolean supported = true;
-                        for (int f=0; f<flavors.length; f++) {
-                            if (services[i].isDocFlavorSupported(flavors[f])) {
-
-                                if (services[i].getUnsupportedAttributes(
-                                     flavors[f], attributes) != null) {
-                                        supported = false;
-                                        break;
-                                }
-                            } else {
-                                supported = false;
-                                break;
-                            }
-                        }
-                        if (supported) {
+            if (registeredServices != null) {
+                PrintService[] services =
+                    registeredServices.toArray(new PrintService[registeredServices.size()]);
+                for (int i=0; i<services.length; i++) {
+                    if (services[i] instanceof MultiDocPrintService &&
+                        !listOfServices.contains(services[i])) {
+                        if (flavors == null || flavors.length == 0) {
                             listOfServices.add((MultiDocPrintService)services[i]);
+                        } else {
+                            boolean supported = true;
+                            for (int f=0; f<flavors.length; f++) {
+                                if (services[i].isDocFlavorSupported(flavors[f])) {
+
+                                    if (services[i].getUnsupportedAttributes(
+                                         flavors[f], attributes) != null) {
+                                            supported = false;
+                                            break;
+                                    }
+                                } else {
+                                    supported = false;
+                                    break;
+                                }
+                            }
+                            if (supported) {
+                                listOfServices.add((MultiDocPrintService)services[i]);
+                            }
                         }
                     }
                 }
             }
+            return listOfServices;
         }
-        return listOfServices;
     }
 }
