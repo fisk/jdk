@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef SHARE_CDS_ARCHIVEHEAPLOADER_HPP
-#define SHARE_CDS_ARCHIVEHEAPLOADER_HPP
+#ifndef SHARE_CDS_MAPPINGARCHIVEHEAPLOADER_HPP
+#define SHARE_CDS_MAPPINGARCHIVEHEAPLOADER_HPP
 
 #include "cds/filemap.hpp"
 #include "gc/shared/gc_globals.hpp"
@@ -38,7 +38,7 @@
 class  FileMapInfo;
 struct LoadedArchiveHeapRegion;
 
-class ArchiveHeapLoader : AllStatic {
+class MappingArchiveHeapLoader : AllStatic {
 public:
   // At runtime, the heap region in the CDS archive can be used in two different ways,
   // depending on the GC type:
@@ -153,8 +153,12 @@ public:
   static void assert_in_loaded_heap(uintptr_t o) {
     assert(is_in_loaded_heap(o), "must be");
   }
+
+  static oop get_archived_object(int permanent_index);
+  static void populate_permanent_object_table();
+
 #endif // INCLUDE_CDS_JAVA_HEAP
 
 };
 
-#endif // SHARE_CDS_ARCHIVEHEAPLOADER_HPP
+#endif // SHARE_CDS_MAPPINGARCHIVEHEAPLOADER_HPP

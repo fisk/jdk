@@ -1497,6 +1497,12 @@ void JvmtiExport::post_thread_start(JavaThread *thread) {
   // do JVMTI thread initialization (if needed)
   JvmtiEventController::thread_started(thread);
 
+  // Do not post thread start event for hidden java thread.
+  if (!JvmtiEventController::is_enabled(JVMTI_EVENT_THREAD_START) ||
+      thread->is_hidden_from_external_view()) {
+    return;
+  }
+
   if (thread->threadObj()->is_a(vmClasses::BoundVirtualThread_klass())) {
     if (JvmtiExport::can_support_virtual_threads()) {
       // Check for VirtualThreadStart event instead.
@@ -1507,24 +1513,20 @@ void JvmtiExport::post_thread_start(JavaThread *thread) {
     return;
   }
 
-  // Do not post thread start event for hidden java thread.
-  if (JvmtiEventController::is_enabled(JVMTI_EVENT_THREAD_START) &&
-      !thread->is_hidden_from_external_view()) {
-    JvmtiEnvIterator it;
-    for (JvmtiEnv* env = it.first(); env != nullptr; env = it.next(env)) {
-      if (env->phase() == JVMTI_PHASE_PRIMORDIAL) {
-        continue;
-      }
-      if (env->is_enabled(JVMTI_EVENT_THREAD_START)) {
-        EVT_TRACE(JVMTI_EVENT_THREAD_START, ("[%s] Evt Thread Start event sent",
-                     JvmtiTrace::safe_get_thread_name(thread) ));
+  JvmtiEnvIterator it;
+  for (JvmtiEnv* env = it.first(); env != nullptr; env = it.next(env)) {
+    if (env->phase() == JVMTI_PHASE_PRIMORDIAL) {
+      continue;
+    }
+    if (env->is_enabled(JVMTI_EVENT_THREAD_START)) {
+      EVT_TRACE(JVMTI_EVENT_THREAD_START, ("[%s] Evt Thread Start event sent",
+                   JvmtiTrace::safe_get_thread_name(thread) ));
 
-        JvmtiVirtualThreadEventMark jem(thread);
-        JvmtiJavaThreadEventTransition jet(thread);
-        jvmtiEventThreadStart callback = env->callbacks()->ThreadStart;
-        if (callback != nullptr) {
-          (*callback)(env->jvmti_external(), jem.jni_env(), jem.jni_thread());
-        }
+      JvmtiVirtualThreadEventMark jem(thread);
+      JvmtiJavaThreadEventTransition jet(thread);
+      jvmtiEventThreadStart callback = env->callbacks()->ThreadStart;
+      if (callback != nullptr) {
+        (*callback)(env->jvmti_external(), jem.jni_env(), jem.jni_thread());
       }
     }
   }

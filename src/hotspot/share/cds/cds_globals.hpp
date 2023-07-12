@@ -88,8 +88,11 @@
           "(** internal use only **) -- if false, automatically launch a "  \
           "child process to create the final image.")                       \
                                                                             \
+  product(bool, DumpStreamableObjects, true,                                \
+          "Dump the Java heap in a generic streamable object format")       \
+                                                                            \
   product(ccstr, SharedClassListFile, nullptr,                              \
-          "Override the default CDS class list")  \
+          "Override the default CDS class list")                            \
                                                                             \
   product(ccstr, SharedArchiveFile, nullptr,                                \
           "Override the default location of the CDS archive file")          \

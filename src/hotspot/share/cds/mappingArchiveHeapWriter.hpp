@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef SHARE_CDS_ARCHIVEHEAPWRITER_HPP
-#define SHARE_CDS_ARCHIVEHEAPWRITER_HPP
+#ifndef SHARE_CDS_MAPPINGARCHIVEHEAPWRITER_HPP
+#define SHARE_CDS_MAPPINGARCHIVEHEAPWRITER_HPP
 
 #include "cds/heapShared.hpp"
 #include "memory/allocation.hpp"
@@ -37,33 +37,10 @@
 
 class MemRegion;
 
-class ArchiveHeapInfo {
-  MemRegion _buffer_region;             // Contains the archived objects to be written into the CDS archive.
-  CHeapBitMap _oopmap;
-  CHeapBitMap _ptrmap;
-  size_t _heap_roots_offset;            // Offset of the HeapShared::roots() object, from the bottom
-                                        // of the archived heap objects, in bytes.
-
-public:
-  ArchiveHeapInfo() : _buffer_region(), _oopmap(128, mtClassShared), _ptrmap(128, mtClassShared) {}
-  bool is_used() { return !_buffer_region.is_empty(); }
-
-  MemRegion buffer_region() { return _buffer_region; }
-  void set_buffer_region(MemRegion r) { _buffer_region = r; }
-
-  char* buffer_start() { return (char*)_buffer_region.start(); }
-  size_t buffer_byte_size() { return _buffer_region.byte_size();    }
-
-  CHeapBitMap* oopmap() { return &_oopmap; }
-  CHeapBitMap* ptrmap() { return &_ptrmap; }
-
-  void set_heap_roots_offset(size_t n) { _heap_roots_offset = n; }
-  size_t heap_roots_offset() const { return _heap_roots_offset; }
-};
-
 #if INCLUDE_CDS_JAVA_HEAP
-class ArchiveHeapWriter : AllStatic {
+class MappingArchiveHeapWriter : AllStatic {
   friend class HeapShared;
+  friend class MappingArchiveHeapLoader;
   // ArchiveHeapWriter manipulates three types of addresses:
   //
   //     "source" vs "buffered" vs "requested"
@@ -255,18 +232,6 @@ public:
   static oop source_obj_to_requested_obj(oop src_obj);
   static oop buffered_addr_to_source_obj(address buffered_addr);
   static address buffered_addr_to_requested_addr(address buffered_addr);
-
-  // Archived heap object headers carry pre-computed narrow Klass ids calculated with the
-  // following scheme:
-  // 1) the encoding base must be the mapping start address.
-  // 2) shift must be large enough to result in an encoding range that covers the runtime Klass range.
-  //    That Klass range is defined by CDS archive size and runtime class space size. Luckily, the maximum
-  //    size can be predicted: archive size is assumed to be <1G, class space size capped at 3G, and at
-  //    runtime we put both regions adjacent to each other. Therefore, runtime Klass range size < 4G.
-  //    Since nKlass itself is 32 bit, our encoding range len is 4G, and since we set the base directly
-  //    at mapping start, these 4G are enough. Therefore, we don't need to shift at all (shift=0).
-  static constexpr int precomputed_narrow_klass_shift = 0;
-
 };
 #endif // INCLUDE_CDS_JAVA_HEAP
-#endif // SHARE_CDS_ARCHIVEHEAPWRITER_HPP
+#endif // SHARE_CDS_MAPPINGARCHIVEHEAPWRITER_HPP

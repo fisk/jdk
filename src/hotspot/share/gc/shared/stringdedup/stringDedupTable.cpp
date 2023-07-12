@@ -23,6 +23,8 @@
  */
 
 #include "precompiled.hpp"
+#include "cds/cds_globals.hpp"
+#include "cds/heapShared.hpp"
 #include "classfile/altHashing.hpp"
 #include "classfile/javaClasses.inline.hpp"
 #include "classfile/stringTable.hpp"
@@ -515,6 +517,7 @@ void StringDedup::Table::install(typeArrayOop obj, uint hash_code) {
 // access to a String that is incompletely constructed; the value could be
 // set before the coder.
 bool StringDedup::Table::try_deduplicate_shared(oop java_string) {
+  assert(!HeapShared::is_loading_streaming_mode(), "should not reach here");
   typeArrayOop value = java_lang_String::value(java_string);
   assert(value != nullptr, "precondition");
   assert(TypeArrayKlass::cast(value->klass())->element_type() == T_BYTE, "precondition");
@@ -560,6 +563,7 @@ bool StringDedup::Table::try_deduplicate_shared(oop java_string) {
 }
 
 bool StringDedup::Table::try_deduplicate_found_shared(oop java_string, oop found) {
+  assert(!HeapShared::is_loading_streaming_mode(), "should not reach here");
   _cur_stat.inc_known_shared();
   typeArrayOop found_value = java_lang_String::value(found);
   if (found_value == java_lang_String::value(java_string)) {
@@ -610,7 +614,8 @@ bool StringDedup::Table::deduplicate_if_permitted(oop java_string,
 void StringDedup::Table::deduplicate(oop java_string) {
   assert(java_lang_String::is_instance(java_string), "precondition");
   _cur_stat.inc_inspected();
-  if ((StringTable::shared_entry_count() > 0) &&
+  if (!HeapShared::is_loading_streaming_mode() &&
+      (StringTable::shared_entry_count() > 0) &&
       try_deduplicate_shared(java_string)) {
     return;                     // Done if deduplicated against shared StringTable.
   }

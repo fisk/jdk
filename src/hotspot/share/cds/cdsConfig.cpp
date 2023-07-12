@@ -23,7 +23,6 @@
  */
 
 #include "precompiled.hpp"
-#include "cds/archiveHeapLoader.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/cds_globals.hpp"
 #include "cds/heapShared.hpp"
@@ -504,7 +503,7 @@ bool CDSConfig::is_dumping_heap() {
 }
 
 bool CDSConfig::is_loading_heap() {
-  return ArchiveHeapLoader::is_in_use();
+  return HeapShared::is_archived_heap_in_use();
 }
 
 bool CDSConfig::is_dumping_full_module_graph() {
@@ -524,7 +523,7 @@ bool CDSConfig::is_loading_full_module_graph() {
 
   if (!_loading_full_module_graph_disabled &&
       UseSharedSpaces &&
-      ArchiveHeapLoader::can_use() &&
+      HeapShared::can_use_archived_heap() &&
       MetaspaceShared::use_optimized_module_handling()) {
     // Classes used by the archived full module graph are loaded in JVMTI early phase.
     assert(!(JvmtiExport::should_post_class_file_load_hook() && JvmtiExport::has_early_class_hook_env()),

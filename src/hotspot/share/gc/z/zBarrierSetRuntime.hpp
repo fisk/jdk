@@ -31,7 +31,7 @@
 #include "utilities/globalDefinitions.hpp"
 
 class ZBarrierSetRuntime : public AllStatic {
-private:
+public:
   static oopDesc* load_barrier_on_oop_field_preloaded(oopDesc* o, oop* p);
   static zpointer load_barrier_on_oop_field_preloaded_store_good(oopDesc* o, oop* p);
   static oopDesc* load_barrier_on_weak_oop_field_preloaded(oopDesc* o, oop* p);
