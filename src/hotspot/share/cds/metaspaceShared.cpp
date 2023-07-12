@@ -24,11 +24,10 @@
 
 #include "precompiled.hpp"
 #include "cds/archiveBuilder.hpp"
-#include "cds/archiveHeapLoader.hpp"
-#include "cds/archiveHeapWriter.hpp"
 #include "cds/cds_globals.hpp"
 #include "cds/cdsAccess.hpp"
 #include "cds/cdsConfig.hpp"
+#include "cds/mappingArchiveHeapLoader.hpp"
 #include "cds/cdsProtectionDomain.hpp"
 #include "cds/cds_globals.hpp"
 #include "cds/classListParser.hpp"
@@ -345,7 +344,7 @@ void MetaspaceShared::read_extra_data(JavaThread* current, const char* filename)
         CLEAR_PENDING_EXCEPTION;
       } else {
 #if INCLUDE_CDS_JAVA_HEAP
-        if (ArchiveHeapWriter::is_string_too_large_to_archive(str)) {
+        if (HeapShared::is_string_too_large_to_archive(str)) {
           log_warning(cds, heap)("[line %d] extra interned string ignored; size too large: %d",
                                  reader.last_line_no(), utf8_length);
           continue;
@@ -412,7 +411,11 @@ void MetaspaceShared::serialize(SerializeClosure* soc) {
 
   // Dump/restore the symbol/string/subgraph_info tables
   SymbolTable::serialize_shared_table_header(soc);
-  StringTable::serialize_shared_table_header(soc);
+  if ((soc->reading() && !HeapShared::is_loading_streaming_mode()) ||
+      (soc->writing() && !HeapShared::is_writing_streaming_mode())) {
+    // The object streaming mode doesn't need to serialize the string table
+    StringTable::serialize_shared_table_header(soc);
+  }
   HeapShared::serialize_tables(soc);
   SystemDictionaryShared::serialize_dictionary_headers(soc);
   ClassPrelinker::serialize(soc, true);
@@ -889,14 +892,15 @@ void MetaspaceShared::preload_and_dump_impl(StaticArchiveBuilder& builder, TRAPS
       CDSConfig::disable_dumping_full_module_graph();
     }
     HeapShared::init_for_dumping(CHECK);
-    ArchiveHeapWriter::init();
     if (CDSConfig::is_dumping_full_module_graph()) {
       HeapShared::reset_archived_object_states(CHECK);
     }
 
-    // Do this at the very end, when no Java code will be executed. Otherwise
-    // some new strings may be added to the intern table.
-    StringTable::allocate_shared_strings_array(CHECK);
+    if (!HeapShared::is_writing_streaming_mode()) {
+      // Do this at the very end, when no Java code will be executed. Otherwise
+      // some new strings may be added to the intern table.
+      StringTable::allocate_shared_strings_array(CHECK);
+    }
   }
 #endif
 
@@ -1044,28 +1048,28 @@ bool MetaspaceShared::try_link_class(JavaThread* current, InstanceKlass* ik) {
 #if INCLUDE_CDS_JAVA_HEAP
 void VM_PopulateDumpSharedSpace::dump_java_heap_objects(GrowableArray<Klass*>* klasses) {
   if(!HeapShared::can_write()) {
-    log_info(cds)(
-      "Archived java heap is not supported as UseG1GC "
-      "and UseCompressedClassPointers are required."
-      "Current settings: UseG1GC=%s, UseCompressedClassPointers=%s.",
-      BOOL_TO_STR(UseG1GC), BOOL_TO_STR(UseCompressedClassPointers));
+    log_info(cds)("Archived java heap is not supported as UseCompressedClassPointers are required.");
+    HeapShared::disable_writing();
     return;
   }
-  // Find all the interned strings that should be dumped.
-  int i;
-  for (i = 0; i < klasses->length(); i++) {
-    Klass* k = klasses->at(i);
-    if (k->is_instance_klass()) {
-      InstanceKlass* ik = InstanceKlass::cast(k);
-      if (ik->is_linked()) {
-        ik->constants()->add_dumped_interned_strings();
+
+  if (!HeapShared::is_writing_streaming_mode()) {
+    // Find all the interned strings that should be dumped.
+    int i;
+    for (i = 0; i < klasses->length(); i++) {
+      Klass* k = klasses->at(i);
+      if (k->is_instance_klass()) {
+        InstanceKlass* ik = InstanceKlass::cast(k);
+        if (ik->is_linked()) {
+          ik->constants()->add_dumped_interned_strings();
+        }
       }
     }
-  }
-  if (_extra_interned_strings != nullptr) {
-    for (i = 0; i < _extra_interned_strings->length(); i ++) {
-      OopHandle string = _extra_interned_strings->at(i);
-      HeapShared::add_to_dumped_interned_strings(string.resolve());
+    if (_extra_interned_strings != nullptr) {
+      for (i = 0; i < _extra_interned_strings->length(); i ++) {
+        OopHandle string = _extra_interned_strings->at(i);
+        HeapShared::add_to_dumped_interned_strings(string.resolve());
+      }
     }
   }
 
@@ -1131,6 +1135,9 @@ void MetaspaceShared::initialize_runtime_shared_and_meta_spaces() {
   if (static_mapinfo != nullptr) {
     log_info(cds)("Core region alignment: " SIZE_FORMAT, static_mapinfo->core_region_alignment());
     dynamic_mapinfo = open_dynamic_archive();
+
+    // Initialize the heap dump mode used in the archive
+    HeapShared::set_loading_streaming_mode(static_mapinfo->object_streaming_mode());
 
     // First try to map at the requested address
     result = map_archives(static_mapinfo, dynamic_mapinfo, true);
@@ -1377,19 +1384,21 @@ MapArchiveResult MetaspaceShared::map_archives(FileMapInfo* static_mapinfo, File
 #if INCLUDE_CDS_JAVA_HEAP
           // We archived objects with pre-computed narrow Klass id. Set up encoding such that these Ids stay valid.
           address precomputed_narrow_klass_base = cds_base;
-          const int precomputed_narrow_klass_shift = ArchiveHeapWriter::precomputed_narrow_klass_shift;
+          const int precomputed_narrow_klass_shift = HeapShared::precomputed_narrow_klass_shift;
           CompressedKlassPointers::initialize_for_given_encoding(
             cds_base, ccs_end - cds_base, // Klass range
-            precomputed_narrow_klass_base, precomputed_narrow_klass_shift // precomputed encoding, see ArchiveHeapWriter
+            precomputed_narrow_klass_base, precomputed_narrow_klass_shift // precomputed encoding, see HeapShared
             );
 #else
           CompressedKlassPointers::initialize (
             cds_base, ccs_end - cds_base // Klass range
             );
 #endif // INCLUDE_CDS_JAVA_HEAP
-          // map_or_load_heap_region() compares the current narrow oop and klass encodings
-          // with the archived ones, so it must be done after all encodings are determined.
-          static_mapinfo->map_or_load_heap_region();
+          if (!HeapShared::is_loading_streaming_mode()) {
+            // map_or_load_heap_region() compares the current narrow oop and klass encodings
+            // with the archived ones, so it must be done after all encodings are determined.
+            static_mapinfo->map_or_load_heap_region();
+          }
         }
 #endif // _LP64
     log_info(cds)("initial optimized module handling: %s", MetaspaceShared::use_optimized_module_handling() ? "enabled" : "disabled");
@@ -1647,7 +1656,9 @@ void MetaspaceShared::unmap_archive(FileMapInfo* mapinfo) {
   assert(UseSharedSpaces, "must be runtime");
   if (mapinfo != nullptr) {
     mapinfo->unmap_regions(archive_regions, archive_regions_count);
-    mapinfo->unmap_region(MetaspaceShared::bm);
+    if (!HeapShared::is_loading_streaming_mode()) {
+      mapinfo->unmap_region(MetaspaceShared::bm);
+    }
     mapinfo->set_is_mapped(false);
   }
 }
@@ -1678,10 +1689,15 @@ void MetaspaceShared::initialize_shared_spaces() {
   ReadClosure rc(&array);
   serialize(&rc);
 
-  // Finish up archived heap initialization. These must be
-  // done after ReadClosure.
-  static_mapinfo->patch_heap_embedded_pointers();
-  ArchiveHeapLoader::finish_initialization();
+  if (HeapShared::is_loading_streaming_mode()) {
+    // Heap initialization can be done only after vtables are initialized by ReadClosure.
+    static_mapinfo->stream_heap_region();
+  } else {
+    // Finish up archived heap initialization. These must be
+    // done after ReadClosure.
+    static_mapinfo->patch_heap_embedded_pointers();
+    MappingArchiveHeapLoader::finish_initialization();
+  }
 
   CDS_JAVA_HEAP_ONLY(Universe::update_archived_basic_type_mirrors());
   CDS_JAVA_HEAP_ONLY(Universe::update_exception_instances());
@@ -1691,7 +1707,9 @@ void MetaspaceShared::initialize_shared_spaces() {
   // Close the mapinfo file
   static_mapinfo->close();
 
-  static_mapinfo->unmap_region(MetaspaceShared::bm);
+  if (!HeapShared::is_loading_streaming_mode()) {
+    static_mapinfo->unmap_region(MetaspaceShared::bm);
+  }
 
   FileMapInfo *dynamic_mapinfo = FileMapInfo::dynamic_info();
   if (dynamic_mapinfo != nullptr) {
@@ -1736,7 +1754,9 @@ void MetaspaceShared::initialize_shared_spaces() {
     CountSharedSymbols cl;
     SymbolTable::shared_symbols_do(&cl);
     tty->print_cr("Number of shared symbols: %d", cl.total());
-    tty->print_cr("Number of shared strings: %zu", StringTable::shared_entry_count());
+    if (!HeapShared::is_loading_streaming_mode()) {
+      tty->print_cr("Number of shared strings: %zu", StringTable::shared_entry_count());
+    }
     tty->print_cr("VM version: %s\r\n", static_mapinfo->vm_version());
     if (FileMapInfo::current_info() == nullptr || _archive_loading_failed) {
       tty->print_cr("archive is invalid");

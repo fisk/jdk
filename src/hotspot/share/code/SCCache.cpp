@@ -48,6 +48,7 @@
 #include "compiler/compileBroker.hpp"
 #include "compiler/compileTask.hpp"
 #include "gc/g1/g1BarrierSetRuntime.hpp"
+#include "gc/z/zBarrierSetRuntime.hpp"
 #include "gc/shared/gcConfig.hpp"
 #include "logging/log.hpp"
 #include "memory/universe.hpp"
@@ -1815,6 +1816,8 @@ bool SCCReader::read_relocations(CodeBuffer* buffer, CodeBuffer* orig_buffer,
           break;
         case relocInfo::entry_guard_type:
           break;
+        case relocInfo::barrier_type:
+          break;
         default:
           fatal("relocation %d unimplemented", (int)iter.type());
           break;
@@ -2053,6 +2056,8 @@ bool SCCache::write_relocations(CodeBuffer* buffer, uint& all_reloc_size) {
         case relocInfo::post_call_nop_type:
           break;
         case relocInfo::entry_guard_type:
+          break;
+        case relocInfo::barrier_type:
           break;
         default:
           fatal("relocation %d unimplemented", (int)iter.type());
@@ -3291,6 +3296,16 @@ void SCAddressTable::init() {
   SET_ADDRESS(_extrs, CompressedOops::ptrs_base_addr());
   SET_ADDRESS(_extrs, G1BarrierSetRuntime::write_ref_field_post_entry);
   SET_ADDRESS(_extrs, G1BarrierSetRuntime::write_ref_field_pre_entry);
+
+  SET_ADDRESS(_extrs, ZBarrierSetRuntime::load_barrier_on_oop_field_preloaded);
+  SET_ADDRESS(_extrs, ZBarrierSetRuntime::load_barrier_on_oop_field_preloaded_store_good);
+  SET_ADDRESS(_extrs, ZBarrierSetRuntime::load_barrier_on_weak_oop_field_preloaded);
+  SET_ADDRESS(_extrs, ZBarrierSetRuntime::load_barrier_on_phantom_oop_field_preloaded);
+  SET_ADDRESS(_extrs, ZBarrierSetRuntime::no_keepalive_load_barrier_on_weak_oop_field_preloaded);
+  SET_ADDRESS(_extrs, ZBarrierSetRuntime::no_keepalive_load_barrier_on_phantom_oop_field_preloaded);
+  SET_ADDRESS(_extrs, ZBarrierSetRuntime::store_barrier_on_oop_field_with_healing);
+  SET_ADDRESS(_extrs, ZBarrierSetRuntime::store_barrier_on_oop_field_without_healing);
+  SET_ADDRESS(_extrs, ZBarrierSetRuntime::store_barrier_on_native_oop_field_without_healing);
 
   SET_ADDRESS(_extrs, SharedRuntime::complete_monitor_unlocking_C);
   SET_ADDRESS(_extrs, SharedRuntime::enable_stack_reserved_zone);

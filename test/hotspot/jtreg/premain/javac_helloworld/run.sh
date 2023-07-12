@@ -54,7 +54,7 @@ if test "$SKIP_SETUP" = "" || test ! -f Javac-mainline.jsa; then
     # FIXME: for AOT, we should do a longer and compile more source files, so we can have more optimized AOT code
 
     JAVA="$PREMAIN_JAVA ${HEAP_SIZE}"
-    DUMP_EXTRA_ARGS=-XX:+ArchiveInvokeDynamic 
+    DUMP_EXTRA_ARGS="-XX:+ArchiveInvokeDynamic -XX:+DumpStreamableObjects "
     CMDLINE="-XX:+ArchiveInvokeDynamic com.sun.tools.javac.Main HelloWorld.java"
 
     source ../lib/premain-run.sh

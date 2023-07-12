@@ -23,7 +23,6 @@
  */
 
 #include "precompiled.hpp"
-#include "cds/archiveHeapLoader.hpp"
 #include "cds/cdsEnumKlass.hpp"
 #include "cds/heapShared.hpp"
 #include "classfile/vmClasses.hpp"
@@ -173,7 +172,7 @@ void CDSEnumKlass::archive_static_primitive_field(int level, KlassSubGraphInfo* 
 
 
 bool CDSEnumKlass::initialize_enum_klass(InstanceKlass* k, TRAPS) {
-  if (!ArchiveHeapLoader::is_in_use()) {
+  if (!HeapShared::is_archived_heap_in_use()) {
     return false;
   }
 
