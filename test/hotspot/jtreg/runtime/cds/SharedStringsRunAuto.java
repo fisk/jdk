@@ -25,6 +25,7 @@
  * @test SharedStringsAuto
  * @summary Test -Xshare:auto with shared strings.
  * @requires vm.cds.write.archived.java.heap
+ * @requires vm.gc.G1
  * @library /test/lib
  * @run driver SharedStringsRunAuto
  */

@@ -24,7 +24,6 @@
 
 #include "precompiled.hpp"
 #include "cds/archiveBuilder.hpp"
-#include "cds/archiveHeapLoader.hpp"
 #include "cds/archiveUtils.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/classListParser.hpp"

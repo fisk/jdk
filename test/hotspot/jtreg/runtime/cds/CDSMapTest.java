@@ -26,6 +26,7 @@
  * @bug 8308903
  * @summary Test the contents of -Xlog:cds+map
  * @requires vm.cds
+ * @requires vm.gc.G1
  * @library /test/lib
  * @run driver CDSMapTest
  */
@@ -50,6 +51,7 @@ public class CDSMapTest {
 
         // Use the same heap size as make/Images.gmk
         dumpArgs.add("-Xmx128M");
+        dumpArgs.add("-XX:-DumpStreamableObjects");
 
         if (Platform.is64bit()) {
             // These options are available only on 64-bit.

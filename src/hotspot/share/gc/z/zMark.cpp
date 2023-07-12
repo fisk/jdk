@@ -338,11 +338,19 @@ public:
 
   virtual void do_klass(Klass* klass) {
     ClassLoaderData* cld = klass->class_loader_data();
+    if (cld == nullptr) {
+      return;
+    }
+
     ZMarkBarrierFollowOopClosure<finalizable, ZGenerationIdOptional::none> cl;
     cld->oops_do(&cl, claim_value());
   }
 
   virtual void do_cld(ClassLoaderData* cld) {
+    if (cld == nullptr) {
+      return;
+    }
+
     ZMarkBarrierFollowOopClosure<finalizable, ZGenerationIdOptional::none> cl;
     cld->oops_do(&cl, claim_value());
   }

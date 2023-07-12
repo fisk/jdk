@@ -108,6 +108,13 @@ void XArguments::initialize() {
   FLAG_SET_DEFAULT(VerifyDuringStartup, false);
   FLAG_SET_DEFAULT(VerifyBeforeExit, false);
 
+  if (VerifyArchivedFields > 0) {
+    // ZGC doesn't support verifying at arbitrary points as our normal state is that everything in the
+    // heap looks completely insane. Only at some particular points does the heap look sort of sane.
+    // So instead of verifying we trigger a GC that does its own verification when it's suitable.
+    FLAG_SET_DEFAULT(VerifyArchivedFields, 2);
+  }
+
   if (VerifyBeforeGC || VerifyDuringGC || VerifyAfterGC) {
     FLAG_SET_DEFAULT(ZVerifyRoots, true);
     FLAG_SET_DEFAULT(ZVerifyObjects, true);

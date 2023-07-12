@@ -27,6 +27,7 @@
  *          are actually shared
  * @requires vm.cds.write.archived.java.heap
  * @requires vm.flagless
+ * @requires vm.gc.G1
  * @library /test/lib
  * @build SharedStringsWb jdk.test.whitebox.WhiteBox
  * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar whitebox.jar jdk.test.whitebox.WhiteBox

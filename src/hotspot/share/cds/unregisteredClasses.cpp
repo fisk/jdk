@@ -87,8 +87,8 @@ Handle UnregisteredClasses::create_url_classloader(Symbol* path, TRAPS) {
                          vmSymbols::toFileURL_signature(),
                          path_string, CHECK_NH);
   assert(result.get_type() == T_OBJECT, "just checking");
-  oop url_h = result.get_oop();
   objArrayHandle urls = oopFactory::new_objArray_handle(vmClasses::URL_klass(), 1, CHECK_NH);
+  oop url_h = result.get_oop();
   urls->obj_at_put(0, url_h);
 
   Handle url_classloader = JavaCalls::construct_new_instance(

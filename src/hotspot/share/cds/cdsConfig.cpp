@@ -23,9 +23,9 @@
  */
 
 #include "precompiled.hpp"
-#include "cds/archiveHeapLoader.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/classListWriter.hpp"
+#include "cds/filemap.hpp"
 #include "cds/heapShared.hpp"
 #include "classfile/classLoaderDataShared.hpp"
 #include "classfile/moduleEntry.hpp"
@@ -383,8 +383,11 @@ void CDSConfig::stop_using_optimized_module_handling() {
 
 #if INCLUDE_CDS_JAVA_HEAP
 bool CDSConfig::is_dumping_heap() {
-  // heap dump is not supported in dynamic dump
   return is_dumping_static_archive() && HeapShared::can_write();
+}
+
+bool CDSConfig::is_loading_heap() {
+  return HeapShared::is_archived_heap_in_use();
 }
 
 bool CDSConfig::is_using_full_module_graph() {
@@ -396,7 +399,7 @@ bool CDSConfig::is_using_full_module_graph() {
     return false;
   }
 
-  if (UseSharedSpaces && ArchiveHeapLoader::can_use()) {
+  if (UseSharedSpaces && HeapShared::can_use_archived_heap()) {
     // Classes used by the archived full module graph are loaded in JVMTI early phase.
     assert(!(JvmtiExport::should_post_class_file_load_hook() && JvmtiExport::has_early_class_hook_env()),
            "CDS should be disabled if early class hooks are enabled");

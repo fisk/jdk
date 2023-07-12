@@ -96,6 +96,7 @@ public:
   // --- Archived java objects
 
   static bool   is_dumping_heap()                            NOT_CDS_JAVA_HEAP_RETURN_(false);
+  static bool   is_loading_heap()                            NOT_CDS_JAVA_HEAP_RETURN_(false);
 
   // full_module_graph (requires optimized_module_handling)
   static bool is_dumping_full_module_graph()                 { return CDS_ONLY(_is_dumping_full_module_graph) NOT_CDS(false); }

@@ -26,6 +26,18 @@
  * @test
  * @summary Test primitive box caches integrity in various scenarios (IntegerCache etc)
  * @requires vm.cds.write.archived.java.heap
+ * @requires vm.gc.G1
+ * @library /test/jdk/lib/testlibrary /test/lib /test/hotspot/jtreg/runtime/cds/appcds
+ * @compile CheckIntegerCacheApp.java
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar boxCache.jar CheckIntegerCacheApp
+ * @run driver ArchivedIntegerCacheTest G1
+ */
+
+/*
+ * @test
+ * @summary Test primitive box caches integrity in various scenarios (IntegerCache etc)
+ * @requires vm.cds.write.archived.java.heap
+ * @requires vm.gc != "G1" & vm.gc != null
  * @library /test/jdk/lib/testlibrary /test/lib /test/hotspot/jtreg/runtime/cds/appcds
  * @compile CheckIntegerCacheApp.java
  * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar boxCache.jar CheckIntegerCacheApp
@@ -42,6 +54,7 @@ import jdk.test.lib.helpers.ClassFileInstaller;
 public class ArchivedIntegerCacheTest {
 
     public static void main(String[] args) throws Exception {
+        boolean useG1 = args.length > 0 && args[0].equals("G1");
         String appJar = ClassFileInstaller.getJarPath("boxCache.jar");
 
         Path userDir = Paths.get(CDSTestUtils.getOutputDir());
@@ -117,7 +130,6 @@ public class ArchivedIntegerCacheTest {
         TestCommon.checkExec(output);
 
         // Test case 6)
-        // - Cache is too large to archive
         output = TestCommon.dump(appJar,
                 TestCommon.list("CheckIntegerCacheApp"),
                 "-XX:AutoBoxCacheMax=2000000",
@@ -126,7 +138,15 @@ public class ArchivedIntegerCacheTest {
                 "-Xlog:cds+heap=info",
                 "-Xlog:gc+region+cds",
                 "-Xlog:gc+region=trace");
-        TestCommon.checkDump(output,
-            "Cannot archive the sub-graph referenced from [Ljava.lang.Integer; object");
+
+        if (!useG1) {
+          // - Non-G1 uses the streaming mode by default, which can cache large objects
+          TestCommon.checkDump(output,
+              "Archived object klass java.lang.Integer$IntegerCache ( 0) => [Ljava.lang.Integer;");
+        } else {
+          // - Cache is too large to archive for G1 mapping mode
+          TestCommon.checkDump(output,
+              "Cannot archive the sub-graph referenced from [Ljava.lang.Integer; object");
+        }
     }
 }

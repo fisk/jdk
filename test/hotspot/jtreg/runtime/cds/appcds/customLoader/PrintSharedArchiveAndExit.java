@@ -28,6 +28,26 @@
  * @comment the code is mostly copied from HelloCustom
  * @requires vm.cds
  * @requires vm.cds.custom.loaders
+ * @requires vm.gc.G1
+ * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds
+ * @compile test-classes/HelloUnload.java test-classes/CustomLoadee.java
+ * @build jdk.test.whitebox.WhiteBox jdk.test.lib.classloader.ClassUnloadCommon
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar hello.jar HelloUnload
+ *                 jdk.test.lib.classloader.ClassUnloadCommon
+ *                 jdk.test.lib.classloader.ClassUnloadCommon$1
+ *                 jdk.test.lib.classloader.ClassUnloadCommon$TestFailure
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar hello_custom.jar CustomLoadee
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar WhiteBox.jar jdk.test.whitebox.WhiteBox
+ * @run driver PrintSharedArchiveAndExit G1
+ */
+
+/*
+ * @test
+ * @summary test -XX:+PrintSharedArchiveAndExit output for shared class.
+ * @comment the code is mostly copied from HelloCustom
+ * @requires vm.cds
+ * @requires vm.cds.custom.loaders
+ * @requires vm.gc != "G1" & vm.gc != null
  * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds
  * @compile test-classes/HelloUnload.java test-classes/CustomLoadee.java
  * @build jdk.test.whitebox.WhiteBox jdk.test.lib.classloader.ClassUnloadCommon
@@ -45,7 +65,10 @@ import jdk.test.lib.helpers.ClassFileInstaller;
 import jdk.test.whitebox.WhiteBox;
 
 public class PrintSharedArchiveAndExit {
+    private static boolean useG1;
+
     public static void main(String[] args) throws Exception {
+        useG1 = args.length > 0 && args[0].equals("G1");
         run();
     }
     public static void run(String... extra_runtime_args) throws Exception {
@@ -82,7 +105,11 @@ public class PrintSharedArchiveAndExit {
               .shouldContain("Shared Builtin Dictionary")
               .shouldContain("Shared Unregistered Dictionary")
               .shouldMatch("Number of shared symbols: \\d+")
-              .shouldMatch("Number of shared strings: \\d+")
               .shouldMatch("VM version: .*");
+
+        if (useG1) {
+            // G1 uses the non-streaming object loader, which dumps the string table
+            output.shouldMatch("Number of shared strings: \\d+");
+        }
     }
 }
