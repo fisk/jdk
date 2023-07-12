@@ -47,6 +47,11 @@ bool java_lang_String::hash_is_set(oop java_string) {
   return java_string->int_field(_hash_offset) != 0 || java_string->bool_field(_hashIsZero_offset) != 0;
 }
 
+int java_lang_String::precomputed_hash(oop java_string) {
+  assert(hash_is_set(java_string), "precondition is that the hash is already set");
+  return java_string->int_field(_hash_offset);
+}
+
 // Accessors
 bool java_lang_String::value_equals(typeArrayOop str_value1, typeArrayOop str_value2) {
   return ((str_value1 == str_value2) ||

@@ -695,6 +695,12 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   // No more stub generation allowed after that point.
   StubCodeDesc::freeze();
 
+#if INCLUDE_CDS_JAVA_HEAP
+  if (HeapShared::is_archived_heap_in_use()) {
+    HeapShared::enable_gc();
+  }
+#endif
+
   // Set flag that basic initialization has completed. Used by exceptions and various
   // debug stuff, that does not work until all basic classes have been initialized.
   set_init_completed();
@@ -882,6 +888,12 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   //   take a while to process their first tick).
   WatcherThread::run_all_tasks();
 
+#if INCLUDE_CDS_JAVA_HEAP
+  if (HeapShared::is_archived_heap_in_use()) {
+    HeapShared::finish_materialize_objects();
+  }
+#endif
+
   create_vm_timer.end();
 #ifdef ASSERT
   _vm_complete = true;
@@ -1065,7 +1077,7 @@ jboolean Threads::is_supported_jni_version(jint version) {
 void Threads::add(JavaThread* p, bool force_daemon) {
   // The threads lock must be owned at this point
   assert(Threads_lock->owned_by_self(), "must have threads lock");
-  assert(p->monitor_owner_id() != 0, "should be set");
+  assert(p->threadObj() == nullptr || p->monitor_owner_id() != 0, "should be set");
 
   BarrierSet::barrier_set()->on_thread_attach(p);
 

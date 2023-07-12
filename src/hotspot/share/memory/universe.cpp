@@ -22,7 +22,7 @@
  *
  */
 
-#include "cds/archiveHeapLoader.hpp"
+#include "cds/heapShared.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/dynamicArchive.hpp"
 #include "cds/heapShared.hpp"
@@ -317,7 +317,7 @@ void Universe::archive_exception_instances() {
 }
 
 void Universe::load_archived_object_instances() {
-  if (ArchiveHeapLoader::is_in_use()) {
+  if (HeapShared::is_archived_heap_in_use()) {
     for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
       int index = _archived_basic_type_mirror_indices[i];
       if (!is_reference_type((BasicType)i) && index >= 0) {
@@ -551,10 +551,8 @@ void Universe::genesis(TRAPS) {
 void Universe::initialize_basic_type_mirrors(TRAPS) {
 #if INCLUDE_CDS_JAVA_HEAP
     if (CDSConfig::is_using_archive() &&
-        ArchiveHeapLoader::is_in_use() &&
+        HeapShared::is_archived_heap_in_use() &&
         _basic_type_mirrors[T_INT].resolve() != nullptr) {
-      assert(ArchiveHeapLoader::can_use(), "Sanity");
-
       // check that all basic type mirrors are mapped also
       for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
         if (!is_reference_type((BasicType)i)) {
@@ -898,6 +896,12 @@ jint universe_init() {
     return JNI_EINVAL;
   }
 
+  HeapShared::initialize_writing_mode();
+
+  // Create the string table before the AOT object archive is loaded,
+  // as it might need to access the string table.
+  StringTable::create_table();
+
 #if INCLUDE_CDS
   if (CDSConfig::is_using_archive()) {
     // Read the data structures supporting the shared spaces (shared
@@ -905,6 +909,8 @@ jint universe_init() {
     MetaspaceShared::initialize_shared_spaces();
   }
 #endif
+
+  HeapShared::initialize_heap_loading_mode();
 
   ClassLoaderData::init_null_class_loader_data();
 
@@ -920,7 +926,6 @@ jint universe_init() {
 #endif
 
   SymbolTable::create_table();
-  StringTable::create_table();
 
   if (strlen(VerifySubSet) > 0) {
     Universe::initialize_verify_flags();
@@ -1158,6 +1163,7 @@ bool universe_post_init() {
   MemoryService::add_metaspace_memory_pools();
 
   MemoryService::set_universe_heap(Universe::heap());
+
 #if INCLUDE_CDS
   MetaspaceShared::post_initialize(CHECK_false);
 #endif

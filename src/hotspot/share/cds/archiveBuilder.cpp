@@ -27,15 +27,16 @@
 #include "cds/aotLinkedClassBulkLoader.hpp"
 #include "cds/aotLogging.hpp"
 #include "cds/archiveBuilder.hpp"
-#include "cds/archiveHeapWriter.hpp"
 #include "cds/archiveUtils.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/cppVtables.hpp"
 #include "cds/dumpAllocStats.hpp"
 #include "cds/dynamicArchive.hpp"
 #include "cds/heapShared.hpp"
+#include "cds/mappingArchiveHeapWriter.hpp"
 #include "cds/metaspaceShared.hpp"
 #include "cds/regeneratedClasses.hpp"
+#include "cds/streamingArchiveHeapWriter.hpp"
 #include "classfile/classLoader.hpp"
 #include "classfile/classLoaderDataShared.hpp"
 #include "classfile/javaClasses.hpp"
@@ -1176,6 +1177,23 @@ void ArchiveBuilder::relocate_to_requested() {
   }
 }
 
+// Log all the data [base...top). Pretend that the base address
+// will be mapped to requested_base at run-time.
+void ArchiveBuilder::log_as_hex(address base, address top, address requested_base, bool is_heap) {
+  assert(top >= base, "must be");
+
+  LogStreamHandle(Trace, aot, map) lsh;
+  if (lsh.is_enabled()) {
+    int unitsize = sizeof(address);
+    if (is_heap && UseCompressedOops) {
+      // This makes the compressed oop pointers easier to read, but
+      // longs and doubles will be split into two words.
+      unitsize = sizeof(narrowOop);
+    }
+    os::print_hex_dump(&lsh, base, top, unitsize, /* print_ascii=*/true, /* bytes_per_line=*/32, requested_base);
+  }
+}
+
 // Write detailed info to a mapfile to analyze contents of the archive.
 // static dump:
 //   java -Xshare:dump -Xlog:cds+map=trace:file=cds.map:none:filesize=0
@@ -1226,7 +1244,8 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
       SourceObjInfo* src_info = src_objs->at(i);
       address src = src_info->source_addr();
       address dest = src_info->buffered_addr();
-      log_as_hex(last_obj_base, dest, last_obj_base + buffer_to_runtime_delta());
+      address requested = HeapShared::is_writing_streaming_mode() ? nullptr : last_obj_base + buffer_to_runtime_delta();
+      ArchiveBuilder::log_as_hex(last_obj_base, dest, requested);
       address runtime_dest = dest + buffer_to_runtime_delta();
       int bytes = src_info->size_in_bytes();
 
@@ -1268,12 +1287,13 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
       last_obj_end  = dest + bytes;
     }
 
-    log_as_hex(last_obj_base, last_obj_end, last_obj_base + buffer_to_runtime_delta());
+    address requested = HeapShared::is_writing_streaming_mode() ? nullptr : last_obj_base + buffer_to_runtime_delta();
+    ArchiveBuilder::log_as_hex(last_obj_base, last_obj_end, requested);
     if (last_obj_end < region_end) {
       log_debug(aot, map)(PTR_FORMAT ": @@ Misc data %zu bytes",
                           p2i(last_obj_end + buffer_to_runtime_delta()),
                           size_t(region_end - last_obj_end));
-      log_as_hex(last_obj_end, region_end, last_obj_end + buffer_to_runtime_delta());
+      ArchiveBuilder::log_as_hex(last_obj_end, region_end, requested);
     }
   }
 
@@ -1298,263 +1318,6 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
                        name, p2i(base), p2i(top), size);
   }
 
-#if INCLUDE_CDS_JAVA_HEAP
-  static void log_heap_region(ArchiveHeapInfo* heap_info) {
-    MemRegion r = heap_info->buffer_region();
-    address start = address(r.start()); // start of the current oop inside the buffer
-    address end = address(r.end());
-    log_region("heap", start, end, ArchiveHeapWriter::buffered_addr_to_requested_addr(start));
-
-    LogStreamHandle(Info, aot, map) st;
-
-    HeapRootSegments segments = heap_info->heap_root_segments();
-    assert(segments.base_offset() == 0, "Sanity");
-
-    for (size_t seg_idx = 0; seg_idx < segments.count(); seg_idx++) {
-      address requested_start = ArchiveHeapWriter::buffered_addr_to_requested_addr(start);
-      st.print_cr(PTR_FORMAT ": Heap roots segment [%d]",
-                  p2i(requested_start), segments.size_in_elems(seg_idx));
-      start += segments.size_in_bytes(seg_idx);
-    }
-    log_heap_roots();
-
-    while (start < end) {
-      size_t byte_size;
-      oop source_oop = ArchiveHeapWriter::buffered_addr_to_source_obj(start);
-      address requested_start = ArchiveHeapWriter::buffered_addr_to_requested_addr(start);
-      st.print(PTR_FORMAT ": @@ Object ", p2i(requested_start));
-
-      if (source_oop != nullptr) {
-        // This is a regular oop that got archived.
-        // Don't print the requested addr again as we have just printed it at the beginning of the line.
-        // Example:
-        // 0x00000007ffd27938: @@ Object (0xfffa4f27) java.util.HashMap
-        print_oop_info_cr(&st, source_oop, /*print_requested_addr=*/false);
-        byte_size = source_oop->size() * BytesPerWord;
-      } else if ((byte_size = ArchiveHeapWriter::get_filler_size_at(start)) > 0) {
-        // We have a filler oop, which also does not exist in BufferOffsetToSourceObjectTable.
-        // Example:
-        // 0x00000007ffc3ffd8: @@ Object filler 40 bytes
-        st.print_cr("filler %zu bytes", byte_size);
-      } else {
-        ShouldNotReachHere();
-      }
-
-      address oop_end = start + byte_size;
-      log_as_hex(start, oop_end, requested_start, /*is_heap=*/true);
-
-      if (source_oop != nullptr) {
-        log_oop_details(heap_info, source_oop, /*buffered_addr=*/start);
-      }
-      start = oop_end;
-    }
-  }
-
-  // ArchivedFieldPrinter is used to print the fields of archived objects. We can't
-  // use _source_obj->print_on(), because we want to print the oop fields
-  // in _source_obj with their requested addresses using print_oop_info_cr().
-  class ArchivedFieldPrinter : public FieldClosure {
-    ArchiveHeapInfo* _heap_info;
-    outputStream* _st;
-    oop _source_obj;
-    address _buffered_addr;
-  public:
-    ArchivedFieldPrinter(ArchiveHeapInfo* heap_info, outputStream* st, oop src_obj, address buffered_addr) :
-      _heap_info(heap_info), _st(st), _source_obj(src_obj), _buffered_addr(buffered_addr) {}
-
-    void do_field(fieldDescriptor* fd) {
-      _st->print(" - ");
-      BasicType ft = fd->field_type();
-      switch (ft) {
-      case T_ARRAY:
-      case T_OBJECT:
-        {
-          fd->print_on(_st); // print just the name and offset
-          oop obj = _source_obj->obj_field(fd->offset());
-          if (java_lang_Class::is_instance(obj)) {
-            obj = HeapShared::scratch_java_mirror(obj);
-          }
-          print_oop_info_cr(_st, obj);
-        }
-        break;
-      default:
-        if (ArchiveHeapWriter::is_marked_as_native_pointer(_heap_info, _source_obj, fd->offset())) {
-          print_as_native_pointer(fd);
-        } else {
-          fd->print_on_for(_st, cast_to_oop(_buffered_addr)); // name, offset, value
-          _st->cr();
-        }
-      }
-    }
-
-    void print_as_native_pointer(fieldDescriptor* fd) {
-      LP64_ONLY(assert(fd->field_type() == T_LONG, "must be"));
-      NOT_LP64 (assert(fd->field_type() == T_INT,  "must be"));
-
-      // We have a field that looks like an integer, but it's actually a pointer to a MetaspaceObj.
-      address source_native_ptr = (address)
-          LP64_ONLY(_source_obj->long_field(fd->offset()))
-          NOT_LP64( _source_obj->int_field (fd->offset()));
-      ArchiveBuilder* builder = ArchiveBuilder::current();
-
-      // The value of the native pointer at runtime.
-      address requested_native_ptr = builder->to_requested(builder->get_buffered_addr(source_native_ptr));
-
-      // The address of _source_obj at runtime
-      oop requested_obj = ArchiveHeapWriter::source_obj_to_requested_obj(_source_obj);
-      // The address of this field in the requested space
-      assert(requested_obj != nullptr, "Attempting to load field from null oop");
-      address requested_field_addr = cast_from_oop<address>(requested_obj) + fd->offset();
-
-      fd->print_on(_st);
-      _st->print_cr(PTR_FORMAT " (marked metadata pointer @" PTR_FORMAT " )",
-                    p2i(requested_native_ptr), p2i(requested_field_addr));
-    }
-  };
-
-  // Print the fields of instanceOops, or the elements of arrayOops
-  static void log_oop_details(ArchiveHeapInfo* heap_info, oop source_oop, address buffered_addr) {
-    LogStreamHandle(Trace, aot, map, oops) st;
-    if (st.is_enabled()) {
-      Klass* source_klass = source_oop->klass();
-      ArchiveBuilder* builder = ArchiveBuilder::current();
-      Klass* requested_klass = builder->to_requested(builder->get_buffered_addr(source_klass));
-
-      st.print(" - klass: ");
-      source_klass->print_value_on(&st);
-      st.print(" " PTR_FORMAT, p2i(requested_klass));
-      st.cr();
-
-      if (source_oop->is_typeArray()) {
-        TypeArrayKlass::cast(source_klass)->oop_print_elements_on(typeArrayOop(source_oop), &st);
-      } else if (source_oop->is_objArray()) {
-        objArrayOop source_obj_array = objArrayOop(source_oop);
-        for (int i = 0; i < source_obj_array->length(); i++) {
-          st.print(" -%4d: ", i);
-          oop obj = source_obj_array->obj_at(i);
-          if (java_lang_Class::is_instance(obj)) {
-            obj = HeapShared::scratch_java_mirror(obj);
-          }
-          print_oop_info_cr(&st, obj);
-        }
-      } else {
-        st.print_cr(" - fields (%zu words):", source_oop->size());
-        ArchivedFieldPrinter print_field(heap_info, &st, source_oop, buffered_addr);
-        InstanceKlass::cast(source_klass)->print_nonstatic_fields(&print_field);
-
-        if (java_lang_Class::is_instance(source_oop)) {
-          oop scratch_mirror = source_oop;
-          st.print(" - signature: ");
-          print_class_signature_for_mirror(&st, scratch_mirror);
-          st.cr();
-
-          Klass* src_klass = java_lang_Class::as_Klass(scratch_mirror);
-          if (src_klass != nullptr && src_klass->is_instance_klass()) {
-            oop rr = HeapShared::scratch_resolved_references(InstanceKlass::cast(src_klass)->constants());
-            st.print(" - archived_resolved_references: ");
-            print_oop_info_cr(&st, rr);
-
-            // We need to print the fields in the scratch_mirror, not the original mirror.
-            // (if a class is not aot-initialized, static fields in its scratch mirror will be cleared).
-            assert(scratch_mirror == HeapShared::scratch_java_mirror(src_klass->java_mirror()), "sanity");
-            st.print_cr("- ---- static fields (%d):", java_lang_Class::static_oop_field_count(scratch_mirror));
-            InstanceKlass::cast(src_klass)->do_local_static_fields(&print_field);
-          }
-        }
-      }
-    }
-  }
-
-  static void print_class_signature_for_mirror(outputStream* st, oop scratch_mirror) {
-    assert(java_lang_Class::is_instance(scratch_mirror), "sanity");
-    if (java_lang_Class::is_primitive(scratch_mirror)) {
-      for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
-        BasicType bt = (BasicType)i;
-        if (!is_reference_type(bt) && scratch_mirror == HeapShared::scratch_java_mirror(bt)) {
-          oop orig_mirror = Universe::java_mirror(bt);
-          java_lang_Class::print_signature(orig_mirror, st);
-          return;
-        }
-      }
-      ShouldNotReachHere();
-    }
-    java_lang_Class::print_signature(scratch_mirror, st);
-  }
-
-  static void log_heap_roots() {
-    LogStreamHandle(Trace, aot, map, oops) st;
-    if (st.is_enabled()) {
-      for (int i = 0; i < HeapShared::pending_roots()->length(); i++) {
-        st.print("roots[%4d]: ", i);
-        print_oop_info_cr(&st, HeapShared::pending_roots()->at(i));
-      }
-    }
-  }
-
-  // Example output:
-  // - The first number is the requested address (if print_requested_addr == true)
-  // - The second number is the narrowOop version of the requested address (if UseCompressedOops == true)
-  //     0x00000007ffc7e840 (0xfff8fd08) java.lang.Class Ljava/util/Array;
-  //     0x00000007ffc000f8 (0xfff8001f) [B length: 11
-  static void print_oop_info_cr(outputStream* st, oop source_oop, bool print_requested_addr = true) {
-    if (source_oop == nullptr) {
-      st->print_cr("null");
-    } else {
-      ResourceMark rm;
-      oop requested_obj = ArchiveHeapWriter::source_obj_to_requested_obj(source_oop);
-      if (print_requested_addr) {
-        st->print(PTR_FORMAT " ", p2i(requested_obj));
-      }
-      if (UseCompressedOops) {
-        st->print("(0x%08x) ", CompressedOops::narrow_oop_value(requested_obj));
-      }
-      if (source_oop->is_array()) {
-        int array_len = arrayOop(source_oop)->length();
-        st->print_cr("%s length: %d", source_oop->klass()->external_name(), array_len);
-      } else {
-        st->print("%s", source_oop->klass()->external_name());
-
-        if (java_lang_String::is_instance(source_oop)) {
-          st->print(" ");
-          java_lang_String::print(source_oop, st);
-        } else if (java_lang_Class::is_instance(source_oop)) {
-          oop scratch_mirror = source_oop;
-
-          st->print(" ");
-          print_class_signature_for_mirror(st, scratch_mirror);
-
-          Klass* src_klass = java_lang_Class::as_Klass(scratch_mirror);
-          if (src_klass != nullptr && src_klass->is_instance_klass()) {
-            InstanceKlass* buffered_klass =
-              ArchiveBuilder::current()->get_buffered_addr(InstanceKlass::cast(src_klass));
-            if (buffered_klass->has_aot_initialized_mirror()) {
-              st->print(" (aot-inited)");
-            }
-          }
-        }
-        st->cr();
-      }
-    }
-  }
-#endif // INCLUDE_CDS_JAVA_HEAP
-
-  // Log all the data [base...top). Pretend that the base address
-  // will be mapped to requested_base at run-time.
-  static void log_as_hex(address base, address top, address requested_base, bool is_heap = false) {
-    assert(top >= base, "must be");
-
-    LogStreamHandle(Trace, aot, map) lsh;
-    if (lsh.is_enabled()) {
-      int unitsize = sizeof(address);
-      if (is_heap && UseCompressedOops) {
-        // This makes the compressed oop pointers easier to read, but
-        // longs and doubles will be split into two words.
-        unitsize = sizeof(narrowOop);
-      }
-      os::print_hex_dump(&lsh, base, top, unitsize, /* print_ascii=*/true, /* bytes_per_line=*/32, requested_base);
-    }
-  }
-
   static void log_header(FileMapInfo* mapinfo) {
     LogStreamHandle(Info, aot, map) lsh;
     if (lsh.is_enabled()) {
@@ -1563,16 +1326,19 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
   }
 
 public:
-  static void log(ArchiveBuilder* builder, FileMapInfo* mapinfo,
-                  ArchiveHeapInfo* heap_info,
-                  char* bitmap, size_t bitmap_size_in_bytes) {
+  static void log(ArchiveBuilder* builder,
+                  FileMapInfo* mapinfo,
+                  ArchiveMappedHeapInfo* mapped_heap_info,
+                  ArchiveStreamedHeapInfo* streamed_heap_info,
+                  char* bitmap,
+                  size_t bitmap_size_in_bytes) {
     log_info(aot, map)("%s CDS archive map for %s", CDSConfig::is_dumping_static_archive() ? "Static" : "Dynamic", mapinfo->full_path());
 
     address header = address(mapinfo->header());
     address header_end = header + mapinfo->header()->header_size();
     log_region("header", header, header_end, nullptr);
     log_header(mapinfo);
-    log_as_hex(header, header_end, nullptr);
+    ArchiveBuilder::log_as_hex(header, header_end, nullptr);
 
     DumpRegion* rw_region = &builder->_rw_region;
     DumpRegion* ro_region = &builder->_ro_region;
@@ -1582,11 +1348,16 @@ public:
 
     address bitmap_end = address(bitmap + bitmap_size_in_bytes);
     log_region("bitmap", address(bitmap), bitmap_end, nullptr);
-    log_as_hex((address)bitmap, bitmap_end, nullptr);
+    ArchiveBuilder::log_as_hex((address)bitmap, bitmap_end, nullptr);
 
 #if INCLUDE_CDS_JAVA_HEAP
-    if (heap_info->is_used()) {
-      log_heap_region(heap_info);
+    if (mapped_heap_info != nullptr && mapped_heap_info->is_used()) {
+      address requested_base = MappingArchiveHeapWriter::requested_address();
+      log_region("heap", (address)mapped_heap_info->buffer_region().start(), (address)mapped_heap_info->buffer_region().end(), requested_base);
+      MappingArchiveHeapWriter::log_heap_region(mapped_heap_info);
+    } else if (streamed_heap_info != nullptr && streamed_heap_info->is_used()) {
+      log_region("heap", (address)streamed_heap_info->buffer_region().start(), (address)streamed_heap_info->buffer_region().end(), 0);
+      StreamingArchiveHeapWriter::log_heap_region(streamed_heap_info);
     }
 #endif
 
@@ -1598,10 +1369,12 @@ void ArchiveBuilder::print_stats() {
   _alloc_stats.print_stats(int(_ro_region.used()), int(_rw_region.used()));
 }
 
-void ArchiveBuilder::write_archive(FileMapInfo* mapinfo, ArchiveHeapInfo* heap_info) {
+void ArchiveBuilder::write_archive(FileMapInfo* mapinfo, ArchiveMappedHeapInfo* mapped_heap_info, ArchiveStreamedHeapInfo* streamed_heap_info) {
   // Make sure NUM_CDS_REGIONS (exported in cds.h) agrees with
   // MetaspaceShared::n_regions (internal to hotspot).
   assert(NUM_CDS_REGIONS == MetaspaceShared::n_regions, "sanity");
+
+  ResourceMark rm;
 
   write_region(mapinfo, MetaspaceShared::rw, &_rw_region, /*read_only=*/false,/*allow_exec=*/false);
   write_region(mapinfo, MetaspaceShared::ro, &_ro_region, /*read_only=*/true, /*allow_exec=*/false);
@@ -1611,14 +1384,19 @@ void ArchiveBuilder::write_archive(FileMapInfo* mapinfo, ArchiveHeapInfo* heap_i
   ArchivePtrMarker::initialize_rw_ro_maps(&_rw_ptrmap, &_ro_ptrmap);
 
   size_t bitmap_size_in_bytes;
-  char* bitmap = mapinfo->write_bitmap_region(ArchivePtrMarker::rw_ptrmap(), ArchivePtrMarker::ro_ptrmap(), heap_info,
+  char* bitmap = mapinfo->write_bitmap_region(ArchivePtrMarker::rw_ptrmap(),
+                                              ArchivePtrMarker::ro_ptrmap(),
+                                              mapped_heap_info,
+                                              streamed_heap_info,
                                               bitmap_size_in_bytes);
 
-  if (heap_info->is_used()) {
-    _total_heap_region_size = mapinfo->write_heap_region(heap_info);
+  if (mapped_heap_info != nullptr && mapped_heap_info->is_used()) {
+    _total_heap_region_size = mapinfo->write_mapped_heap_region(mapped_heap_info);
+  } else if (streamed_heap_info != nullptr && streamed_heap_info->is_used()) {
+    _total_heap_region_size = mapinfo->write_streamed_heap_region(streamed_heap_info);
   }
 
-  print_region_stats(mapinfo, heap_info);
+  print_region_stats(mapinfo, mapped_heap_info, streamed_heap_info);
 
   mapinfo->set_requested_base((char*)MetaspaceShared::requested_base_address());
   mapinfo->set_header_crc(mapinfo->compute_header_crc());
@@ -1633,7 +1411,7 @@ void ArchiveBuilder::write_archive(FileMapInfo* mapinfo, ArchiveHeapInfo* heap_i
   }
 
   if (log_is_enabled(Info, aot, map)) {
-    CDSMapLogger::log(this, mapinfo, heap_info,
+    CDSMapLogger::log(this, mapinfo, mapped_heap_info, streamed_heap_info,
                       bitmap, bitmap_size_in_bytes);
   }
   CDS_JAVA_HEAP_ONLY(HeapShared::destroy_archived_object_cache());
@@ -1650,7 +1428,9 @@ void ArchiveBuilder::count_relocated_pointer(bool tagged, bool nulled) {
   _relocated_ptr_info._num_nulled_ptrs += nulled ? 1 : 0;
 }
 
-void ArchiveBuilder::print_region_stats(FileMapInfo *mapinfo, ArchiveHeapInfo* heap_info) {
+void ArchiveBuilder::print_region_stats(FileMapInfo *mapinfo,
+                                        ArchiveMappedHeapInfo* mapped_heap_info,
+                                        ArchiveStreamedHeapInfo* streamed_heap_info) {
   // Print statistics of all the regions
   const size_t bitmap_used = mapinfo->region_at(MetaspaceShared::bm)->used();
   const size_t bitmap_reserved = mapinfo->region_at(MetaspaceShared::bm)->used_aligned();
@@ -1668,22 +1448,22 @@ void ArchiveBuilder::print_region_stats(FileMapInfo *mapinfo, ArchiveHeapInfo* h
 
   print_bitmap_region_stats(bitmap_used, total_reserved);
 
-  if (heap_info->is_used()) {
-    print_heap_region_stats(heap_info, total_reserved);
+  if (mapped_heap_info != nullptr && mapped_heap_info->is_used()) {
+    print_heap_region_stats(mapped_heap_info->buffer_start(), mapped_heap_info->buffer_byte_size(), total_reserved);
+  } else if (streamed_heap_info != nullptr && streamed_heap_info->is_used()) {
+    print_heap_region_stats(streamed_heap_info->buffer_start(), streamed_heap_info->buffer_byte_size(), total_reserved);
   }
 
   aot_log_debug(aot)("total   : %9zu [100.0%% of total] out of %9zu bytes [%5.1f%% used]",
-                 total_bytes, total_reserved, total_u_perc);
+                     total_bytes, total_reserved, total_u_perc);
 }
 
 void ArchiveBuilder::print_bitmap_region_stats(size_t size, size_t total_size) {
   aot_log_debug(aot)("bm space: %9zu [ %4.1f%% of total] out of %9zu bytes [100.0%% used]",
-                 size, size/double(total_size)*100.0, size);
+                     size, size/double(total_size)*100.0, size);
 }
 
-void ArchiveBuilder::print_heap_region_stats(ArchiveHeapInfo *info, size_t total_size) {
-  char* start = info->buffer_start();
-  size_t size = info->buffer_byte_size();
+void ArchiveBuilder::print_heap_region_stats(char* start, size_t size, size_t total_size) {
   char* top = start + size;
   aot_log_debug(aot)("hp space: %9zu [ %4.1f%% of total] out of %9zu bytes [100.0%% used] at " INTPTR_FORMAT,
                      size, size/double(total_size)*100.0, size, p2i(start));

@@ -491,7 +491,8 @@ static bool can_assign(const Thread* t) {
     return true;
   }
   const JavaThread* jt = JavaThread::cast(t);
-  return jt->thread_state() == _thread_new || jt->is_attaching_via_jni();
+  JavaThreadState state = jt->thread_state();
+  return state == _thread_new || state == _thread_in_vm || jt->is_attaching_via_jni();
 }
 #endif
 
