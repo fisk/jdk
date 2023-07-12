@@ -328,11 +328,6 @@ void MetaspaceShared::read_extra_data(JavaThread* current, const char* filename)
         CLEAR_PENDING_EXCEPTION;
       } else {
 #if INCLUDE_CDS_JAVA_HEAP
-        if (ArchiveHeapWriter::is_string_too_large_to_archive(str)) {
-          log_warning(cds, heap)("[line %d] extra interned string ignored; size too large: %d",
-                                 reader.last_line_no(), utf8_length);
-          continue;
-        }
         // Make sure this string is included in the dumped interned string table.
         assert(str != nullptr, "must succeed");
         _extra_interned_strings->append(OopHandle(Universe::vm_global(), str));
@@ -375,7 +370,6 @@ void MetaspaceShared::serialize(SerializeClosure* soc) {
 
   // Dump/restore the symbol/string/subgraph_info tables
   SymbolTable::serialize_shared_table_header(soc);
-  StringTable::serialize_shared_table_header(soc);
   HeapShared::serialize_tables(soc);
   SystemDictionaryShared::serialize_dictionary_headers(soc);
 
@@ -778,7 +772,6 @@ void MetaspaceShared::preload_and_dump_impl(TRAPS) {
   log_info(cds)("Rewriting and linking classes: done");
 
 #if INCLUDE_CDS_JAVA_HEAP
-  StringTable::allocate_shared_strings_array(CHECK);
   ArchiveHeapWriter::init();
   if (use_full_module_graph()) {
     HeapShared::reset_archived_object_states(CHECK);
@@ -833,23 +826,6 @@ void VM_PopulateDumpSharedSpace::dump_java_heap_objects(GrowableArray<Klass*>* k
       "Current settings: UseG1GC=%s, UseCompressedClassPointers=%s.",
       BOOL_TO_STR(UseG1GC), BOOL_TO_STR(UseCompressedClassPointers));
     return;
-  }
-  // Find all the interned strings that should be dumped.
-  int i;
-  for (i = 0; i < klasses->length(); i++) {
-    Klass* k = klasses->at(i);
-    if (k->is_instance_klass()) {
-      InstanceKlass* ik = InstanceKlass::cast(k);
-      if (ik->is_linked()) {
-        ik->constants()->add_dumped_interned_strings();
-      }
-    }
-  }
-  if (_extra_interned_strings != nullptr) {
-    for (i = 0; i < _extra_interned_strings->length(); i ++) {
-      OopHandle string = _extra_interned_strings->at(i);
-      HeapShared::add_to_dumped_interned_strings(string.resolve());
-    }
   }
 
   HeapShared::archive_objects(&_heap_info);
@@ -1159,9 +1135,6 @@ MapArchiveResult MetaspaceShared::map_archives(FileMapInfo* static_mapinfo, File
             cds_base, ccs_end - cds_base // Klass range
             );
 #endif // INCLUDE_CDS_JAVA_HEAP
-          // map_or_load_heap_region() compares the current narrow oop and klass encodings
-          // with the archived ones, so it must be done after all encodings are determined.
-          static_mapinfo->map_or_load_heap_region();
         }
 #endif // _LP64
     log_info(cds)("optimized module handling: %s", MetaspaceShared::use_optimized_module_handling() ? "enabled" : "disabled");
@@ -1422,7 +1395,6 @@ void MetaspaceShared::unmap_archive(FileMapInfo* mapinfo) {
   assert(UseSharedSpaces, "must be runtime");
   if (mapinfo != nullptr) {
     mapinfo->unmap_regions(archive_regions, archive_regions_count);
-    mapinfo->unmap_region(MetaspaceShared::bm);
     mapinfo->set_is_mapped(false);
   }
 }
@@ -1453,17 +1425,12 @@ void MetaspaceShared::initialize_shared_spaces() {
   ReadClosure rc(&array);
   serialize(&rc);
 
-  // Finish up archived heap initialization. These must be
-  // done after ReadClosure.
-  static_mapinfo->patch_heap_embedded_pointers();
-  ArchiveHeapLoader::finish_initialization();
+  // Heap initialization can be done only after vtables are initialized by ReadClosure.
+  static_mapinfo->load_heap_region();
 
   CDS_JAVA_HEAP_ONLY(Universe::update_archived_basic_type_mirrors());
 
-  // Close the mapinfo file
   static_mapinfo->close();
-
-  static_mapinfo->unmap_region(MetaspaceShared::bm);
 
   FileMapInfo *dynamic_mapinfo = FileMapInfo::dynamic_info();
   if (dynamic_mapinfo != nullptr) {
@@ -1502,7 +1469,6 @@ void MetaspaceShared::initialize_shared_spaces() {
     CountSharedSymbols cl;
     SymbolTable::shared_symbols_do(&cl);
     tty->print_cr("Number of shared symbols: %d", cl.total());
-    tty->print_cr("Number of shared strings: %zu", StringTable::shared_entry_count());
     tty->print_cr("VM version: %s\r\n", static_mapinfo->vm_version());
     if (FileMapInfo::current_info() == nullptr || _archive_loading_failed) {
       tty->print_cr("archive is invalid");
@@ -1544,10 +1510,6 @@ bool MetaspaceShared::use_full_module_graph() {
   bool result = _use_optimized_module_handling && _use_full_module_graph;
   if (DumpSharedSpaces) {
     result &= HeapShared::can_write();
-  } else if (UseSharedSpaces) {
-    result &= ArchiveHeapLoader::can_use();
-  } else {
-    result = false;
   }
 
   if (result && UseSharedSpaces) {

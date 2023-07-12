@@ -98,7 +98,6 @@ class CollectedHeap : public CHeapObj<mtGC> {
   friend class DisableIsGCActiveMark; // Disable current IsGCActiveMark
   friend class MemAllocator;
   friend class ParallelObjectIterator;
-
  private:
   GCHeapLog* _gc_heap_log;
 
@@ -511,12 +510,6 @@ class CollectedHeap : public CHeapObj<mtGC> {
   // These functions are potentially safepointing.
   virtual void pin_object(JavaThread* thread, oop obj) = 0;
   virtual void unpin_object(JavaThread* thread, oop obj) = 0;
-
-  // Support for loading objects from CDS archive into the heap
-  // (usually as a snapshot of the old generation).
-  virtual bool can_load_archived_objects() const { return false; }
-  virtual HeapWord* allocate_loaded_archive_space(size_t size) { return nullptr; }
-  virtual void complete_loaded_archive_space(MemRegion archive_space) { }
 
   virtual bool is_oop(oop object) const;
   // Non product verification and debugging.

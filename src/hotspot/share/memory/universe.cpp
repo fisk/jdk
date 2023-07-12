@@ -245,7 +245,7 @@ void Universe::set_archived_basic_type_mirror_index(BasicType t, int index) {
 }
 
 void Universe::update_archived_basic_type_mirrors() {
-  if (ArchiveHeapLoader::is_in_use()) {
+  if (ArchiveHeapLoader::is_loaded()) {
     for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
       int index = _archived_basic_type_mirror_indices[i];
       if (!is_reference_type((BasicType)i) && index >= 0) {
@@ -459,10 +459,8 @@ void Universe::genesis(TRAPS) {
 void Universe::initialize_basic_type_mirrors(TRAPS) {
 #if INCLUDE_CDS_JAVA_HEAP
     if (UseSharedSpaces &&
-        ArchiveHeapLoader::is_in_use() &&
+        ArchiveHeapLoader::is_loaded() &&
         _basic_type_mirrors[T_INT].resolve() != nullptr) {
-      assert(ArchiveHeapLoader::can_use(), "Sanity");
-
       // check that all basic type mirrors are mapped also
       for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
         if (!is_reference_type((BasicType)i)) {
@@ -815,6 +813,9 @@ jint universe_init() {
   Universe::_throw_no_such_method_error_cache = new LatestMethodCache();
   Universe::_do_stack_walk_cache = new LatestMethodCache();
 
+  SymbolTable::create_table();
+  StringTable::create_table();
+
 #if INCLUDE_CDS
   DynamicArchive::check_for_dynamic_dump();
   if (UseSharedSpaces) {
@@ -826,9 +827,6 @@ jint universe_init() {
     MetaspaceShared::prepare_for_dumping();
   }
 #endif
-
-  SymbolTable::create_table();
-  StringTable::create_table();
 
   if (strlen(VerifySubSet) > 0) {
     Universe::initialize_verify_flags();
@@ -915,6 +913,7 @@ OopStorage* Universe::vm_global() {
 void Universe::oopstorage_init() {
   Universe::_vm_global = OopStorageSet::create_strong("VM Global", mtInternal);
   Universe::_vm_weak = OopStorageSet::create_weak("VM Weak", mtInternal);
+  ArchiveHeapLoader::initialize_oop_storage();
 }
 
 void universe_oopstorage_init() {
@@ -1052,6 +1051,7 @@ bool universe_post_init() {
   MemoryService::add_metaspace_memory_pools();
 
   MemoryService::set_universe_heap(Universe::heap());
+
 #if INCLUDE_CDS
   MetaspaceShared::post_initialize(CHECK_false);
 #endif

@@ -99,6 +99,10 @@
 #include "utilities/events.hpp"
 #include "utilities/macros.hpp"
 #include "utilities/vmError.hpp"
+#if INCLUDE_CDS_JAVA_HEAP
+#include "cds/archiveHeapLoader.hpp"
+#include "cds/heapShared.hpp"
+#endif
 #if INCLUDE_JVMCI
 #include "jvmci/jvmci.hpp"
 #include "jvmci/jvmciEnv.hpp"
@@ -651,6 +655,12 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   // debug stuff, that does not work until all basic classes have been initialized.
   set_init_completed();
 
+#if INCLUDE_CDS_JAVA_HEAP
+  if (UseSharedSpaces) {
+    ArchiveHeapLoader::enable_gc();
+  }
+#endif
+
   LogConfiguration::post_initialize();
   Metaspace::post_initialize();
   MutexLocker::post_initialize();
@@ -806,6 +816,12 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   //   aren't, late joiners might appear to start slowly (we might
   //   take a while to process their first tick).
   WatcherThread::run_all_tasks();
+
+#if INCLUDE_CDS_JAVA_HEAP
+  if (UseSharedSpaces) {
+    HeapShared::finish_materialize_objects();
+  }
+#endif
 
   create_vm_timer.end();
 #ifdef ASSERT
