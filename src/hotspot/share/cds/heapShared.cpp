@@ -24,15 +24,17 @@
 
 #include "precompiled.hpp"
 #include "cds/archiveBuilder.hpp"
-#include "cds/archiveHeapLoader.hpp"
-#include "cds/archiveHeapWriter.hpp"
 #include "cds/archiveUtils.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/cdsEnumKlass.hpp"
 #include "cds/cdsHeapVerifier.hpp"
 #include "cds/classPrelinker.hpp"
 #include "cds/heapShared.hpp"
+#include "cds/mappingArchiveHeapLoader.hpp"
+#include "cds/mappingArchiveHeapWriter.hpp"
 #include "cds/metaspaceShared.hpp"
+#include "cds/streamingArchiveHeapLoader.hpp"
+#include "cds/streamingArchiveHeapWriter.hpp"
 #include "classfile/classLoaderData.hpp"
 #include "classfile/javaClasses.inline.hpp"
 #include "classfile/modules.hpp"
@@ -56,6 +58,7 @@
 #include "oops/oop.inline.hpp"
 #include "oops/typeArrayOop.inline.hpp"
 #include "prims/jvmtiExport.hpp"
+#include "runtime/globals_extension.hpp"
 #include "runtime/fieldDescriptor.inline.hpp"
 #include "runtime/init.hpp"
 #include "runtime/javaCalls.hpp"
@@ -107,6 +110,8 @@ public:
 
 bool HeapShared::_disable_writing = false;
 bool HeapShared::_box_classes_inited = false;
+HeapDumpMode HeapShared::_heap_load_mode = HeapDumpMode::_uninitialized;
+HeapDumpMode HeapShared::_heap_write_mode = HeapDumpMode::_uninitialized;
 DumpedInternedStrings *HeapShared::_dumped_interned_strings = nullptr;
 
 size_t HeapShared::_alloc_count[HeapShared::ALLOC_STAT_SLOTS];
@@ -190,6 +195,19 @@ bool HeapShared::is_subgraph_root_class(InstanceKlass* ik) {
          is_subgraph_root_class_of(fmg_archive_subgraph_entry_fields, ik);
 }
 
+// Can this VM write a heap region into the CDS archive? Currently only compressed cp
+bool HeapShared::can_write() {
+  if (_disable_writing) {
+    return false;
+  }
+  if (CompressedOops::shift() > 3) {
+    // Loaders can only handle heap images that have shifts of 3 or below.
+    return false;
+  }
+
+  return UseCompressedClassPointers;
+}
+
 unsigned HeapShared::oop_hash(oop const& p) {
   // Do not call p->identity_hash() as that will update the
   // object header.
@@ -244,6 +262,90 @@ void HeapShared::reset_archived_object_states(TRAPS) {
 }
 
 HeapShared::ArchivedObjectCache* HeapShared::_archived_object_cache = nullptr;
+
+bool HeapShared::is_archived_heap_in_use() {
+  if (HeapShared::is_loading_streaming_mode()) {
+    return StreamingArchiveHeapLoader::is_loaded();
+  } else {
+    return MappingArchiveHeapLoader::is_in_use();
+  }
+}
+
+bool HeapShared::can_use_archived_heap() {
+  if (HeapShared::is_loading_streaming_mode()) {
+    return true;
+  } else {
+    return MappingArchiveHeapLoader::can_use();
+  }
+}
+
+bool HeapShared::is_too_large_to_archive(size_t size) {
+  if (HeapShared::is_writing_streaming_mode()) {
+    return false;
+  } else {
+    return MappingArchiveHeapWriter::is_too_large_to_archive(size);
+  }
+}
+
+bool HeapShared::is_too_large_to_archive(oop obj) {
+  if (HeapShared::is_writing_streaming_mode()) {
+    return false;
+  } else {
+    return MappingArchiveHeapWriter::is_too_large_to_archive(obj);
+  }
+}
+
+bool HeapShared::is_string_too_large_to_archive(oop string) {
+  typeArrayOop value = java_lang_String::value_no_keepalive(string);
+  return is_too_large_to_archive(value);
+}
+
+void HeapShared::initialize_dumping_mode() {
+  if (_heap_load_mode == HeapDumpMode::_uninitialized) {
+    _heap_load_mode = HeapDumpMode::_none;
+  }
+  if (!CDSConfig::is_dumping_archive()) {
+    assert(_heap_write_mode == HeapDumpMode::_uninitialized, "already initialized?");
+    _heap_write_mode = HeapDumpMode::_none;
+    return;
+  }
+
+  if (FLAG_IS_CMDLINE(DumpStreamableObjects)) {
+    // Mode explicitly selected
+    if (DumpStreamableObjects) {
+      _heap_write_mode = HeapDumpMode::_streaming;
+      return;
+    }
+
+    if (!UseG1GC || !UseCompressedOops) {
+      log_warning(cds)("Heap archiving without streaming only supported for -XX:+UseG1GC -XX:-UseCompressedOops");
+      _heap_write_mode = HeapDumpMode::_streaming;
+      return;
+    }
+
+    _heap_write_mode = HeapDumpMode::_mapping;
+    return;
+  }
+
+  // Select default mode
+  if (UseG1GC && UseCompressedOops) {
+    _heap_write_mode = HeapDumpMode::_mapping;
+  } else {
+    _heap_write_mode = HeapDumpMode::_streaming;
+  }
+}
+
+void HeapShared::initialize_roots() {
+  if (is_loading_streaming_mode()) {
+    StreamingArchiveHeapLoader::initialize_roots();
+  }
+}
+
+void HeapShared::enable_gc() {
+  if (HeapShared::is_loading_streaming_mode()) {
+    StreamingArchiveHeapLoader::enable_gc();
+  }
+}
 
 bool HeapShared::has_been_archived(oop obj) {
   assert(CDSConfig::is_dumping_heap(), "dump-time only");
@@ -353,13 +455,10 @@ int HeapShared::get_archived_object_permanent_index(oop obj) {
   MutexLocker ml(ArchivedObjectTables_lock, Mutex::_no_safepoint_check_flag);
 
   if (!CDSConfig::is_dumping_heap() && _permanent_index_table == nullptr) {
-    int first_permobj_segment = roots()->length() - _permobj_segments;
-    for (int i = 0; i < _permobj_segments; i++) {
-      objArrayOop a = (objArrayOop)roots()->obj_at(i + first_permobj_segment);
-      for (int j = 0; j < a->length(); j++) {
-        int index = (i << ArchiveHeapWriter::PERMOBJ_SEGMENT_MAX_SHIFT) + j;
-        add_to_permanent_index_table(a->obj_at(j), index);
-      }
+    if (is_loading_streaming_mode()) {
+      StreamingArchiveHeapLoader::populate_permanent_object_table();
+    } else {
+      MappingArchiveHeapLoader::populate_permanent_object_table();
     }
   }
 
@@ -383,17 +482,19 @@ int HeapShared::get_archived_object_permanent_index(oop obj) {
 }
 
 oop HeapShared::get_archived_object(int permanent_index) {
-  if (ArchiveHeapLoader::is_in_use()) {
-    assert(_permobj_segments > 0, "must be");
+  if (is_archived_heap_in_use()) {
+    if (is_loading_streaming_mode()) {
+      return StreamingArchiveHeapLoader::get_archived_object(permanent_index);
+    } else {
+      return MappingArchiveHeapLoader::get_archived_object(permanent_index);
+    }
+  }
 
-    int first_permobj_segment = roots()->length() - _permobj_segments;
-    int upper = permanent_index >> ArchiveHeapWriter::PERMOBJ_SEGMENT_MAX_SHIFT;
-    int lower = permanent_index &  ArchiveHeapWriter::PERMOBJ_SEGMENT_MAX_MASK;
-    objArrayOop a = (objArrayOop)roots()->obj_at(upper + first_permobj_segment);
-    return a->obj_at(lower);
+  assert(CDSConfig::is_dumping_heap(), "must be");
+  if (is_loading_streaming_mode()) {
+    ShouldNotReachHere();
   } else {
-    assert(CDSConfig::is_dumping_heap(), "must be");
-    return ArchiveHeapWriter::get_perm_object_by_index(permanent_index);
+    return MappingArchiveHeapWriter::get_perm_object_by_index(permanent_index);
   }
 }
 
@@ -403,21 +504,50 @@ oop HeapShared::get_root(int index, bool clear) {
   assert(!CDSConfig::is_dumping_heap() && UseSharedSpaces, "runtime only");
   assert(!_roots.is_empty(), "must have loaded shared heap");
   oop result = roots()->obj_at(index);
+  if (result == nullptr && HeapShared::is_loading_streaming_mode()) {
+    result = StreamingArchiveHeapLoader::root(index);
+  }
+  if (result == roots()) {
+    result = nullptr;
+  }
   if (clear) {
     clear_root(index);
   }
+
   return result;
+}
+
+void HeapShared::finish_materialize_objects() {
+  if (!HeapShared::is_loading_streaming_mode()) {
+    return;
+  }
+
+  if (!is_archived_heap_in_use() || _roots.is_empty()) {
+    // No roots to materialize
+    return;
+  }
+
+  // Materialize roots
+  StreamingArchiveHeapLoader::finish_materialize_objects();
+
+  // Unmap regions
+  FileMapInfo::current_info()->unmap_region(MetaspaceShared::hp);
+  FileMapInfo::current_info()->unmap_region(MetaspaceShared::bm);
 }
 
 void HeapShared::clear_root(int index) {
   assert(index >= 0, "sanity");
   assert(UseSharedSpaces, "must be");
-  if (ArchiveHeapLoader::is_in_use()) {
+  if (is_archived_heap_in_use()) {
     if (log_is_enabled(Debug, cds, heap)) {
       oop old = roots()->obj_at(index);
       log_debug(cds, heap)("Clearing root %d: was " PTR_FORMAT, index, p2i(old));
     }
-    roots()->obj_at_put(index, nullptr);
+    if (HeapShared::is_loading_streaming_mode()) {
+      roots()->obj_at_put(index, roots());
+    } else {
+      roots()->obj_at_put(index, nullptr);
+    }
   }
 }
 
@@ -429,35 +559,43 @@ bool HeapShared::archive_object(oop obj) {
     return true;
   }
 
-  if (ArchiveHeapWriter::is_too_large_to_archive(obj->size())) {
+  if (is_too_large_to_archive(obj)) {
     log_debug(cds, heap)("Cannot archive, object (" PTR_FORMAT ") is too large: " SIZE_FORMAT,
                          p2i(obj), obj->size());
     return false;
-  } else {
-    count_allocation(obj->size());
-    ArchiveHeapWriter::add_source_obj(obj);
-
-    // The archived objects are discovered in a predictable order. Compute
-    // their identity_hash() as soon as we see them. This ensures that the
-    // the identity_hash in the object header will have a predictable value,
-    // making the archive reproducible.
-    obj->identity_hash();
-    CachedOopInfo info = make_cached_oop_info();
-    archived_object_cache()->put(obj, info);
-    mark_native_pointers(obj);
-
-    if (log_is_enabled(Debug, cds, heap)) {
-      ResourceMark rm;
-      log_debug(cds, heap)("Archived heap object " PTR_FORMAT " : %s",
-                           p2i(obj), obj->klass()->external_name());
-    }
-
-    if (java_lang_Module::is_instance(obj) && Modules::check_archived_module_oop(obj)) {
-      Modules::update_oops_in_archived_module(obj, append_root(obj));
-    }
-
-    return true;
   }
+
+  count_allocation(obj->size());
+
+  if (HeapShared::is_writing_streaming_mode()) {
+    StreamingArchiveHeapWriter::add_source_obj(obj);
+  } else {
+    MappingArchiveHeapWriter::add_source_obj(obj);
+  }
+
+  // The archived objects are discovered in a predictable order. Compute
+  // their identity_hash() as soon as we see them. This ensures that the
+  // the identity_hash in the object header will have a predictable value,
+  // making the archive reproducible.
+  obj->identity_hash();
+  CachedOopInfo info = make_cached_oop_info();
+  archived_object_cache()->put(obj, info);
+
+  if (!HeapShared::is_writing_streaming_mode()) {
+    mark_native_pointers(obj);
+  }
+
+  if (log_is_enabled(Debug, cds, heap)) {
+    ResourceMark rm;
+    log_debug(cds, heap)("Archived heap object " PTR_FORMAT " : %s",
+                         p2i(obj), obj->klass()->external_name());
+  }
+
+  if (java_lang_Module::is_instance(obj) && Modules::check_archived_module_oop(obj)) {
+    Modules::update_oops_in_archived_module(obj, append_root(obj));
+  }
+
+  return true;
 }
 
 class MetaspaceObjToOopHandleTable: public ResourceHashtable<MetaspaceObj*, OopHandle,
@@ -583,7 +721,6 @@ bool HeapShared::is_lambda_form_klass(InstanceKlass* ik) {
     (ik->name()->starts_with("java/lang/invoke/LambdaForm$MH+") ||
      ik->name()->starts_with("java/lang/invoke/LambdaForm$DMH+") ||
      ik->name()->starts_with("java/lang/invoke/LambdaForm$BMH+"));
-     
 }
 
 bool HeapShared::is_lambda_proxy_klass(InstanceKlass* ik) {
@@ -714,7 +851,7 @@ void HeapShared::archive_java_mirrors() {
       if (buffered_k->is_instance_klass()) {
         InstanceKlass* ik = InstanceKlass::cast(buffered_k);
         oop rr = ik->constants()->prepare_resolved_references_for_archiving();
-        if (rr != nullptr && !ArchiveHeapWriter::is_too_large_to_archive(rr)) {
+        if (rr != nullptr && !is_too_large_to_archive(rr)) {
           bool success = HeapShared::archive_reachable_objects_from(1, _default_subgraph_info, rr);
           assert(success, "must be");
           int root_index = append_root(rr);
@@ -726,6 +863,7 @@ void HeapShared::archive_java_mirrors() {
 }
 
 void HeapShared::archive_strings() {
+  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
   oop shared_strings_array = StringTable::init_shared_table(_dumped_interned_strings);
   bool success = archive_reachable_objects_from(1, _default_subgraph_info, shared_strings_array);
   // We must succeed because:
@@ -775,11 +913,12 @@ void HeapShared::archive_exception_instances() {
 }
 
 void HeapShared::mark_native_pointers(oop orig_obj) {
+  assert(!is_writing_streaming_mode(), "no need to mark native pointers");
   if (java_lang_Class::is_instance(orig_obj)) {
-    ArchiveHeapWriter::mark_native_pointer(orig_obj, java_lang_Class::klass_offset());
-    ArchiveHeapWriter::mark_native_pointer(orig_obj, java_lang_Class::array_klass_offset());
+    MappingArchiveHeapWriter::mark_native_pointer(orig_obj, java_lang_Class::klass_offset());
+    MappingArchiveHeapWriter::mark_native_pointer(orig_obj, java_lang_Class::array_klass_offset());
   } else if (java_lang_invoke_ResolvedMethodName::is_instance(orig_obj)) {
-    ArchiveHeapWriter::mark_native_pointer(orig_obj, java_lang_invoke_ResolvedMethodName::vmtarget_offset());
+    MappingArchiveHeapWriter::mark_native_pointer(orig_obj, java_lang_invoke_ResolvedMethodName::vmtarget_offset());
   }
 }
 
@@ -794,26 +933,34 @@ void HeapShared::archive_objects(ArchiveHeapInfo *heap_info) {
     // Cache for recording where the archived objects are copied to
     create_archived_object_cache();
 
-    log_info(cds)("Heap range = [" PTR_FORMAT " - "  PTR_FORMAT "]",
-                   UseCompressedOops ? p2i(CompressedOops::begin()) :
-                                       p2i((address)G1CollectedHeap::heap()->reserved().start()),
-                   UseCompressedOops ? p2i(CompressedOops::end()) :
-                                       p2i((address)G1CollectedHeap::heap()->reserved().end()));
+    if (!HeapShared::is_writing_streaming_mode()) {
+      log_info(cds)("Heap range = [" PTR_FORMAT " - "  PTR_FORMAT "]",
+                     UseCompressedOops ? p2i(CompressedOops::begin()) :
+                                         p2i((address)G1CollectedHeap::heap()->reserved().start()),
+                     UseCompressedOops ? p2i(CompressedOops::end()) :
+                                         p2i((address)G1CollectedHeap::heap()->reserved().end()));
+    }
+
     copy_objects();
 
     CDSHeapVerifier::verify();
     check_default_subgraph_classes();
   }
 
-  ArchiveHeapWriter::write(_pending_roots, heap_info);
+  if (HeapShared::is_writing_streaming_mode()) {
+    StreamingArchiveHeapWriter::write(_pending_roots, heap_info);
+  } else {
+    MappingArchiveHeapWriter::write(_pending_roots, heap_info);
+  }
 }
 
 void HeapShared::copy_interned_strings() {
+  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
   init_seen_objects_table();
 
   auto copier = [&] (oop s, bool value_ignored) {
     assert(s != nullptr, "sanity");
-    assert(!ArchiveHeapWriter::is_string_too_large_to_archive(s), "large strings must have been filtered");
+    assert(!HeapShared::is_string_too_large_to_archive(s), "large strings must have been filtered");
     bool success = archive_reachable_objects_from(1, _default_subgraph_info, s);
     assert(success, "must be");
     // Prevent string deduplication from changing the value field to
@@ -829,7 +976,9 @@ void HeapShared::copy_special_objects() {
   // Archive special objects that do not belong to any subgraphs
   init_seen_objects_table();
   archive_java_mirrors();
-  archive_strings();
+  if (!HeapShared::is_writing_streaming_mode()) {
+    archive_strings();
+  }
   archive_exception_instances();
   delete_seen_objects_table();
 }
@@ -837,7 +986,9 @@ void HeapShared::copy_special_objects() {
 void HeapShared::copy_objects() {
   assert(HeapShared::can_write(), "must be");
 
-  copy_interned_strings();
+  if (!HeapShared::is_writing_streaming_mode()) {
+    copy_interned_strings();
+  }
   copy_special_objects();
 
   archive_object_subgraphs(archive_subgraph_entry_fields,
@@ -1117,7 +1268,7 @@ void HeapShared::serialize_misc_info(SerializeClosure* soc) {
 
 void HeapShared::init_roots(oop roots_oop) {
   if (roots_oop != nullptr) {
-    assert(ArchiveHeapLoader::is_in_use(), "must be");
+    assert(is_archived_heap_in_use(), "must be");
     _roots = OopHandle(Universe::vm_global(), roots_oop);
   }
 }
@@ -1172,7 +1323,7 @@ static void verify_the_heap(Klass* k, const char* which) {
 // this case, we will not load the ArchivedKlassSubGraphInfoRecord and will clear its roots.
 void HeapShared::resolve_classes(JavaThread* current) {
   assert(UseSharedSpaces, "runtime only!");
-  if (!ArchiveHeapLoader::is_in_use()) {
+  if (!is_archived_heap_in_use()) {
     return; // nothing to do
   }
   resolve_classes_for_subgraphs(current, archive_subgraph_entry_fields);
@@ -1218,7 +1369,7 @@ void HeapShared::initialize_java_lang_invoke(TRAPS) {
 }
 
 void HeapShared::initialize_default_subgraph_classes(Handle loader, TRAPS) {
-  if (!ArchiveHeapLoader::is_in_use()) {
+  if (!is_archived_heap_in_use()) {
     return;
   }
 
@@ -1248,7 +1399,7 @@ void HeapShared::initialize_default_subgraph_classes(Handle loader, TRAPS) {
 
 void HeapShared::initialize_from_archived_subgraph(JavaThread* current, Klass* k) {
   JavaThread* THREAD = current;
-  if (!ArchiveHeapLoader::is_in_use()) {
+  if (!is_archived_heap_in_use()) {
     return; // nothing to do
   }
 
@@ -1501,8 +1652,8 @@ class WalkOopAndArchiveClosure: public BasicOopIterateClosure {
 
  protected:
   template <class T> void do_oop_work(T *p) {
-    oop obj = RawAccess<>::oop_load(p);
-    if (!CompressedOops::is_null(obj)) {
+    oop obj = HeapAccess<>::oop_load(p);
+    if (obj != nullptr) {
       size_t field_delta = pointer_delta(p, _referencing_obj, sizeof(char));
       if (!_record_klasses_only && log_is_enabled(Debug, cds, heap)) {
         ResourceMark rm;
@@ -1553,7 +1704,7 @@ bool HeapShared::can_mirror_be_used_in_subgraph(oop orig_java_mirror) {
 }
 
 void HeapShared::init_box_classes(TRAPS) {
-  if (ArchiveHeapLoader::is_in_use()) {
+  if (is_archived_heap_in_use()) {
     vmClasses::Boolean_klass()->initialize(CHECK);
     vmClasses::Character_klass()->initialize(CHECK);
     vmClasses::Float_klass()->initialize(CHECK);
@@ -1755,8 +1906,8 @@ class VerifySharedOopClosure: public BasicOopIterateClosure {
 
  protected:
   template <class T> void do_oop_work(T *p) {
-    oop obj = RawAccess<>::oop_load(p);
-    if (!CompressedOops::is_null(obj)) {
+    oop obj = HeapAccess<>::oop_load(p);
+    if (obj != nullptr) {
       HeapShared::verify_reachable_objects_from(obj);
     }
   }
@@ -2054,6 +2205,11 @@ bool HeapShared::is_a_test_class_in_unnamed_module(Klass* ik) {
 #endif
 
 void HeapShared::init_for_dumping(TRAPS) {
+  if (HeapShared::is_writing_streaming_mode()) {
+    StreamingArchiveHeapWriter::init();
+  } else {
+    MappingArchiveHeapWriter::init();
+  }
   if (HeapShared::can_write()) {
     setup_test_class(ArchiveHeapTestClass);
     _dumped_interned_strings = new (mtClass)DumpedInternedStrings();
@@ -2122,7 +2278,7 @@ void HeapShared::archive_object_subgraphs(ArchivableStaticFieldInfo fields[],
 //   [2] included in the SharedArchiveConfigFile.
 void HeapShared::add_to_dumped_interned_strings(oop string) {
   assert_at_safepoint(); // DumpedInternedStrings uses raw oops
-  assert(!ArchiveHeapWriter::is_string_too_large_to_archive(string), "must be");
+  assert(!is_string_too_large_to_archive(string), "must be");
   bool created;
   _dumped_interned_strings->put_if_absent(string, true, &created);
 }

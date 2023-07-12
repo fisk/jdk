@@ -128,7 +128,7 @@ private:
   // [2] _is_two_dimensional_shared_strings_array = true: _shared_strings_array is an Object[][]
   //     This happens when there are too many elements in the shared table. We store them
   //     using two levels of objArrays, such that none of the arrays are too big for
-  //     ArchiveHeapWriter::is_too_large_to_archive(). In this case, the index is splited into two
+  //     MappingArchiveHeapWriter::is_too_large_to_archive(). In this case, the index is splited into two
   //     parts. Each shared string is stored as _shared_strings_array[primary_index][secondary_index]:
   //
   //           [bits 31 .. 14][ bits 13 .. 0  ]

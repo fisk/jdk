@@ -138,22 +138,35 @@ class ArchivedKlassSubGraphInfoRecord {
 };
 #endif // INCLUDE_CDS_JAVA_HEAP
 
-struct LoadedArchiveHeapRegion;
+enum class HeapDumpMode {
+  _uninitialized,
+  _mapping,
+  _streaming,
+  _none
+};
 
 class HeapShared: AllStatic {
   friend class VerifySharedOopClosure;
 
 public:
-  // Can this VM write a heap region into the CDS archive? Currently only G1+compressed{oops,cp}
-  static bool can_write() {
-    CDS_JAVA_HEAP_ONLY(
-      if (_disable_writing) {
-        return false;
-      }
-      return (UseG1GC && UseCompressedClassPointers);
-    )
-    NOT_CDS_JAVA_HEAP(return false;)
+  static bool is_loading_streaming_mode() {
+    assert(_heap_load_mode != HeapDumpMode::_uninitialized, "not initialized yet");
+    return _heap_load_mode == HeapDumpMode::_streaming;
   }
+
+  static bool is_writing_streaming_mode() {
+    assert(_heap_write_mode != HeapDumpMode::_uninitialized, "not initialized yet");
+    return _heap_write_mode == HeapDumpMode::_streaming;
+  }
+
+  static void initialize_dumping_mode();
+  static void set_loading_streaming_mode(bool value) {
+    assert(_heap_load_mode == HeapDumpMode::_uninitialized, "already set?");
+    _heap_load_mode = value ? HeapDumpMode::_streaming : HeapDumpMode::_mapping;
+  };
+
+  // Can this VM write a heap region into the CDS archive?
+  static bool can_write() NOT_CDS_JAVA_HEAP_RETURN_(false);
 
   static void disable_writing() {
     CDS_JAVA_HEAP_ONLY(_disable_writing = true;)
@@ -167,10 +180,21 @@ public:
   static oop scratch_java_mirror(oop java_mirror) NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
   static bool is_archived_boot_layer_available(JavaThread* current) NOT_CDS_JAVA_HEAP_RETURN_(false);
 
+  static bool is_archived_heap_in_use();
+  static bool can_use_archived_heap();
+  static bool is_too_large_to_archive(size_t size);
+  static bool is_string_too_large_to_archive(oop string);
+  static bool is_too_large_to_archive(oop obj);
+
+  static void initialize_roots();
+  static void enable_gc();
+
 private:
 #if INCLUDE_CDS_JAVA_HEAP
   static bool _disable_writing;
   static bool _box_classes_inited;
+  static HeapDumpMode _heap_load_mode;
+  static HeapDumpMode _heap_write_mode;
   static DumpedInternedStrings *_dumped_interned_strings;
 
   // statistics
@@ -191,11 +215,12 @@ public:
   class CopyKlassSubGraphInfoToArchive;
 
   class CachedOopInfo {
-    // See "TEMP notes: What are these?" in archiveHeapWriter.hpp
+    // Used by CDSHeapVerifier.
     oop _orig_referrer;
 
     // The location of this object inside ArchiveHeapWriter::_buffer
     size_t _buffer_offset;
+
   public:
     CachedOopInfo(oop orig_referrer)
       : _orig_referrer(orig_referrer),
@@ -345,15 +370,6 @@ private:
   static void resolve_or_init(Klass* k, bool do_init, TRAPS);
   static void init_archived_fields_for(Klass* k, const ArchivedKlassSubGraphInfoRecord* record);
 
-  static int init_loaded_regions(FileMapInfo* mapinfo, LoadedArchiveHeapRegion* loaded_regions,
-                                 MemRegion& archive_space);
-  static void sort_loaded_regions(LoadedArchiveHeapRegion* loaded_regions, int num_loaded_regions,
-                                  uintptr_t buffer);
-  static bool load_regions(FileMapInfo* mapinfo, LoadedArchiveHeapRegion* loaded_regions,
-                           int num_loaded_regions, uintptr_t buffer);
-  static void init_loaded_heap_relocation(LoadedArchiveHeapRegion* reloc_info,
-                                          int num_loaded_regions);
-  static void fill_failed_loaded_region();
   static void mark_native_pointers(oop orig_obj);
   static bool has_been_archived(oop orig_obj);
   static bool can_mirror_be_used_in_subgraph(oop orig_java_mirror);
@@ -415,11 +431,15 @@ private:
   // Dump-time and runtime
   static objArrayOop roots();
   static oop get_root(int index, bool clear=false);
+  static void finish_materialize_objects();
 
   // Run-time only
   static void clear_root(int index);
-  static void set_permobj_segments(int n) { _permobj_segments = n; }
   static void setup_test_class(const char* test_class_name) PRODUCT_RETURN;
+
+  // Mapping heap archive support TODO: move to mapping infrastructure
+  static void set_permobj_segments(int n) { _permobj_segments = n; }
+  static int permobj_segments() { return _permobj_segments; }
 #endif // INCLUDE_CDS_JAVA_HEAP
 
  public:
@@ -461,6 +481,17 @@ private:
   static bool is_archivable_hidden_klass(InstanceKlass* ik) {
     return is_lambda_form_klass(ik) || is_lambda_proxy_klass(ik);
   }
+
+  // Archived heap object headers carry pre-computed narrow Klass ids calculated with the
+  // following scheme:
+  // 1) the encoding base must be the mapping start address.
+  // 2) shift must be large enough to result in an encoding range that covers the runtime Klass range.
+  //    That Klass range is defined by CDS archive size and runtime class space size. Luckily, the maximum
+  //    size can be predicted: archive size is assumed to be <1G, class space size capped at 3G, and at
+  //    runtime we put both regions adjacent to each other. Therefore, runtime Klass range size < 4G.
+  //    Since nKlass itself is 32 bit, our encoding range len is 4G, and since we set the base directly
+  //    at mapping start, these 4G are enough. Therefore, we don't need to shift at all (shift=0).
+  static constexpr int precomputed_narrow_klass_shift = 0;
 };
 
 #if INCLUDE_CDS_JAVA_HEAP

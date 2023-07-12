@@ -24,8 +24,6 @@
 
 #include "precompiled.hpp"
 #include "cds/archiveBuilder.hpp"
-#include "cds/archiveHeapLoader.inline.hpp"
-#include "cds/archiveHeapWriter.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/filemap.hpp"
 #include "cds/heapShared.hpp"
@@ -80,7 +78,7 @@ OopHandle StringTable::_shared_strings_array;
 int StringTable::_shared_strings_array_root_index;
 
 inline oop StringTable::read_string_from_compact_hashtable(address base_address, u4 index) {
-  assert(ArchiveHeapLoader::is_in_use(), "sanity");
+  assert(HeapShared::is_archived_heap_in_use(), "sanity");
   objArrayOop array = (objArrayOop)(_shared_strings_array.resolve());
   oop s;
 
@@ -241,7 +239,7 @@ void StringTable::create_table() {
   _oop_storage->register_num_dead_callback(&gc_notification);
 
 #if INCLUDE_CDS_JAVA_HEAP
-  if (ArchiveHeapLoader::is_in_use()) {
+  if (HeapShared::is_archived_heap_in_use() && !HeapShared::is_loading_streaming_mode()) {
     _shared_strings_array = OopHandle(Universe::vm_global(), HeapShared::get_root(_shared_strings_array_root_index));
   }
 #endif
@@ -789,16 +787,23 @@ void StringtableDCmd::execute(DCmdSource source, TRAPS) {
 // Sharing
 #if INCLUDE_CDS_JAVA_HEAP
 size_t StringTable::shared_entry_count() {
+  assert(!HeapShared::is_loading_streaming_mode(), "should not reach here");
   return _shared_table.entry_count();
 }
 
 oop StringTable::lookup_shared(const jchar* name, int len, unsigned int hash) {
+  if (HeapShared::is_loading_streaming_mode()) {
+    return nullptr;
+  }
   assert(hash == java_lang_String::hash_code(name, len),
          "hash must be computed using java_lang_String::hash_code");
   return _shared_table.lookup(name, hash, len);
 }
 
 oop StringTable::lookup_shared(const jchar* name, int len) {
+  if (HeapShared::is_loading_streaming_mode()) {
+    return nullptr;
+  }
   return _shared_table.lookup(name, java_lang_String::hash_code(name, len), len);
 }
 
@@ -809,6 +814,8 @@ void StringTable::allocate_shared_strings_array(TRAPS) {
   if (!CDSConfig::is_dumping_heap()) {
     return;
   }
+
+  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
   if (_items_count > (size_t)max_jint) {
     fatal("Too many strings to be archived: %zu", _items_count);
   }
@@ -818,7 +825,7 @@ void StringTable::allocate_shared_strings_array(TRAPS) {
 
   log_info(cds)("allocated string table for %d strings", total);
 
-  if (!ArchiveHeapWriter::is_too_large_to_archive(single_array_size)) {
+  if (!HeapShared::is_too_large_to_archive(single_array_size)) {
     // The entire table can fit in a single array
     objArrayOop array = oopFactory::new_objArray(vmClasses::Object_klass(), total, CHECK);
     _shared_strings_array = OopHandle(Universe::vm_global(), array);
@@ -829,7 +836,7 @@ void StringTable::allocate_shared_strings_array(TRAPS) {
     size_t primary_array_size = objArrayOopDesc::object_size(primary_array_length);
     size_t secondary_array_size = objArrayOopDesc::object_size(_secondary_array_max_length);
 
-    if (ArchiveHeapWriter::is_too_large_to_archive(secondary_array_size)) {
+    if (HeapShared::is_too_large_to_archive(secondary_array_size)) {
       // This can only happen if you have an extremely large number of classes that
       // refer to more than 16384 * 16384 = 26M interned strings! Not a practical concern
       // but bail out for safety.
@@ -855,7 +862,7 @@ void StringTable::allocate_shared_strings_array(TRAPS) {
       primaryHandle()->obj_at_put(i, secondary);
 
       log_info(cds)("string table array (secondary)[%d] length = %d", i, len);
-      assert(!ArchiveHeapWriter::is_too_large_to_archive(secondary), "sanity");
+      assert(!HeapShared::is_too_large_to_archive(secondary), "sanity");
     }
 
     assert(total == 0, "must be");
@@ -865,10 +872,11 @@ void StringTable::allocate_shared_strings_array(TRAPS) {
 
 #ifndef PRODUCT
 void StringTable::verify_secondary_array_index_bits() {
+  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
   int max;
   for (max = 1; ; max++) {
     size_t next_size = objArrayOopDesc::object_size(1 << (max + 1));
-    if (ArchiveHeapWriter::is_too_large_to_archive(next_size)) {
+    if (HeapShared::is_too_large_to_archive(next_size)) {
       break;
     }
   }
@@ -890,6 +898,7 @@ void StringTable::verify_secondary_array_index_bits() {
 // [1] Store it into _shared_strings_array. Encode its position as a 32-bit index.
 // [2] Store the index and hashcode into _shared_table.
 oop StringTable::init_shared_table(const DumpedInternedStrings* dumped_interned_strings) {
+  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
   assert(HeapShared::can_write(), "must be");
   objArrayOop array = (objArrayOop)(_shared_strings_array.resolve());
 
@@ -928,10 +937,14 @@ oop StringTable::init_shared_table(const DumpedInternedStrings* dumped_interned_
 }
 
 void StringTable::set_shared_strings_array_index(int root_index) {
+  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
   _shared_strings_array_root_index = root_index;
 }
 
 void StringTable::serialize_shared_table_header(SerializeClosure* soc) {
+  assert(!soc->reading() || !HeapShared::is_loading_streaming_mode(), "should not reach here");
+  assert(!soc->writing() || !HeapShared::is_writing_streaming_mode(), "should not reach here");
+
   if (soc->writing() && !HeapShared::can_write()) {
     _shared_table.reset();
     _is_two_dimensional_shared_strings_array = false;
@@ -943,7 +956,7 @@ void StringTable::serialize_shared_table_header(SerializeClosure* soc) {
   if (soc->writing()) {
     // Sanity. Make sure we don't use the shared table at dump time
     _shared_table.reset();
-  } else if (!ArchiveHeapLoader::is_in_use()) {
+  } else if (!HeapShared::is_archived_heap_in_use()) {
     _shared_table.reset();
   }
 

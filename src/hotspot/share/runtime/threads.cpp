@@ -717,6 +717,12 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   // debug stuff, that does not work until all basic classes have been initialized.
   set_init_completed();
 
+#if INCLUDE_CDS_JAVA_HEAP
+  if (HeapShared::is_archived_heap_in_use()) {
+    HeapShared::enable_gc();
+  }
+#endif
+
   LogConfiguration::post_initialize();
   Metaspace::post_initialize();
   MutexLockerImpl::post_initialize();
@@ -867,6 +873,12 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   //   aren't, late joiners might appear to start slowly (we might
   //   take a while to process their first tick).
   WatcherThread::run_all_tasks();
+
+#if INCLUDE_CDS_JAVA_HEAP
+  if (HeapShared::is_archived_heap_in_use()) {
+    HeapShared::finish_materialize_objects();
+  }
+#endif
 
   create_vm_timer.end();
 #ifdef ASSERT
