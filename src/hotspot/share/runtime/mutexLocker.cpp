@@ -87,6 +87,7 @@ Mutex*   CompileTaskAlloc_lock        = nullptr;
 Mutex*   CompileStatistics_lock       = nullptr;
 Mutex*   DirectivesStack_lock         = nullptr;
 Mutex*   MultiArray_lock              = nullptr;
+Monitor* CDSHeapLoading_lock          = nullptr;
 Monitor* Terminator_lock              = nullptr;
 Monitor* InitCompleted_lock           = nullptr;
 Monitor* BeforeExit_lock              = nullptr;
@@ -342,6 +343,7 @@ void mutex_init() {
   MUTEX_DEFL(PerfDataMemAlloc_lock          , PaddedMutex  , Heap_lock);
   MUTEX_DEFL(PerfDataManager_lock           , PaddedMutex  , Heap_lock);
   MUTEX_DEFL(ClassLoaderDataGraph_lock      , PaddedMutex  , MultiArray_lock);
+  MUTEX_DEFL(CDSHeapLoading_lock            , PaddedMonitor, Heap_lock);
   MUTEX_DEFL(VMOperation_lock               , PaddedMonitor, Heap_lock, true);
   MUTEX_DEFL(ClassInitError_lock            , PaddedMonitor, Threads_lock);
 

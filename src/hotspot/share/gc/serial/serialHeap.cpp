@@ -115,16 +115,6 @@ void SerialHeap::safepoint_synchronize_end() {
   }
 }
 
-HeapWord* SerialHeap::allocate_loaded_archive_space(size_t word_size) {
-  MutexLocker ml(Heap_lock);
-  return old_gen()->allocate(word_size, false /* is_tlab */);
-}
-
-void SerialHeap::complete_loaded_archive_space(MemRegion archive_space) {
-  assert(old_gen()->used_region().contains(archive_space), "Archive space not contained in old gen");
-  old_gen()->complete_loaded_archive_space(archive_space);
-}
-
 void SerialHeap::pin_object(JavaThread* thread, oop obj) {
   GCLocker::lock_critical(thread);
 }

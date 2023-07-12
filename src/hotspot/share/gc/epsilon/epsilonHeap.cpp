@@ -261,11 +261,6 @@ HeapWord* EpsilonHeap::mem_allocate(size_t size, bool *gc_overhead_limit_was_exc
   return allocate_work(size);
 }
 
-HeapWord* EpsilonHeap::allocate_loaded_archive_space(size_t size) {
-  // Cannot use verbose=true because Metaspace is not initialized
-  return allocate_work(size, /* verbose = */false);
-}
-
 void EpsilonHeap::collect(GCCause::Cause cause) {
   switch (cause) {
     case GCCause::_metadata_GC_threshold:

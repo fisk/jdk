@@ -139,8 +139,6 @@ class PSOldGen : public CHeapObj<mtGC> {
     return virtual_space()->uncommitted_size() == 0;
   }
 
-  void complete_loaded_archive_space(MemRegion archive_space);
-
   // Calculating new sizes
   void resize(size_t desired_free_space);
 

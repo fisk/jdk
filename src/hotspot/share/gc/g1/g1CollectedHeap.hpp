@@ -705,6 +705,9 @@ public:
   template <typename Func>
   void iterate_regions_in_range(MemRegion range, const Func& func);
 
+  // Support for loading objects from CDS archive into the heap
+  bool can_load_archived_objects() const override { return true; }
+
   // Commit the required number of G1 region(s) according to the size requested
   // and mark them as 'old' region(s). Preferred address is treated as a hint for
   // the location of the archive space in the heap. The returned address may or may

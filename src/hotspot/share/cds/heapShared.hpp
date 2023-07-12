@@ -40,7 +40,6 @@
 #include "utilities/resourceHash.hpp"
 
 #if INCLUDE_CDS_JAVA_HEAP
-class DumpedInternedStrings;
 class FileMapInfo;
 class KlassSubGraphInfo;
 class KlassToOopHandleTable;
@@ -134,22 +133,12 @@ class ArchivedKlassSubGraphInfoRecord {
 };
 #endif // INCLUDE_CDS_JAVA_HEAP
 
-struct LoadedArchiveHeapRegion;
-
 class HeapShared: AllStatic {
   friend class VerifySharedOopClosure;
 
 public:
-  // Can this VM write a heap region into the CDS archive? Currently only G1+compressed{oops,cp}
-  static bool can_write() {
-    CDS_JAVA_HEAP_ONLY(
-      if (_disable_writing) {
-        return false;
-      }
-      return (UseG1GC && UseCompressedClassPointers);
-    )
-    NOT_CDS_JAVA_HEAP(return false;)
-  }
+  // Can this VM write a heap region into the CDS archive?
+  static bool can_write() NOT_CDS_JAVA_HEAP_RETURN_(false);
 
   static void disable_writing() {
     CDS_JAVA_HEAP_ONLY(_disable_writing = true;)
@@ -164,7 +153,6 @@ public:
 private:
 #if INCLUDE_CDS_JAVA_HEAP
   static bool _disable_writing;
-  static DumpedInternedStrings *_dumped_interned_strings;
 
   // statistics
   constexpr static int ALLOC_STAT_SLOTS = 16;
@@ -182,18 +170,29 @@ public:
   }
 
   class CachedOopInfo {
-    // See "TEMP notes: What are these?" in archiveHeapWriter.hpp
+    // Used by CDSHeapVerifier.
     oop _orig_referrer;
 
     // The location of this object inside ArchiveHeapWriter::_buffer
     size_t _buffer_offset;
+
+    // One of more fields in this object are pointing to non-null oops.
+    bool _has_oop_pointers;
+
+    // One or more fields in this object are pointing to MetaspaceObj
+    bool _has_native_pointers;
   public:
-    CachedOopInfo(oop orig_referrer)
+    CachedOopInfo(oop orig_referrer, bool has_oop_pointers)
       : _orig_referrer(orig_referrer),
-        _buffer_offset(0) {}
+        _buffer_offset(0),
+        _has_oop_pointers(has_oop_pointers),
+        _has_native_pointers(false) {}
     oop orig_referrer()             const { return _orig_referrer;   }
     void set_buffer_offset(size_t offset) { _buffer_offset = offset; }
     size_t buffer_offset()          const { return _buffer_offset;   }
+    bool has_oop_pointers()         const { return _has_oop_pointers; }
+    bool has_native_pointers()      const { return _has_native_pointers; }
+    void set_has_native_pointers()        { _has_native_pointers = true; }
   };
 
 private:
@@ -233,7 +232,7 @@ private:
   static DumpTimeKlassSubGraphInfoTable* _dump_time_subgraph_info_table;
   static RunTimeKlassSubGraphInfoTable _run_time_subgraph_info_table;
 
-  static CachedOopInfo make_cached_oop_info();
+  static CachedOopInfo make_cached_oop_info(oop obj);
   static void archive_object_subgraphs(ArchivableStaticFieldInfo fields[],
                                        bool is_full_module_graph);
 
@@ -272,7 +271,6 @@ private:
 
   // The "default subgraph" is the root of all archived objects that do not belong to any
   // of the classes defined in the <xxx>_archive_subgraph_entry_fields[] arrays:
-  //    - interned strings
   //    - Klass::java_mirror()
   //    - ConstantPool::resolved_references()
   static KlassSubGraphInfo* _default_subgraph_info;
@@ -312,8 +310,6 @@ private:
   static void set_has_been_seen_during_subgraph_recording(oop obj);
   static bool archive_object(oop obj);
 
-  static void copy_interned_strings();
-
   static void resolve_classes_for_subgraphs(JavaThread* current, ArchivableStaticFieldInfo fields[]);
   static void resolve_classes_for_subgraph_of(JavaThread* current, Klass* k);
   static void clear_archived_roots_of(Klass* k);
@@ -322,19 +318,8 @@ private:
   static void resolve_or_init(Klass* k, bool do_init, TRAPS);
   static void init_archived_fields_for(Klass* k, const ArchivedKlassSubGraphInfoRecord* record);
 
-  static int init_loaded_regions(FileMapInfo* mapinfo, LoadedArchiveHeapRegion* loaded_regions,
-                                 MemRegion& archive_space);
-  static void sort_loaded_regions(LoadedArchiveHeapRegion* loaded_regions, int num_loaded_regions,
-                                  uintptr_t buffer);
-  static bool load_regions(FileMapInfo* mapinfo, LoadedArchiveHeapRegion* loaded_regions,
-                           int num_loaded_regions, uintptr_t buffer);
-  static void init_loaded_heap_relocation(LoadedArchiveHeapRegion* reloc_info,
-                                          int num_loaded_regions);
-  static void fill_failed_loaded_region();
-  static void mark_native_pointers(oop orig_obj);
   static bool has_been_archived(oop orig_obj);
   static void archive_java_mirrors();
-  static void archive_strings();
  public:
   static void reset_archived_object_states(TRAPS);
   static void create_archived_object_cache() {
@@ -358,11 +343,13 @@ private:
                                              oop orig_obj);
 
   static ResourceBitMap calculate_oopmap(MemRegion region); // marks all the oop pointers
-  static void add_to_dumped_interned_strings(oop string);
 
   // Scratch objects for archiving Klass::java_mirror()
   static void set_scratch_java_mirror(Klass* k, oop mirror);
   static void remove_scratch_objects(Klass* k);
+  static bool has_oop_pointers(oop obj);
+  static bool has_native_pointers(oop obj);
+  static void set_has_native_pointers(oop obj);
 
   // We use the HeapShared::roots() array to make sure that objects stored in the
   // archived heap region are not prematurely collected. These roots include:
@@ -386,6 +373,7 @@ private:
   // Dump-time and runtime
   static objArrayOop roots();
   static oop get_root(int index, bool clear=false);
+  static void finish_materialize_objects();
 
   // Run-time only
   static void clear_root(int index);
@@ -411,15 +399,5 @@ private:
 
   static bool is_a_test_class_in_unnamed_module(Klass* ik) NOT_CDS_JAVA_HEAP_RETURN_(false);
 };
-
-#if INCLUDE_CDS_JAVA_HEAP
-class DumpedInternedStrings :
-  public ResourceHashtable<oop, bool,
-                           15889, // prime number
-                           AnyObj::C_HEAP,
-                           mtClassShared,
-                           HeapShared::string_oop_hash>
-{};
-#endif
 
 #endif // SHARE_CDS_HEAPSHARED_HPP

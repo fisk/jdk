@@ -43,6 +43,8 @@ class ServiceThread : public JavaThread {
   static void service_thread_entry(JavaThread* thread, TRAPS);
   ServiceThread(ThreadFunction entry_point) : JavaThread(entry_point) {};
 
+  static void accelerate_startup();
+
  public:
   static void initialize();
 

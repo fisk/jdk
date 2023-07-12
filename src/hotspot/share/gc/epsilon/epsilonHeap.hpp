@@ -133,8 +133,7 @@ public:
   bool is_in_reserved(const void* addr) const { return _reserved.contains(addr); }
 
   // Support for loading objects from CDS archive into the heap
-  bool can_load_archived_objects() const override { return UseCompressedOops; }
-  HeapWord* allocate_loaded_archive_space(size_t size) override;
+  bool can_load_archived_objects() const override { return true; }
 
   void print_on(outputStream* st) const override;
   void print_tracing_info() const override;

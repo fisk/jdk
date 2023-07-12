@@ -36,6 +36,7 @@ class Klass;
 
 class objArrayOopDesc : public arrayOopDesc {
   friend class ArchiveHeapWriter;
+  friend class ArchiveHeapLoader;
   friend class ObjArrayKlass;
   friend class Runtime1;
   friend class psPromotionManager;

@@ -269,9 +269,7 @@ class ParallelScavengeHeap : public CollectedHeap {
   }
 
   // Support for loading objects from CDS archive into the heap
-  bool can_load_archived_objects() const override { return UseCompressedOops; }
-  HeapWord* allocate_loaded_archive_space(size_t size) override;
-  void complete_loaded_archive_space(MemRegion archive_space) override;
+  bool can_load_archived_objects() const override { return true; }
 
   void pin_object(JavaThread* thread, oop obj) override;
   void unpin_object(JavaThread* thread, oop obj) override;
