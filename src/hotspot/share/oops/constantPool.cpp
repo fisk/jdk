@@ -292,32 +292,9 @@ objArrayOop ConstantPool::prepare_resolved_references_for_archiving() {
     for (int i = 0; i < rr_len; i++) {
       oop obj = rr->obj_at(i);
       rr->obj_at_put(i, nullptr);
-      if (obj != nullptr && i < ref_map_len) {
-        int index = object_to_cp_index(i);
-        if (tag_at(index).is_string()) {
-          assert(java_lang_String::is_instance(obj), "must be");
-          if (!ArchiveHeapWriter::is_string_too_large_to_archive(obj)) {
-            rr->obj_at_put(i, obj);
-          }
-        }
-      }
     }
   }
   return rr;
-}
-
-void ConstantPool::add_dumped_interned_strings() {
-  objArrayOop rr = resolved_references();
-  if (rr != nullptr) {
-    int rr_len = rr->length();
-    for (int i = 0; i < rr_len; i++) {
-      oop p = rr->obj_at(i);
-      if (java_lang_String::is_instance(p) &&
-          !ArchiveHeapWriter::is_string_too_large_to_archive(p)) {
-        HeapShared::add_to_dumped_interned_strings(p);
-      }
-    }
-  }
 }
 #endif
 
@@ -338,7 +315,7 @@ void ConstantPool::restore_unshareable_info(TRAPS) {
   if (vmClasses::Object_klass_loaded()) {
     ClassLoaderData* loader_data = pool_holder()->class_loader_data();
 #if INCLUDE_CDS_JAVA_HEAP
-    if (ArchiveHeapLoader::is_in_use() &&
+    if (ArchiveHeapLoader::is_loaded() &&
         _cache->archived_references() != nullptr) {
       oop archived = _cache->archived_references();
       // Create handle for the archived resolved reference array object

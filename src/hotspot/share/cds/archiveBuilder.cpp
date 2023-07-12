@@ -967,7 +967,7 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
       SourceObjInfo* src_info = src_objs->at(i);
       address src = src_info->source_addr();
       address dest = src_info->buffered_addr();
-      log_as_hex(last_obj_base, dest, last_obj_base + buffer_to_runtime_delta());
+      log_as_hex(last_obj_base, dest);
       address runtime_dest = dest + buffer_to_runtime_delta();
       int bytes = src_info->size_in_bytes();
 
@@ -1009,12 +1009,12 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
       last_obj_end  = dest + bytes;
     }
 
-    log_as_hex(last_obj_base, last_obj_end, last_obj_base + buffer_to_runtime_delta());
+    log_as_hex(last_obj_base, last_obj_end);
     if (last_obj_end < region_end) {
       log_debug(cds, map)(PTR_FORMAT ": @@ Misc data " SIZE_FORMAT " bytes",
                           p2i(last_obj_end + buffer_to_runtime_delta()),
                           size_t(region_end - last_obj_end));
-      log_as_hex(last_obj_end, region_end, last_obj_end + buffer_to_runtime_delta());
+      log_as_hex(last_obj_end, region_end);
     }
   }
 
@@ -1040,19 +1040,18 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
     MemRegion r = heap_info->buffer_region();
     address start = address(r.start());
     address end = address(r.end());
-    log_region("heap", start, end, ArchiveHeapWriter::buffered_addr_to_requested_addr(start));
+    log_region("heap", start, end, start);
 
     LogStreamHandle(Info, cds, map) st;
 
     while (start < end) {
       size_t byte_size;
       oop source_oop = ArchiveHeapWriter::buffered_addr_to_source_obj(start);
-      address requested_start = ArchiveHeapWriter::buffered_addr_to_requested_addr(start);
-      st.print(PTR_FORMAT ": @@ Object ", p2i(requested_start));
+      st.print(PTR_FORMAT ": @@ Object ", p2i(start));
 
       if (source_oop != nullptr) {
         // This is a regular oop that got archived.
-        print_oop_with_requested_addr_cr(&st, source_oop, false);
+        print_oop_with_buffered_addr_cr(&st, source_oop, false);
         byte_size = source_oop->size() * BytesPerWord;
       } else if (start == ArchiveHeapWriter::buffered_heap_roots_addr()) {
         // HeapShared::roots() is copied specially, so it doesn't exist in
@@ -1060,15 +1059,12 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
         // See ArchiveHeapWriter::copy_roots_to_buffer().
         st.print_cr("HeapShared::roots[%d]", HeapShared::pending_roots()->length());
         byte_size = ArchiveHeapWriter::heap_roots_word_size() * BytesPerWord;
-      } else if ((byte_size = ArchiveHeapWriter::get_filler_size_at(start)) > 0) {
-        // We have a filler oop, which also does not exist in BufferOffsetToSourceObjectTable.
-        st.print_cr("filler " SIZE_FORMAT " bytes", byte_size);
       } else {
         ShouldNotReachHere();
       }
 
       address oop_end = start + byte_size;
-      log_as_hex(start, oop_end, requested_start, /*is_heap=*/true);
+      log_as_hex(start, oop_end, /*is_heap=*/true);
 
       if (source_oop != nullptr) {
         log_oop_details(heap_info, source_oop);
@@ -1097,39 +1093,12 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
       case T_ARRAY:
       case T_OBJECT:
         fd->print_on(_st); // print just the name and offset
-        print_oop_with_requested_addr_cr(_st, _source_obj->obj_field(fd->offset()));
+        print_oop_with_buffered_addr_cr(_st, _source_obj->obj_field(fd->offset()));
         break;
       default:
-        if (ArchiveHeapWriter::is_marked_as_native_pointer(_heap_info, _source_obj, fd->offset())) {
-          print_as_native_pointer(fd);
-        } else {
-          fd->print_on_for(_st, _source_obj); // name, offset, value
-          _st->cr();
-        }
+        fd->print_on_for(_st, _source_obj); // name, offset, value
+        _st->cr();
       }
-    }
-
-    void print_as_native_pointer(fieldDescriptor* fd) {
-      LP64_ONLY(assert(fd->field_type() == T_LONG, "must be"));
-      NOT_LP64 (assert(fd->field_type() == T_INT,  "must be"));
-
-      // We have a field that looks like an integer, but it's actually a pointer to a MetaspaceObj.
-      address source_native_ptr = (address)
-          LP64_ONLY(_source_obj->long_field(fd->offset()))
-          NOT_LP64( _source_obj->int_field (fd->offset()));
-      ArchiveBuilder* builder = ArchiveBuilder::current();
-
-      // The value of the native pointer at runtime.
-      address requested_native_ptr = builder->to_requested(builder->get_buffered_addr(source_native_ptr));
-
-      // The address of _source_obj at runtime
-      oop requested_obj = ArchiveHeapWriter::source_obj_to_requested_obj(_source_obj);
-      // The address of this field in the requested space
-      address requested_field_addr = cast_from_oop<address>(requested_obj) + fd->offset();
-
-      fd->print_on(_st);
-      _st->print_cr(PTR_FORMAT " (marked metadata pointer @" PTR_FORMAT " )",
-                    p2i(requested_native_ptr), p2i(requested_field_addr));
     }
   };
 
@@ -1152,7 +1121,7 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
         objArrayOop source_obj_array = objArrayOop(source_oop);
         for (int i = 0; i < source_obj_array->length(); i++) {
           st.print(" -%4d: ", i);
-          print_oop_with_requested_addr_cr(&st, source_obj_array->obj_at(i));
+          print_oop_with_buffered_addr_cr(&st, source_obj_array->obj_at(i));
         }
       } else {
         st.print_cr(" - fields (" SIZE_FORMAT " words):", source_oop->size());
@@ -1167,7 +1136,7 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
     if (st.is_enabled()) {
       for (int i = 0; i < HeapShared::pending_roots()->length(); i++) {
         st.print("roots[%4d]: ", i);
-        print_oop_with_requested_addr_cr(&st, HeapShared::pending_roots()->at(i));
+        print_oop_with_buffered_addr_cr(&st, HeapShared::pending_roots()->at(i));
       }
     }
   }
@@ -1176,17 +1145,14 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
   // the narrowOop version of the requested address.
   //     0x00000007ffc7e840 (0xfff8fd08) java.lang.Class
   //     0x00000007ffc000f8 (0xfff8001f) [B length: 11
-  static void print_oop_with_requested_addr_cr(outputStream* st, oop source_oop, bool print_addr = true) {
+  static void print_oop_with_buffered_addr_cr(outputStream* st, oop source_oop, bool print_addr = true) {
     if (source_oop == nullptr) {
       st->print_cr("null");
     } else {
       ResourceMark rm;
-      oop requested_obj = ArchiveHeapWriter::source_obj_to_requested_obj(source_oop);
+      address buffered_addr = ArchiveHeapWriter::source_obj_to_buffered_addr(source_oop);
       if (print_addr) {
-        st->print(PTR_FORMAT " ", p2i(requested_obj));
-      }
-      if (UseCompressedOops) {
-        st->print("(0x%08x) ", CompressedOops::narrow_oop_value(requested_obj));
+        st->print(PTR_FORMAT " ", p2i(buffered_addr));
       }
       if (source_oop->is_array()) {
         int array_len = arrayOop(source_oop)->length();
@@ -1200,7 +1166,7 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
 
   // Log all the data [base...top). Pretend that the base address
   // will be mapped to requested_base at run-time.
-  static void log_as_hex(address base, address top, address requested_base, bool is_heap = false) {
+  static void log_as_hex(address base, address top, bool is_heap = false) {
     assert(top >= base, "must be");
 
     LogStreamHandle(Trace, cds, map) lsh;
@@ -1211,7 +1177,8 @@ class ArchiveBuilder::CDSMapLogger : AllStatic {
         // longs and doubles will be split into two words.
         unitsize = sizeof(narrowOop);
       }
-      os::print_hex_dump(&lsh, base, top, unitsize, 32, requested_base);
+      // TODO: Fix print statement
+      //os::print_hex_dump(&lsh, base, top, unitsize, 32);
     }
   }
 
@@ -1232,7 +1199,7 @@ public:
     address header_end = header + mapinfo->header()->header_size();
     log_region("header", header, header_end, 0);
     log_header(mapinfo);
-    log_as_hex(header, header_end, 0);
+    log_as_hex(header, header_end);
 
     DumpRegion* rw_region = &builder->_rw_region;
     DumpRegion* ro_region = &builder->_ro_region;
@@ -1242,7 +1209,7 @@ public:
 
     address bitmap_end = address(bitmap + bitmap_size_in_bytes);
     log_region("bitmap", address(bitmap), bitmap_end, 0);
-    log_as_hex((address)bitmap, bitmap_end, 0);
+    log_as_hex((address)bitmap, bitmap_end);
 
 #if INCLUDE_CDS_JAVA_HEAP
     if (heap_info->is_used()) {

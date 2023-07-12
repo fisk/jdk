@@ -129,21 +129,6 @@ void vmClasses::resolve_all(TRAPS) {
   CollectedHeap::set_filler_object_klass(vmClasses::Object_klass());
 #if INCLUDE_CDS
   if (UseSharedSpaces) {
-    // It's unsafe to access the archived heap regions before they
-    // are fixed up, so we must do the fixup as early as possible
-    // before the archived java objects are accessed by functions
-    // such as java_lang_Class::restore_archived_mirror and
-    // ConstantPool::restore_unshareable_info (restores the archived
-    // resolved_references array object).
-    //
-    // ArchiveHeapLoader::fixup_regions fills the empty
-    // spaces in the archived heap regions and may use
-    // vmClasses::Object_klass(), so we can do this only after
-    // Object_klass is resolved. See the above resolve_through()
-    // call. No mirror objects are accessed/restored in the above call.
-    // Mirrors are restored after java.lang.Class is loaded.
-    ArchiveHeapLoader::fixup_region();
-
     // Initialize the constant pool for the Object_class
     assert(Object_klass()->is_shared(), "must be");
     Object_klass()->constants()->restore_unshareable_info(CHECK);

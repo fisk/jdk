@@ -8,8 +8,7 @@
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License * version 2 for more details (a copy is included in the LICENSE file that
  * accompanied this code).
  *
  * You should have received a copy of the GNU General Public License version
@@ -26,135 +25,65 @@
 #define SHARE_CDS_ARCHIVEHEAPLOADER_HPP
 
 #include "cds/filemap.hpp"
-#include "gc/shared/gc_globals.hpp"
 #include "memory/allocation.hpp"
 #include "memory/allStatic.hpp"
-#include "memory/memRegion.hpp"
 #include "oops/oopsHierarchy.hpp"
-#include "runtime/globals.hpp"
-#include "utilities/bitMap.hpp"
+#include "utilities/exceptions.hpp"
+#include "utilities/growableArray.hpp"
 #include "utilities/macros.hpp"
+#include "utilities/stack.hpp"
 
-class  FileMapInfo;
-struct LoadedArchiveHeapRegion;
+class FileMapInfo;
+class OopStorage;
+class Thread;
 
-class ArchiveHeapLoader : AllStatic {
-public:
-  // At runtime, the heap region in the CDS archive can be used in two different ways,
-  // depending on the GC type:
-  // - Mapped: (G1 only) the region is directly mapped into the Java heap
-  // - Loaded: At VM start-up, the objects in the heap region are copied into the
-  //           Java heap. This is easier to implement than mapping but
-  //           slightly less efficient, as the embedded pointers need to be relocated.
-  static bool can_use() { return can_map() || can_load(); }
+struct CDSHeapTraversalEntry {
+  oopDesc* _archive_pointee_object;
+  void* _heap_object_handle;
+  uintptr_t _heap_field_offset_bytes;
+};
 
-  // Can this VM map archived heap region? Currently only G1+compressed{oops,cp}
-  static bool can_map() {
-    CDS_JAVA_HEAP_ONLY(return (UseG1GC && UseCompressedClassPointers);)
-    NOT_CDS_JAVA_HEAP(return false;)
-  }
-
-  // Can this VM load the objects from archived heap region into the heap at start-up?
-  static bool can_load()  NOT_CDS_JAVA_HEAP_RETURN_(false);
-  static void finish_initialization() NOT_CDS_JAVA_HEAP_RETURN;
-  static bool is_loaded() {
-    CDS_JAVA_HEAP_ONLY(return _is_loaded;)
-    NOT_CDS_JAVA_HEAP(return false;)
-  }
-
-  static bool is_in_use() {
-    return is_loaded() || is_mapped();
-  }
-
-  static ptrdiff_t mapped_heap_delta() {
-    CDS_JAVA_HEAP_ONLY(assert(!is_loaded(), "must be"));
-    CDS_JAVA_HEAP_ONLY(assert(_mapped_heap_relocation_initialized, "must be"));
-    CDS_JAVA_HEAP_ONLY(return _mapped_heap_delta;)
-    NOT_CDS_JAVA_HEAP_RETURN_(0L);
-  }
-
-  static void set_mapped() {
-    CDS_JAVA_HEAP_ONLY(_is_mapped = true;)
-    NOT_CDS_JAVA_HEAP_RETURN;
-  }
-  static bool is_mapped() {
-    CDS_JAVA_HEAP_ONLY(return _is_mapped;)
-    NOT_CDS_JAVA_HEAP_RETURN_(false);
-  }
-
-  // NarrowOops stored in the CDS archive may use a different encoding scheme
-  // than CompressedOops::{base,shift} -- see FileMapInfo::map_heap_region_impl.
-  // To decode them, do not use CompressedOops::decode_not_null. Use this
-  // function instead.
-  inline static oop decode_from_archive(narrowOop v) NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
-
-  // More efficient version, but works only when ArchiveHeap is mapped.
-  inline static oop decode_from_mapped_archive(narrowOop v) NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
-
-  static void patch_compressed_embedded_pointers(BitMapView bm,
-                                                 FileMapInfo* info,
-                                                 MemRegion region) NOT_CDS_JAVA_HEAP_RETURN;
-
-  static void patch_embedded_pointers(FileMapInfo* info,
-                                      MemRegion region, address oopmap,
-                                      size_t oopmap_size_in_bits) NOT_CDS_JAVA_HEAP_RETURN;
-
-  static void fixup_region() NOT_CDS_JAVA_HEAP_RETURN;
-
-#if INCLUDE_CDS_JAVA_HEAP
-  static void init_mapped_heap_info(address mapped_heap_bottom, ptrdiff_t delta, int dumptime_oop_shift);
+class ArchiveHeapLoader {
+  friend class OopPatcherBase;
 private:
-  static bool _is_mapped;
+  static FileMapRegion* _heap_region;
+  static FileMapRegion* _bitmap_region;
+  static OopStorage* _oop_storage;
+  static address _roots_old_addr;
+  static oop* _roots;
+  static BitMapView _oopmap;
   static bool _is_loaded;
+  static bool _allow_gc;
+  static bool _stop_background_processing;
+  static bool _finished_processing;
+  static int _lowest_finished_root;
+  static GrowableArrayCHeap<oop*, mtClassShared>* _handles;
 
-  // Support for loaded archived heap. These are cached values from
-  // LoadedArchiveHeapRegion's.
-  static uintptr_t _dumptime_base;
-  static uintptr_t _dumptime_top;
-  static intx _runtime_offset;
+  template <bool allow_gc> static void* create_raw_handle(oop* handle, oop obj);
+  template <bool allow_gc> static oop resolve_raw_handle(void* handle);
 
-  static uintptr_t _loaded_heap_bottom;
-  static uintptr_t _loaded_heap_top;
-  static bool _loading_failed;
+  template <bool allow_gc> static void* allocate_object(oopDesc* archive_object, size_t size, JavaThread* thread);
+  template <bool COOPS, bool allow_gc> static oop materialize_object(oopDesc* archive_object, Stack<CDSHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread);
+  template <bool COOPS, bool allow_gc> static oop materialize_object_inner(oopDesc* archive_object, Stack<CDSHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread);
+  template <bool COOPS, bool allow_gc> static void copy_object(oopDesc* archive_object, void* heap_object_raw_handle, size_t size, Stack<CDSHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread);
+  template <bool COOPS, bool allow_gc> static void drain_dfs_stack(Stack<CDSHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread);
 
-  // UseCompressedOops only: Used by decode_from_archive
-  static bool    _narrow_oop_base_initialized;
-  static address _narrow_oop_base;
-  static int     _narrow_oop_shift;
+  static int compute_roots_length();
 
-  // is_mapped() only: the mapped address of each region is offset by this amount from
-  // their requested address.
-  static uintptr_t _mapped_heap_bottom;
-  static ptrdiff_t _mapped_heap_delta;
-  static bool      _mapped_heap_relocation_initialized;
+  static oop materialize_root(int root_index, Stack<CDSHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread);
+  static oop root(int root_index, Stack<CDSHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread);
 
-  static void init_narrow_oop_decoding(address base, int shift);
-  static bool init_loaded_region(FileMapInfo* mapinfo, LoadedArchiveHeapRegion* loaded_region,
-                                 MemRegion& archive_space);
-  static bool load_heap_region_impl(FileMapInfo* mapinfo, LoadedArchiveHeapRegion* loaded_region, uintptr_t buffer);
-  static void init_loaded_heap_relocation(LoadedArchiveHeapRegion* reloc_info);
-  static void patch_native_pointers();
-  static void finish_loaded_heap();
-  static void verify_loaded_heap();
-  static void fill_failed_loaded_heap();
-
-  static bool is_in_loaded_heap(uintptr_t o) {
-    return (_loaded_heap_bottom <= o && o < _loaded_heap_top);
-  }
-
-  template<bool IS_MAPPED>
-  inline static oop decode_from_archive_impl(narrowOop v) NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
-
-  class PatchLoadedRegionPointers;
+  static bool await_gc_enabled();
+  static void await_finished_processing();
 
 public:
-
-  static bool load_heap_region(FileMapInfo* mapinfo);
-  static void assert_in_loaded_heap(uintptr_t o) {
-    assert(is_in_loaded_heap(o), "must be");
-  }
-#endif // INCLUDE_CDS_JAVA_HEAP
-
+  static void initialize_oop_storage();
+  static void initialize_roots();
+  static void enable_gc();
+  static oop root(int root_index);
+  static void materialize_objects();
+  static void finish_materialize_objects();
+  static bool is_loaded() { return _is_loaded; }
 };
 
 #endif // SHARE_CDS_ARCHIVEHEAPLOADER_HPP
