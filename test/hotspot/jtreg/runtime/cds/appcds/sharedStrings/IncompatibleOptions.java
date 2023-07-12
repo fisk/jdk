@@ -78,10 +78,6 @@ import jdk.test.whitebox.code.Compiler;
 import jdk.test.whitebox.gc.GC;
 
 public class IncompatibleOptions {
-    static final String COOPS_DUMP_WARNING =
-        "Cannot dump shared archive when UseCompressedOops or UseCompressedClassPointers is off";
-    static final String GC_WARNING =
-        "Archived java heap is not supported";
     static final String OBJ_ALIGNMENT_MISMATCH =
         "The shared archive file's ObjectAlignmentInBytes of .* does not equal the current ObjectAlignmentInBytes of";
     static final String COMPACT_STRING_MISMATCH =
@@ -104,48 +100,73 @@ public class IncompatibleOptions {
 
         // Uncompressed OOPs
         testDump(1, "-XX:+UseG1GC", "-XX:-UseCompressedOops", null, false);
+        testExec(1, "-XX:+UseG1GC", "-XX:-UseCompressedOops", null, false);
+
+	// Try with ZGC
         if (GC.Z.isSupported()) {
-            testDump(1, "-XX:+UseZGC", "-XX:-UseCompressedOops", null, false);
+            testDump(2, "-XX:+UseZGC", "-XX:-UseCompressedOops", null, false);
+            testExec(2, "-XX:+UseZGC", "-XX:-UseCompressedOops", null, false);
         }
 
-        // incompatible GCs
-        testDump(2, "-XX:+UseParallelGC", "", GC_WARNING, false);
-        testDump(3, "-XX:+UseSerialGC", "", GC_WARNING, false);
-
         // Explicitly archive with compressed oops, run without.
-        testDump(5, "-XX:+UseG1GC", "-XX:+UseCompressedOops", null, false);
-        testExec(5, "-XX:+UseG1GC", "-XX:-UseCompressedOops",
-                 COMPRESSED_OOPS_NOT_CONSISTENT, true);
+        testDump(3, "-XX:+UseG1GC", "-XX:+UseCompressedOops", null, false);
+        testExec(3, "-XX:+UseG1GC", "-XX:-UseCompressedOops", COMPRESSED_OOPS_NOT_CONSISTENT, true);
 
         // NOTE: No warning is displayed, by design
         // Still run, to ensure no crash or exception
-        testExec(6, "-XX:+UseParallelGC", "", "", false);
-        testExec(7, "-XX:+UseSerialGC", "", "", false);
+        testExec(3, "-XX:+UseParallelGC", "", "", false);
+        testExec(3, "-XX:+UseSerialGC", "", "", false);
+
+        // Explicitly archive with object streaming with one GC, run with other GCs.
+        testDump(4, "-XX:+UseG1GC", "-XX:+DumpStreamableObjects", null, false);
+        testExec(4, "-XX:+UseParallelGC", "", "", false);
+        testExec(4, "-XX:+UseSerialGC", "", "", false);
+
+        if (GC.Z.isSupported()) {
+            testExec(4, "-XX:+UseZGC", "", COMPRESSED_OOPS_NOT_CONSISTENT, true);
+        }
+
+        // Explicitly archive with object streaming and COOPs with one GC, run with other GCs.
+        testDump(4, "-XX:-UseCompressedOops", "-XX:+DumpStreamableObjects", null, false);
+        testExec(4, "-XX:+UseG1GC", "", COMPRESSED_OOPS_NOT_CONSISTENT, true);
+        testExec(4, "-XX:+UseParallelGC", "", COMPRESSED_OOPS_NOT_CONSISTENT, true);
+        testExec(4, "-XX:+UseSerialGC", "", COMPRESSED_OOPS_NOT_CONSISTENT, true);
+
+        testExec(4, "-XX:+UseParallelGC", "-XX:-UseCompressedOops", "", false);
+        testExec(4, "-XX:+UseSerialGC", "-XX:-UseCompressedOops", "", false);
+        testExec(4, "-XX:+UseG1GC", "-XX:-UseCompressedOops", "", false);
+
+        if (GC.Z.isSupported()) {
+            testExec(4, "-XX:+UseZGC", "-XX:+ZGenerational", "", false);
+            testExec(4, "-XX:+UseZGC", "-XX:-ZGenerational", "", false);
+        }
 
         // Test various oops encodings, by varying ObjectAlignmentInBytes and heap sizes
-        testDump(9, "-XX:+UseG1GC", "-XX:ObjectAlignmentInBytes=8", null, false);
-        testExec(9, "-XX:+UseG1GC", "-XX:ObjectAlignmentInBytes=16",
-                 OBJ_ALIGNMENT_MISMATCH, true);
+        testDump(5, "-XX:+UseG1GC", "-XX:ObjectAlignmentInBytes=8", null, false);
+        testExec(5, "-XX:+UseG1GC", "-XX:ObjectAlignmentInBytes=16", OBJ_ALIGNMENT_MISMATCH, true);
+
+        testDump(5, "-XX:+DumpStreamableObjects", "-XX:ObjectAlignmentInBytes=8", null, false);
+        testExec(5, "-XX:+DumpStreamableObjects", "-XX:ObjectAlignmentInBytes=16", OBJ_ALIGNMENT_MISMATCH, true);
 
         // Implicitly archive with compressed oops, run without.
         // Max heap size for compressed oops is around 31G.
         // UseCompressedOops is turned on by default when heap
         // size is under 31G, but will be turned off when heap
         // size is greater than that.
-        testDump(10, "-XX:+UseG1GC", "-Xmx1g", null, false);
-        testExec(10, "-XX:+UseG1GC", "-Xmx32g", null, true);
+        testDump(6, "-XX:+UseG1GC", "-Xmx1g", null, false);
+        testExec(6, "-XX:+UseG1GC", "-Xmx32g", null, true);
         // Explicitly archive without compressed oops and run with.
-        testDump(11, "-XX:+UseG1GC", "-XX:-UseCompressedOops", null, false);
-        testExec(11, "-XX:+UseG1GC", "-XX:+UseCompressedOops", null, true);
+        testDump(7, "-XX:+UseG1GC", "-XX:-UseCompressedOops", null, false);
+        testExec(7, "-XX:+UseG1GC", "-XX:+UseCompressedOops", null, true);
         // Implicitly archive without compressed oops and run with.
-        testDump(12, "-XX:+UseG1GC", "-Xmx32G", null, false);
-        testExec(12, "-XX:+UseG1GC", "-Xmx1G", null, true);
+        testDump(8, "-XX:+UseG1GC", "-Xmx32G", null, false);
+        testExec(8, "-XX:+UseG1GC", "-Xmx1G", null, true);
         // CompactStrings must match between dump time and run time
-        testDump(13, "-XX:+UseG1GC", "-XX:-CompactStrings", null, false);
-        testExec(13, "-XX:+UseG1GC", "-XX:+CompactStrings",
+        testDump(9, "-XX:+UseG1GC", "-XX:-CompactStrings", null, false);
+        testExec(9, "-XX:+UseG1GC", "-XX:+CompactStrings",
                  COMPACT_STRING_MISMATCH, true);
-        testDump(14, "-XX:+UseG1GC", "-XX:+CompactStrings", null, false);
-        testExec(14, "-XX:+UseG1GC", "-XX:-CompactStrings",
+        testDump(10, "-XX:+UseG1GC", "-XX:+CompactStrings", null, false);
+        testExec(10, "-XX:+UseG1GC", "-XX:-CompactStrings",
                  COMPACT_STRING_MISMATCH, true);
     }
 

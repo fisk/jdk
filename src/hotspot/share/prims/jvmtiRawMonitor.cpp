@@ -23,12 +23,14 @@
  */
 
 #include "precompiled.hpp"
+#include "cds/cdsThread.hpp"
 #include "memory/allocation.inline.hpp"
 #include "prims/jvmtiRawMonitor.hpp"
 #include "runtime/atomic.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/javaThread.hpp"
 #include "runtime/orderAccess.hpp"
+#include "runtime/threadSMR.hpp"
 #include "runtime/threads.hpp"
 
 JvmtiRawMonitor::QNode::QNode(Thread* thread) : _next(nullptr), _prev(nullptr),
@@ -40,10 +42,15 @@ GrowableArray<JvmtiRawMonitor*>* JvmtiPendingMonitors::_monitors =
   new (mtServiceability) GrowableArray<JvmtiRawMonitor*>(1, mtServiceability);
 
 void JvmtiPendingMonitors::transition_raw_monitors() {
-  assert((Threads::number_of_threads()==1),
-         "Java thread has not been created yet or more than one java thread "
-         "is running. Raw monitor transition will not work");
   JavaThread* current_java_thread = JavaThread::current();
+
+#ifdef ASSERT
+  for (JavaThreadIteratorWithHandle jtiwh; JavaThread *thread = jtiwh.next(); ) {
+    assert(thread == current_java_thread || thread == CDSThread::cds_thread(),
+           "Didn't expect concurrent application threads at this point");
+  }
+#endif
+
   {
     ThreadToNativeFromVM ttnfvm(current_java_thread);
     for (int i = 0; i < count(); i++) {

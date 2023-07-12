@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -19,27 +19,31 @@
  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
  * or visit www.oracle.com if you need additional information or have any
  * questions.
+ *
  */
 
-/**
- * @test SharedStringsDedup
- * @summary Test -Xshare:auto with shared strings and -XX:+UseStringDeduplication
- * @requires vm.cds.write.archived.java.heap
- * @requires vm.gc.G1
- * @library /test/lib
- * @run driver SharedStringsDedup
- */
+#ifndef SHARE_CDS_CDSTHREAD_HPP
+#define SHARE_CDS_CDSTHREAD_HPP
 
-import jdk.test.lib.cds.CDSTestUtils;
+#include "runtime/javaThread.hpp"
 
-// The main purpose is to test the interaction between shared strings
-// and -XX:+UseStringDeduplication. We run in -Xshare:auto mode so
-// we don't need to worry about CDS archive mapping failure (which
-// doesn't happen often so it won't impact coverage).
-public class SharedStringsDedup {
-    public static void main(String[] args) throws Exception {
-        CDSTestUtils.createArchiveAndCheck()
-            .shouldContain("Shared string table stats");
-        CDSTestUtils.runWithArchiveAndCheck("-XX:+UseStringDeduplication");
-    }
-}
+// A hidden from external view JavaThread for materializing archived objects
+
+class CDSThread : public JavaThread {
+private:
+  static CDSThread* _cds_thread;
+  static void cds_thread_entry(JavaThread* thread, TRAPS);
+  CDSThread(ThreadFunction entry_point) : JavaThread(entry_point) {};
+
+public:
+  static void initialize();
+
+  static void materialize_thread_object();
+
+  // Hide this thread from external view.
+  bool is_hidden_from_external_view() const { return true; }
+
+  static CDSThread* cds_thread() { return _cds_thread; };
+};
+
+#endif // SHARE_CDS_CDSTHREAD_HPP

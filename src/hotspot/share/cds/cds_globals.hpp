@@ -76,6 +76,9 @@
           "Dump the names all loaded classes, that could be stored into "   \
           "the CDS archive, in the specified file")                         \
                                                                             \
+  product(bool, DumpStreamableObjects, true,                                \
+          "Dump the Java heap in a generic streamable object format")       \
+                                                                            \
   product(ccstr, SharedClassListFile, nullptr,                              \
           "Override the default CDS class list")                            \
                                                                             \

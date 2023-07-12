@@ -23,8 +23,8 @@
  */
 
 #include "precompiled.hpp"
-#include "cds/archiveHeapLoader.hpp"
 #include "cds/cdsConfig.hpp"
+#include "cds/filemap.hpp"
 #include "cds/heapShared.hpp"
 #include "classfile/classLoaderDataShared.hpp"
 #include "classfile/moduleEntry.hpp"
@@ -357,8 +357,11 @@ bool CDSConfig::check_vm_args_consistency(bool patch_mod_javabase,  bool mode_fl
 
 #if INCLUDE_CDS_JAVA_HEAP
 bool CDSConfig::is_dumping_heap() {
-  // heap dump is not supported in dynamic dump
   return is_dumping_static_archive() && HeapShared::can_write();
+}
+
+bool CDSConfig::is_loading_heap() {
+  return HeapShared::is_archived_heap_in_use();
 }
 
 bool CDSConfig::is_dumping_full_module_graph() {
@@ -378,7 +381,7 @@ bool CDSConfig::is_loading_full_module_graph() {
 
   if (!_loading_full_module_graph_disabled &&
       UseSharedSpaces &&
-      ArchiveHeapLoader::can_use() &&
+      HeapShared::can_use_archived_heap() &&
       MetaspaceShared::use_optimized_module_handling()) {
     // Classes used by the archived full module graph are loaded in JVMTI early phase.
     assert(!(JvmtiExport::should_post_class_file_load_hook() && JvmtiExport::has_early_class_hook_env()),

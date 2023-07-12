@@ -23,7 +23,8 @@
  */
 
 #include "precompiled.hpp"
-#include "cds/archiveHeapWriter.hpp"
+#include "cds/mappingArchiveHeapLoader.hpp"
+#include "cds/mappingArchiveHeapWriter.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/filemap.hpp"
 #include "cds/heapShared.hpp"
@@ -49,22 +50,22 @@
 
 #if INCLUDE_CDS_JAVA_HEAP
 
-GrowableArrayCHeap<u1, mtClassShared>* ArchiveHeapWriter::_buffer = nullptr;
+GrowableArrayCHeap<u1, mtClassShared>* MappingArchiveHeapWriter::_buffer = nullptr;
 
 // The following are offsets from buffer_bottom()
-size_t ArchiveHeapWriter::_buffer_used;
-size_t ArchiveHeapWriter::_heap_roots_offset;
+size_t MappingArchiveHeapWriter::_buffer_used;
+size_t MappingArchiveHeapWriter::_heap_roots_offset;
 
-size_t ArchiveHeapWriter::_heap_roots_word_size;
+size_t MappingArchiveHeapWriter::_heap_roots_word_size;
 
-address ArchiveHeapWriter::_requested_bottom;
-address ArchiveHeapWriter::_requested_top;
+address MappingArchiveHeapWriter::_requested_bottom;
+address MappingArchiveHeapWriter::_requested_top;
 
-GrowableArrayCHeap<ArchiveHeapWriter::NativePointerInfo, mtClassShared>* ArchiveHeapWriter::_native_pointers;
-GrowableArrayCHeap<oop, mtClassShared>* ArchiveHeapWriter::_source_objs;
+GrowableArrayCHeap<MappingArchiveHeapWriter::NativePointerInfo, mtClassShared>* MappingArchiveHeapWriter::_native_pointers;
+GrowableArrayCHeap<oop, mtClassShared>* MappingArchiveHeapWriter::_source_objs;
 
-ArchiveHeapWriter::BufferOffsetToSourceObjectTable*
-  ArchiveHeapWriter::_buffer_offset_to_source_obj_table = nullptr;
+MappingArchiveHeapWriter::BufferOffsetToSourceObjectTable*
+  MappingArchiveHeapWriter::_buffer_offset_to_source_obj_table = nullptr;
 
 
 typedef ResourceHashtable<address, size_t,
@@ -73,7 +74,7 @@ typedef ResourceHashtable<address, size_t,
       mtClassShared> FillersTable;
 static FillersTable* _fillers;
 
-void ArchiveHeapWriter::init() {
+void MappingArchiveHeapWriter::init() {
   if (HeapShared::can_write()) {
     Universe::heap()->collect(GCCause::_java_lang_system_gc);
 
@@ -90,11 +91,11 @@ void ArchiveHeapWriter::init() {
   }
 }
 
-void ArchiveHeapWriter::add_source_obj(oop src_obj) {
+void MappingArchiveHeapWriter::add_source_obj(oop src_obj) {
   _source_objs->append(src_obj);
 }
 
-void ArchiveHeapWriter::write(GrowableArrayCHeap<oop, mtClassShared>* roots,
+void MappingArchiveHeapWriter::write(GrowableArrayCHeap<oop, mtClassShared>* roots,
                               ArchiveHeapInfo* heap_info) {
   assert(HeapShared::can_write(), "sanity");
   allocate_buffer();
@@ -103,16 +104,16 @@ void ArchiveHeapWriter::write(GrowableArrayCHeap<oop, mtClassShared>* roots,
   relocate_embedded_oops(roots, heap_info);
 }
 
-bool ArchiveHeapWriter::is_too_large_to_archive(oop o) {
+bool MappingArchiveHeapWriter::is_too_large_to_archive(oop o) {
   return is_too_large_to_archive(o->size());
 }
 
-bool ArchiveHeapWriter::is_string_too_large_to_archive(oop string) {
+bool MappingArchiveHeapWriter::is_string_too_large_to_archive(oop string) {
   typeArrayOop value = java_lang_String::value_no_keepalive(string);
   return is_too_large_to_archive(value);
 }
 
-bool ArchiveHeapWriter::is_too_large_to_archive(size_t size) {
+bool MappingArchiveHeapWriter::is_too_large_to_archive(size_t size) {
   assert(size > 0, "no zero-size object");
   assert(size * HeapWordSize > size, "no overflow");
   static_assert(MIN_GC_REGION_ALIGNMENT > 0, "must be positive");
@@ -126,19 +127,19 @@ bool ArchiveHeapWriter::is_too_large_to_archive(size_t size) {
 }
 
 // Various lookup functions between source_obj, buffered_obj and requested_obj
-bool ArchiveHeapWriter::is_in_requested_range(oop o) {
+bool MappingArchiveHeapWriter::is_in_requested_range(oop o) {
   assert(_requested_bottom != nullptr, "do not call before _requested_bottom is initialized");
   address a = cast_from_oop<address>(o);
   return (_requested_bottom <= a && a < _requested_top);
 }
 
-oop ArchiveHeapWriter::requested_obj_from_buffer_offset(size_t offset) {
+oop MappingArchiveHeapWriter::requested_obj_from_buffer_offset(size_t offset) {
   oop req_obj = cast_to_oop(_requested_bottom + offset);
   assert(is_in_requested_range(req_obj), "must be");
   return req_obj;
 }
 
-oop ArchiveHeapWriter::source_obj_to_requested_obj(oop src_obj) {
+oop MappingArchiveHeapWriter::source_obj_to_requested_obj(oop src_obj) {
   assert(CDSConfig::is_dumping_heap(), "dump-time only");
   HeapShared::CachedOopInfo* p = HeapShared::archived_object_cache()->get(src_obj);
   if (p != nullptr) {
@@ -148,7 +149,7 @@ oop ArchiveHeapWriter::source_obj_to_requested_obj(oop src_obj) {
   }
 }
 
-oop ArchiveHeapWriter::buffered_addr_to_source_obj(address buffered_addr) {
+oop MappingArchiveHeapWriter::buffered_addr_to_source_obj(address buffered_addr) {
   oop* p = _buffer_offset_to_source_obj_table->get(buffered_address_to_offset(buffered_addr));
   if (p != nullptr) {
     return *p;
@@ -157,33 +158,33 @@ oop ArchiveHeapWriter::buffered_addr_to_source_obj(address buffered_addr) {
   }
 }
 
-address ArchiveHeapWriter::buffered_addr_to_requested_addr(address buffered_addr) {
+address MappingArchiveHeapWriter::buffered_addr_to_requested_addr(address buffered_addr) {
   return _requested_bottom + buffered_address_to_offset(buffered_addr);
 }
 
-oop ArchiveHeapWriter::heap_roots_requested_address() {
+oop MappingArchiveHeapWriter::heap_roots_requested_address() {
   return cast_to_oop(_requested_bottom + _heap_roots_offset);
 }
 
-address ArchiveHeapWriter::requested_address() {
+address MappingArchiveHeapWriter::requested_address() {
   assert(_buffer != nullptr, "must be initialized");
   return _requested_bottom;
 }
 
-void ArchiveHeapWriter::allocate_buffer() {
+void MappingArchiveHeapWriter::allocate_buffer() {
   int initial_buffer_size = 100000;
   _buffer = new GrowableArrayCHeap<u1, mtClassShared>(initial_buffer_size);
   _buffer_used = 0;
   ensure_buffer_space(1); // so that buffer_bottom() works
 }
 
-void ArchiveHeapWriter::ensure_buffer_space(size_t min_bytes) {
+void MappingArchiveHeapWriter::ensure_buffer_space(size_t min_bytes) {
   // We usually have very small heaps. If we get a huge one it's probably caused by a bug.
   guarantee(min_bytes <= max_jint, "we dont support archiving more than 2G of objects");
   _buffer->at_grow(to_array_index(min_bytes));
 }
 
-void ArchiveHeapWriter::copy_roots_to_buffer(GrowableArrayCHeap<oop, mtClassShared>* roots) {
+void MappingArchiveHeapWriter::copy_roots_to_buffer(GrowableArrayCHeap<oop, mtClassShared>* roots) {
   Klass* k = Universe::objectArrayKlassObj(); // already relocated to point to archived klass
   int length = roots->length();
   _heap_roots_word_size = objArrayOopDesc::object_size(length);
@@ -226,7 +227,7 @@ void ArchiveHeapWriter::copy_roots_to_buffer(GrowableArrayCHeap<oop, mtClassShar
   _buffer_used = new_used;
 }
 
-void ArchiveHeapWriter::copy_source_objs_to_buffer(GrowableArrayCHeap<oop, mtClassShared>* roots) {
+void MappingArchiveHeapWriter::copy_source_objs_to_buffer(GrowableArrayCHeap<oop, mtClassShared>* roots) {
   for (int i = 0; i < _source_objs->length(); i++) {
     oop src_obj = _source_objs->at(i);
     HeapShared::CachedOopInfo* info = HeapShared::archived_object_cache()->get(src_obj);
@@ -243,12 +244,12 @@ void ArchiveHeapWriter::copy_source_objs_to_buffer(GrowableArrayCHeap<oop, mtCla
                 _buffer_used, _source_objs->length() + 1, roots->length());
 }
 
-size_t ArchiveHeapWriter::filler_array_byte_size(int length) {
+size_t MappingArchiveHeapWriter::filler_array_byte_size(int length) {
   size_t byte_size = objArrayOopDesc::object_size(length) * HeapWordSize;
   return byte_size;
 }
 
-int ArchiveHeapWriter::filler_array_length(size_t fill_bytes) {
+int MappingArchiveHeapWriter::filler_array_length(size_t fill_bytes) {
   assert(is_object_aligned(fill_bytes), "must be");
   size_t elemSize = (UseCompressedOops ? sizeof(narrowOop) : sizeof(oop));
 
@@ -264,7 +265,7 @@ int ArchiveHeapWriter::filler_array_length(size_t fill_bytes) {
   return -1;
 }
 
-HeapWord* ArchiveHeapWriter::init_filler_array_at_buffer_top(int array_length, size_t fill_bytes) {
+HeapWord* MappingArchiveHeapWriter::init_filler_array_at_buffer_top(int array_length, size_t fill_bytes) {
   assert(UseCompressedClassPointers, "Archived heap only supported for compressed klasses");
   Klass* oak = Universe::objectArrayKlassObj(); // already relocated to point to archived klass
   HeapWord* mem = offset_to_buffered_address<HeapWord*>(_buffer_used);
@@ -276,7 +277,7 @@ HeapWord* ArchiveHeapWriter::init_filler_array_at_buffer_top(int array_length, s
   return mem;
 }
 
-void ArchiveHeapWriter::maybe_fill_gc_region_gap(size_t required_byte_size) {
+void MappingArchiveHeapWriter::maybe_fill_gc_region_gap(size_t required_byte_size) {
   // We fill only with arrays (so we don't need to use a single HeapWord filler if the
   // leftover space is smaller than a zero-sized array object). Therefore, we need to
   // make sure there's enough space of min_filler_byte_size in the current region after
@@ -309,7 +310,7 @@ void ArchiveHeapWriter::maybe_fill_gc_region_gap(size_t required_byte_size) {
   }
 }
 
-size_t ArchiveHeapWriter::get_filler_size_at(address buffered_addr) {
+size_t MappingArchiveHeapWriter::get_filler_size_at(address buffered_addr) {
   size_t* p = _fillers->get(buffered_addr);
   if (p != nullptr) {
     assert(*p > 0, "filler must be larger than zero bytes");
@@ -325,7 +326,7 @@ void update_buffered_object_field(address buffered_obj, int field_offset, T valu
   *field_addr = value;
 }
 
-size_t ArchiveHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
+size_t MappingArchiveHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
   assert(!is_too_large_to_archive(src_obj), "already checked");
   size_t byte_size = src_obj->size() * HeapWordSize;
   assert(byte_size > 0, "no zero-size objects");
@@ -370,7 +371,7 @@ size_t ArchiveHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
   return buffered_obj_offset;
 }
 
-void ArchiveHeapWriter::set_requested_address(ArchiveHeapInfo* info) {
+void MappingArchiveHeapWriter::set_requested_address(ArchiveHeapInfo* info) {
   assert(!info->is_used(), "only set once");
   assert(UseG1GC, "must be");
   address heap_end = (address)G1CollectedHeap::heap()->reserved().end();
@@ -402,7 +403,7 @@ void ArchiveHeapWriter::set_requested_address(ArchiveHeapInfo* info) {
 
 // Oop relocation
 
-template <typename T> T* ArchiveHeapWriter::requested_addr_to_buffered_addr(T* p) {
+template <typename T> T* MappingArchiveHeapWriter::requested_addr_to_buffered_addr(T* p) {
   assert(is_in_requested_range(cast_to_oop(p)), "must be");
 
   address addr = address(p);
@@ -411,36 +412,36 @@ template <typename T> T* ArchiveHeapWriter::requested_addr_to_buffered_addr(T* p
   return offset_to_buffered_address<T*>(offset);
 }
 
-template <typename T> oop ArchiveHeapWriter::load_source_oop_from_buffer(T* buffered_addr) {
+template <typename T> oop MappingArchiveHeapWriter::load_source_oop_from_buffer(T* buffered_addr) {
   oop o = load_oop_from_buffer(buffered_addr);
   assert(!in_buffer(cast_from_oop<address>(o)), "must point to source oop");
   return o;
 }
 
-template <typename T> void ArchiveHeapWriter::store_requested_oop_in_buffer(T* buffered_addr,
+template <typename T> void MappingArchiveHeapWriter::store_requested_oop_in_buffer(T* buffered_addr,
                                                                             oop request_oop) {
   assert(is_in_requested_range(request_oop), "must be");
   store_oop_in_buffer(buffered_addr, request_oop);
 }
 
-inline void ArchiveHeapWriter::store_oop_in_buffer(oop* buffered_addr, oop requested_obj) {
+inline void MappingArchiveHeapWriter::store_oop_in_buffer(oop* buffered_addr, oop requested_obj) {
   *buffered_addr = requested_obj;
 }
 
-inline void ArchiveHeapWriter::store_oop_in_buffer(narrowOop* buffered_addr, oop requested_obj) {
+inline void MappingArchiveHeapWriter::store_oop_in_buffer(narrowOop* buffered_addr, oop requested_obj) {
   narrowOop val = CompressedOops::encode_not_null(requested_obj);
   *buffered_addr = val;
 }
 
-oop ArchiveHeapWriter::load_oop_from_buffer(oop* buffered_addr) {
+oop MappingArchiveHeapWriter::load_oop_from_buffer(oop* buffered_addr) {
   return *buffered_addr;
 }
 
-oop ArchiveHeapWriter::load_oop_from_buffer(narrowOop* buffered_addr) {
+oop MappingArchiveHeapWriter::load_oop_from_buffer(narrowOop* buffered_addr) {
   return CompressedOops::decode(*buffered_addr);
 }
 
-template <typename T> void ArchiveHeapWriter::relocate_field_in_buffer(T* field_addr_in_buffer, CHeapBitMap* oopmap) {
+template <typename T> void MappingArchiveHeapWriter::relocate_field_in_buffer(T* field_addr_in_buffer, CHeapBitMap* oopmap) {
   oop source_referent = load_source_oop_from_buffer<T>(field_addr_in_buffer);
   if (!CompressedOops::is_null(source_referent)) {
     oop request_referent = source_obj_to_requested_obj(source_referent);
@@ -449,7 +450,7 @@ template <typename T> void ArchiveHeapWriter::relocate_field_in_buffer(T* field_
   }
 }
 
-template <typename T> void ArchiveHeapWriter::mark_oop_pointer(T* buffered_addr, CHeapBitMap* oopmap) {
+template <typename T> void MappingArchiveHeapWriter::mark_oop_pointer(T* buffered_addr, CHeapBitMap* oopmap) {
   T* request_p = (T*)(buffered_addr_to_requested_addr((address)buffered_addr));
   address requested_region_bottom;
 
@@ -465,7 +466,7 @@ template <typename T> void ArchiveHeapWriter::mark_oop_pointer(T* buffered_addr,
   oopmap->set_bit(idx);
 }
 
-void ArchiveHeapWriter::update_header_for_requested_obj(oop requested_obj, oop src_obj,  Klass* src_klass) {
+void MappingArchiveHeapWriter::update_header_for_requested_obj(oop requested_obj, oop src_obj,  Klass* src_klass) {
   assert(UseCompressedClassPointers, "Archived heap only supported for compressed klasses");
   narrowKlass nk = ArchiveBuilder::current()->get_requested_narrow_klass(src_klass);
   address buffered_addr = requested_addr_to_buffered_addr(cast_from_oop<address>(requested_obj));
@@ -488,12 +489,12 @@ void ArchiveHeapWriter::update_header_for_requested_obj(oop requested_obj, oop s
 }
 
 // Relocate an element in the buffered copy of HeapShared::roots()
-template <typename T> void ArchiveHeapWriter::relocate_root_at(oop requested_roots, int index, CHeapBitMap* oopmap) {
+template <typename T> void MappingArchiveHeapWriter::relocate_root_at(oop requested_roots, int index, CHeapBitMap* oopmap) {
   size_t offset = (size_t)((objArrayOop)requested_roots)->obj_at_offset<T>(index);
   relocate_field_in_buffer<T>((T*)(buffered_heap_roots_addr() + offset), oopmap);
 }
 
-class ArchiveHeapWriter::EmbeddedOopRelocator: public BasicOopIterateClosure {
+class MappingArchiveHeapWriter::EmbeddedOopRelocator: public BasicOopIterateClosure {
   oop _src_obj;
   address _buffered_obj;
   CHeapBitMap* _oopmap;
@@ -508,13 +509,13 @@ public:
 private:
   template <class T> void do_oop_work(T *p) {
     size_t field_offset = pointer_delta(p, _src_obj, sizeof(char));
-    ArchiveHeapWriter::relocate_field_in_buffer<T>((T*)(_buffered_obj + field_offset), _oopmap);
+    MappingArchiveHeapWriter::relocate_field_in_buffer<T>((T*)(_buffered_obj + field_offset), _oopmap);
   }
 };
 
 // Update all oop fields embedded in the buffered objects
-void ArchiveHeapWriter::relocate_embedded_oops(GrowableArrayCHeap<oop, mtClassShared>* roots,
-                                               ArchiveHeapInfo* heap_info) {
+void MappingArchiveHeapWriter::relocate_embedded_oops(GrowableArrayCHeap<oop, mtClassShared>* roots,
+                                                      ArchiveHeapInfo* heap_info) {
   size_t oopmap_unit = (UseCompressedOops ? sizeof(narrowOop) : sizeof(oop));
   size_t heap_region_byte_size = _buffer_used;
   heap_info->oopmap()->resize(heap_region_byte_size   / oopmap_unit);
@@ -544,7 +545,7 @@ void ArchiveHeapWriter::relocate_embedded_oops(GrowableArrayCHeap<oop, mtClassSh
   compute_ptrmap(heap_info);
 }
 
-void ArchiveHeapWriter::mark_native_pointer(oop src_obj, int field_offset) {
+void MappingArchiveHeapWriter::mark_native_pointer(oop src_obj, int field_offset) {
   Metadata* ptr = src_obj->metadata_field_acquire(field_offset);
   if (ptr != nullptr) {
     NativePointerInfo info;
@@ -555,7 +556,7 @@ void ArchiveHeapWriter::mark_native_pointer(oop src_obj, int field_offset) {
 }
 
 // Do we have a jlong/jint field that's actually a pointer to a MetaspaceObj?
-bool ArchiveHeapWriter::is_marked_as_native_pointer(ArchiveHeapInfo* heap_info, oop src_obj, int field_offset) {
+bool MappingArchiveHeapWriter::is_marked_as_native_pointer(ArchiveHeapInfo* heap_info, oop src_obj, int field_offset) {
   HeapShared::CachedOopInfo* p = HeapShared::archived_object_cache()->get(src_obj);
   assert(p != nullptr, "must be");
 
@@ -568,7 +569,7 @@ bool ArchiveHeapWriter::is_marked_as_native_pointer(ArchiveHeapInfo* heap_info, 
   return (idx < heap_info->ptrmap()->size()) && (heap_info->ptrmap()->at(idx) == true);
 }
 
-void ArchiveHeapWriter::compute_ptrmap(ArchiveHeapInfo* heap_info) {
+void MappingArchiveHeapWriter::compute_ptrmap(ArchiveHeapInfo* heap_info) {
   int num_non_null_ptrs = 0;
   Metadata** bottom = (Metadata**) _requested_bottom;
   Metadata** top = (Metadata**) _requested_top; // exclusive
@@ -606,6 +607,70 @@ void ArchiveHeapWriter::compute_ptrmap(ArchiveHeapInfo* heap_info) {
   heap_info->ptrmap()->resize(max_idx + 1);
   log_info(cds, heap)("calculate_ptrmap: marked %d non-null native pointers for heap region (" SIZE_FORMAT " bits)",
                       num_non_null_ptrs, size_t(heap_info->ptrmap()->size()));
+}
+
+void MappingArchiveHeapWriter::print_oop(outputStream* st, oop source_oop, bool print_location) {
+  if (source_oop == nullptr) {
+    st->print_cr("null");
+  } else {
+    ResourceMark rm;
+    oop requested_obj = source_obj_to_requested_obj(source_oop);
+    if (print_location) {
+      st->print(PTR_FORMAT " ", p2i(requested_obj));
+    }
+    if (UseCompressedOops) {
+      st->print("(0x%08x) ", CompressedOops::narrow_oop_value(requested_obj));
+    }
+    if (source_oop->is_array()) {
+      int array_len = arrayOop(source_oop)->length();
+      st->print_cr("%s length: %d", source_oop->klass()->external_name(), array_len);
+    } else {
+      st->print_cr("%s", source_oop->klass()->external_name());
+    }
+  }
+}
+
+void MappingArchiveHeapWriter::log_heap_region(ArchiveHeapInfo* heap_info) {
+  MemRegion r = heap_info->buffer_region();
+  address start = address(r.start());
+  address end = address(r.end());
+
+  LogStreamHandle(Info, cds, map) st;
+  LogStreamHandle(Trace, cds, map) lsh;
+
+  while (start < end) {
+    size_t byte_size;
+    oop source_oop = buffered_addr_to_source_obj(start);
+    address requested_start = buffered_addr_to_requested_addr(start);
+    st.print(PTR_FORMAT ": @@ Object ", p2i(requested_start));
+
+    if (source_oop != nullptr) {
+      // This is a regular oop that got archived.
+      print_oop(&st, source_oop, false /* print_location */);
+      byte_size = source_oop->size() * BytesPerWord;
+    } else if (start == buffered_heap_roots_addr()) {
+      // HeapShared::roots() is copied specially, so it doesn't exist in
+      // ArchiveHeapWriter::BufferOffsetToSourceObjectTable.
+      // See ArchiveHeapWriter::copy_roots_to_buffer().
+      st.print_cr("HeapShared::roots[%d]", HeapShared::pending_roots()->length());
+      byte_size = heap_roots_word_size() * BytesPerWord;
+    } else if ((byte_size = get_filler_size_at(start)) > 0) {
+      // We have a filler oop, which also does not exist in BufferOffsetToSourceObjectTable.
+      st.print_cr("filler " SIZE_FORMAT " bytes", byte_size);
+    } else {
+      ShouldNotReachHere();
+    }
+
+    address oop_end = start + byte_size;
+    os::print_hex_dump(&lsh, start, oop_end, UseCompressedOops ? 4 : 8, 32, requested_start);
+
+    if (source_oop != nullptr) {
+      HeapShared::log_oop_details(heap_info, source_oop);
+    } else if (start == buffered_heap_roots_addr()) {
+      HeapShared::log_heap_roots();
+    }
+    start = oop_end;
+  }
 }
 
 #endif // INCLUDE_CDS_JAVA_HEAP

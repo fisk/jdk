@@ -26,6 +26,7 @@
 #include "precompiled.hpp"
 #include "cds/cds_globals.hpp"
 #include "cds/cdsConfig.hpp"
+#include "cds/heapShared.hpp"
 #include "cds/metaspaceShared.hpp"
 #include "classfile/classLoader.hpp"
 #include "classfile/javaClasses.hpp"
@@ -649,6 +650,12 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   // No more stub generation allowed after that point.
   StubCodeDesc::freeze();
 
+#if INCLUDE_CDS_JAVA_HEAP
+  if (HeapShared::is_archived_heap_in_use()) {
+    HeapShared::enable_gc();
+  }
+#endif
+
   // Set flag that basic initialization has completed. Used by exceptions and various
   // debug stuff, that does not work until all basic classes have been initialized.
   set_init_completed();
@@ -817,6 +824,12 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   //   aren't, late joiners might appear to start slowly (we might
   //   take a while to process their first tick).
   WatcherThread::run_all_tasks();
+
+#if INCLUDE_CDS_JAVA_HEAP
+  if (HeapShared::is_archived_heap_in_use()) {
+    HeapShared::finish_materialize_objects();
+  }
+#endif
 
   create_vm_timer.end();
 #ifdef ASSERT

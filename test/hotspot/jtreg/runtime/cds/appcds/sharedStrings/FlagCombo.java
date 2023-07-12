@@ -53,7 +53,7 @@ public class FlagCombo {
         SharedStringsUtils.dump(TestCommon.list("HelloString"),
             "SharedStringsBasic.txt", "-Xlog:cds,cds+hashtables");
 
-        SharedStringsUtils.runWithArchive("HelloString", "-XX:+UseG1GC");
+        SharedStringsUtils.runWithArchive("HelloString");
 
         if (args.length == 0) {
             SharedStringsUtils.runWithArchiveAuto("HelloString",

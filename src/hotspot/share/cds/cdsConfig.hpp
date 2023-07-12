@@ -75,6 +75,7 @@ public:
 
   // CDS archived heap
   static bool      is_dumping_heap()                         NOT_CDS_JAVA_HEAP_RETURN_(false);
+  static bool      is_loading_heap()                         NOT_CDS_JAVA_HEAP_RETURN_(false);
   static void disable_dumping_full_module_graph(const char* reason = nullptr) NOT_CDS_JAVA_HEAP_RETURN;
   static bool      is_dumping_full_module_graph()            NOT_CDS_JAVA_HEAP_RETURN_(false);
   static void disable_loading_full_module_graph(const char* reason = nullptr) NOT_CDS_JAVA_HEAP_RETURN;

@@ -24,6 +24,7 @@
  */
 
 #include "precompiled.hpp"
+#include "cds/cdsThread.hpp"
 #include "cds/dynamicArchive.hpp"
 #include "ci/ciEnv.hpp"
 #include "classfile/javaClasses.inline.hpp"
@@ -708,7 +709,7 @@ void JavaThread::run() {
 
 void JavaThread::thread_main_inner() {
   assert(JavaThread::current() == this, "sanity check");
-  assert(_threadObj.peek() != nullptr, "just checking");
+  assert(_threadObj.peek() != nullptr || this == CDSThread::cds_thread(), "just checking");
 
   // Execute thread entry point unless this thread has a pending exception.
   // Note: Due to JVMTI StopThread we can have pending exceptions already!
