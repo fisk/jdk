@@ -705,24 +705,6 @@ public:
   template <typename Func>
   void iterate_regions_in_range(MemRegion range, const Func& func);
 
-  // Commit the required number of G1 region(s) according to the size requested
-  // and mark them as 'old' region(s). Preferred address is treated as a hint for
-  // the location of the archive space in the heap. The returned address may or may
-  // not be same as the preferred address.
-  // This API is only used for allocating heap space for the archived heap objects
-  // in the CDS archive.
-  HeapWord* alloc_archive_region(size_t word_size, HeapWord* preferred_addr);
-
-  // Populate the G1BlockOffsetTablePart for archived regions with the given
-  // memory range.
-  void populate_archive_regions_bot_part(MemRegion range);
-
-  // For the specified range, uncommit the containing G1 regions
-  // which had been allocated by alloc_archive_regions. This should be called
-  // at JVM init time if the archive heap's contents cannot be used (e.g., if
-  // CRC check fails).
-  void dealloc_archive_regions(MemRegion range);
-
 private:
 
   // Shrink the garbage-first heap by at most the given size (in bytes!).

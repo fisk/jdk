@@ -232,6 +232,8 @@ private:
   size_t _ptrmap_size_in_bits;          // Size of pointer relocation bitmap
   size_t _heap_roots_offset;            // Offset of the HeapShared::roots() object, from the bottom
                                         // of the archived heap objects, in bytes.
+  size_t _num_archived_objects;         // The number of archived heap objects
+  size_t _heap_oopmap_leading_zeros;    // The number of leading zero bits in the heap oopmap.
   char* from_mapped_offset(size_t offset) const {
     return mapped_base_address() + offset;
   }
@@ -272,6 +274,8 @@ public:
   bool compressed_oops()                   const { return _compressed_oops; }
   bool compressed_class_pointers()         const { return _compressed_class_ptrs; }
   size_t heap_roots_offset()               const { return _heap_roots_offset; }
+  size_t num_archived_objects()            const { return _num_archived_objects; }
+  size_t heap_oopmap_leading_zeros()       const { return _heap_oopmap_leading_zeros;}
   // FIXME: These should really return int
   jshort max_used_path_index()             const { return _max_used_path_index; }
   jshort app_module_paths_start_index()    const { return _app_module_paths_start_index; }
@@ -284,15 +288,17 @@ public:
   void set_ptrmap_size_in_bits(size_t s)         { _ptrmap_size_in_bits = s; }
   void set_mapped_base_address(char* p)          { _mapped_base_address = p; }
   void set_heap_roots_offset(size_t n)           { _heap_roots_offset = n; }
+  void set_num_archived_objects(size_t n)        { _num_archived_objects = n; }
+  void set_heap_oopmap_leading_zeros(size_t n)   { _heap_oopmap_leading_zeros = n; }
   void copy_base_archive_name(const char* name);
-
-  void set_shared_path_table(SharedPathTable table) {
-    set_as_offset((char*)table.table(), &_shared_path_table_offset);
-  }
 
   void set_requested_base(char* b) {
     _requested_base_address = b;
     _mapped_base_address = 0;
+  }
+
+  void set_shared_path_table(SharedPathTable table) {
+    set_as_offset((char*)table.table(), &_shared_path_table_offset);
   }
 
   SharedPathTable shared_path_table() const {
@@ -380,7 +386,9 @@ public:
   int     narrow_oop_shift()   const { return header()->narrow_oop_shift(); }
   uintx   max_heap_size()      const { return header()->max_heap_size(); }
   size_t  heap_roots_offset()  const { return header()->heap_roots_offset(); }
+  size_t  num_archived_objects()  const { return header()->num_archived_objects(); }
   size_t  core_region_alignment() const { return header()->core_region_alignment(); }
+  size_t  heap_oopmap_leading_zeros() const { return header()->heap_oopmap_leading_zeros(); }
 
   CompressedOops::Mode narrow_oop_mode()      const { return header()->narrow_oop_mode(); }
   jshort app_module_paths_start_index()       const { return header()->app_module_paths_start_index(); }
@@ -446,11 +454,8 @@ public:
   static size_t readonly_total();
   MapArchiveResult map_regions(int regions[], int num_regions, char* mapped_base_address, ReservedSpace rs);
   void  unmap_regions(int regions[], int num_regions);
-  void  map_or_load_heap_region() NOT_CDS_JAVA_HEAP_RETURN;
-  void  fixup_mapped_heap_region() NOT_CDS_JAVA_HEAP_RETURN;
-  void  patch_heap_embedded_pointers() NOT_CDS_JAVA_HEAP_RETURN;
+  void  load_heap_region() NOT_CDS_JAVA_HEAP_RETURN;
   bool  has_heap_region()  NOT_CDS_JAVA_HEAP_RETURN_(false);
-  MemRegion get_heap_region_requested_range() NOT_CDS_JAVA_HEAP_RETURN_(MemRegion());
   bool  read_region(int i, char* base, size_t size, bool do_commit);
   char* map_bitmap_region();
   void  unmap_region(int i);
@@ -543,21 +548,13 @@ public:
                     unsigned int runtime_prefix_len) NOT_CDS_RETURN_(false);
   bool  validate_boot_class_paths() NOT_CDS_RETURN_(false);
   bool  validate_app_class_paths(int shared_app_paths_len) NOT_CDS_RETURN_(false);
-  bool  map_heap_region_impl() NOT_CDS_JAVA_HEAP_RETURN_(false);
-  void  dealloc_heap_region() NOT_CDS_JAVA_HEAP_RETURN;
-  bool  can_use_heap_region();
-  bool  load_heap_region() NOT_CDS_JAVA_HEAP_RETURN_(false);
-  bool  map_heap_region() NOT_CDS_JAVA_HEAP_RETURN_(false);
-  void  init_heap_region_relocation();
+  bool  can_load_heap_region();
   MapArchiveResult map_region(int i, intx addr_delta, char* mapped_base_address, ReservedSpace rs);
   bool  relocate_pointers_in_core_regions(intx addr_delta);
-
-  static MemRegion _mapped_heap_memregion;
+  char* map_noncore_region(int region_index, bool read_only);
 
 public:
-  address heap_region_dumptime_address() NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
-  address heap_region_requested_address() NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
-  narrowOop encoded_heap_region_dumptime_address();
+  char* new_map_heap(size_t& size);
 
 private:
 

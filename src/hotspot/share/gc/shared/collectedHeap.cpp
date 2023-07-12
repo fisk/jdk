@@ -455,13 +455,7 @@ CollectedHeap::fill_with_array(HeapWord* start, size_t words, bool zap)
 
   ObjArrayAllocator allocator(Universe::fillerArrayKlassObj(), words, (int)len, /* do_zero */ false);
   allocator.initialize(start);
-  if (DumpSharedSpaces) {
-    // This array is written into the CDS archive. Make sure it
-    // has deterministic contents.
-    zap_filler_array_with(start, words, 0);
-  } else {
-    DEBUG_ONLY(zap_filler_array(start, words, zap);)
-  }
+  DEBUG_ONLY(zap_filler_array(start, words, zap);)
 }
 
 void

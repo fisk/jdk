@@ -506,95 +506,6 @@ void StringDedup::Table::install(typeArrayOop obj, uint hash_code) {
   _cur_stat.inc_new(obj->size() * HeapWordSize);
 }
 
-#if INCLUDE_CDS_JAVA_HEAP
-
-// Try to look up the string's value array in the shared string table.  This
-// is only worthwhile if sharing is enabled, both at build-time and at
-// runtime.  But it's complicated because we can't trust the is_latin1 value
-// of the string we're deduplicating.  GC requests can provide us with
-// access to a String that is incompletely constructed; the value could be
-// set before the coder.
-bool StringDedup::Table::try_deduplicate_shared(oop java_string) {
-  typeArrayOop value = java_lang_String::value(java_string);
-  assert(value != nullptr, "precondition");
-  assert(TypeArrayKlass::cast(value->klass())->element_type() == T_BYTE, "precondition");
-  int length = value->length();
-  static_assert(sizeof(jchar) == 2 * sizeof(jbyte), "invariant");
-  assert(((length & 1) == 0) || CompactStrings, "invariant");
-  if ((length & 1) == 0) {
-    // If the length of the byte array is even, then the value array could be
-    // either non-latin1 or a compact latin1 that happens to have an even length.
-    // For the former case we want to look for a matching shared string.  But
-    // for the latter we can still do a lookup, treating the value array as
-    // non-latin1, and deduplicating if we find a match.  For deduplication we
-    // only care if the arrays consist of the same sequence of bytes.
-    const jchar* chars = static_cast<jchar*>(value->base(T_CHAR));
-    oop found = StringTable::lookup_shared(chars, length >> 1);
-    // If found is latin1, then it's byte array differs from the unicode
-    // table key, so not actually a match to value.
-    if ((found != nullptr) &&
-        !java_lang_String::is_latin1(found) &&
-        try_deduplicate_found_shared(java_string, found)) {
-      return true;
-    }
-    // That didn't work.  Try as compact latin1.
-  }
-  // If not using compact strings then don't need to check further.
-  if (!CompactStrings) return false;
-  // Treat value as compact latin1 and try to deduplicate against that.
-  // This works even if java_string is not latin1, but has a byte array with
-  // the same sequence of bytes as a compact latin1 shared string.
-  ResourceMark rm(Thread::current());
-  jchar* chars = NEW_RESOURCE_ARRAY_RETURN_NULL(jchar, length);
-  if (chars == nullptr) {
-    _cur_stat.inc_skipped_shared();
-    return true;
-  }
-  for (int i = 0; i < length; ++i) {
-    chars[i] = value->byte_at(i) & 0xff;
-  }
-  oop found = StringTable::lookup_shared(chars, length);
-  if (found == nullptr) return false;
-  assert(java_lang_String::is_latin1(found), "invariant");
-  return try_deduplicate_found_shared(java_string, found);
-}
-
-bool StringDedup::Table::try_deduplicate_found_shared(oop java_string, oop found) {
-  _cur_stat.inc_known_shared();
-  typeArrayOop found_value = java_lang_String::value(found);
-  if (found_value == java_lang_String::value(java_string)) {
-    // String's value already matches what's in the table.
-    return true;
-  } else if (deduplicate_if_permitted(java_string, found_value)) {
-    // If java_string has the same coder as found then it won't have
-    // deduplication_forbidden set; interning would have found the matching
-    // shared string.  But if they have different coders but happen to have
-    // the same sequence of bytes in their value arrays, then java_string
-    // could have been interned and marked deduplication-forbidden.
-    _cur_stat.inc_deduped(found_value->size() * HeapWordSize);
-    return true;
-  } else {
-    // Must be a mismatch between java_string and found string encodings,
-    // and java_string has been marked deduplication_forbidden, so is
-    // (being) interned in the StringTable.  Return false to allow
-    // additional processing that might still lead to some benefit for
-    // deduplication.
-    return false;
-  }
-}
-
-#else // if !INCLUDE_CDS_JAVA_HEAP
-
-bool StringDedup::Table::try_deduplicate_shared(oop java_string) {
-  ShouldNotReachHere();         // Call is guarded.
-  return false;
-}
-
-// Undefined because unreferenced.
-// bool StringDedup::Table::try_deduplicate_found_shared(oop java_string, oop found);
-
-#endif // INCLUDE_CDS_JAVA_HEAP
-
 bool StringDedup::Table::deduplicate_if_permitted(oop java_string,
                                                   typeArrayOop value) {
   // The non-dedup check and value assignment must be under lock.
@@ -610,10 +521,6 @@ bool StringDedup::Table::deduplicate_if_permitted(oop java_string,
 void StringDedup::Table::deduplicate(oop java_string) {
   assert(java_lang_String::is_instance(java_string), "precondition");
   _cur_stat.inc_inspected();
-  if ((StringTable::shared_entry_count() > 0) &&
-      try_deduplicate_shared(java_string)) {
-    return;                     // Done if deduplicated against shared StringTable.
-  }
   typeArrayOop value = java_lang_String::value(java_string);
   uint hash_code = compute_hash(value);
   TableValue tv = find(value, hash_code);
