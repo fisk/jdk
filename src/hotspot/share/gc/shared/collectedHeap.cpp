@@ -594,6 +594,10 @@ void CollectedHeap::post_initialize() {
   initialize_serviceability();
 }
 
+size_t CollectedHeap::bootstrap_max_memory() const {
+  return MaxNewSize;
+}
+
 #ifndef PRODUCT
 
 bool CollectedHeap::promotion_should_fail(volatile size_t* count) {

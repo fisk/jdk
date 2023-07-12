@@ -32,6 +32,7 @@
 #include "oops/array.hpp"
 #include "oops/compressedOops.hpp"
 #include "utilities/align.hpp"
+#include "utilities/bitMap.hpp"
 
 // To understand the layout of the CDS archive file:
 //
@@ -189,6 +190,7 @@ private:
   bool   _compact_strings;                        // value of CompactStrings
   uintx  _max_heap_size;                          // java max heap size during dumping
   CompressedOops::Mode _narrow_oop_mode;          // compressed oop encoding mode
+  bool    _object_streaming_mode;                 // dump was created for object streaming
   bool    _compressed_oops;                       // save the flag UseCompressedOops
   bool    _compressed_class_ptrs;                 // save the flag UseCompressedClassPointers
   size_t  _cloned_vtables_offset;                 // The address of the first cloned vtable
@@ -228,6 +230,9 @@ private:
   size_t _ptrmap_size_in_bits;          // Size of pointer relocation bitmap
   size_t _heap_roots_offset;            // Offset of the HeapShared::roots() object, from the bottom
                                         // of the archived heap objects, in bytes.
+  size_t _forwarding_offset;            // Offset of forwarding information in the heap region.
+  size_t _roots_highest_dfs_offset;     // Offset of root dfs depth information
+  size_t _num_archived_objects;         // The number of archived heap objects
   char* from_mapped_offset(size_t offset) const {
     return mapped_base_address() + offset;
   }
@@ -258,6 +263,7 @@ public:
   bool compact_strings()                   const { return _compact_strings; }
   uintx max_heap_size()                    const { return _max_heap_size; }
   CompressedOops::Mode narrow_oop_mode()   const { return _narrow_oop_mode; }
+  bool object_streaming_mode()             const { return _object_streaming_mode; }
   char* cloned_vtables()                   const { return from_mapped_offset(_cloned_vtables_offset); }
   char* serialized_data()                  const { return from_mapped_offset(_serialized_data_offset); }
   const char* jvm_ident()                  const { return _jvm_ident; }
@@ -270,6 +276,9 @@ public:
   bool compressed_oops()                   const { return _compressed_oops; }
   bool compressed_class_pointers()         const { return _compressed_class_ptrs; }
   size_t heap_roots_offset()               const { return _heap_roots_offset; }
+  size_t forwarding_offset()               const { return _forwarding_offset; }
+  size_t roots_highest_dfs_offset()        const { return _roots_highest_dfs_offset; }
+  size_t num_archived_objects()            const { return _num_archived_objects; }
   // FIXME: These should really return int
   jshort max_used_path_index()             const { return _max_used_path_index; }
   jshort app_module_paths_start_index()    const { return _app_module_paths_start_index; }
@@ -282,6 +291,9 @@ public:
   void set_ptrmap_size_in_bits(size_t s)         { _ptrmap_size_in_bits = s; }
   void set_mapped_base_address(char* p)          { _mapped_base_address = p; }
   void set_heap_roots_offset(size_t n)           { _heap_roots_offset = n; }
+  void set_forwarding_offset(size_t n)           { _forwarding_offset = n; }
+  void set_roots_highest_dfs_offset(size_t n)    { _roots_highest_dfs_offset = n; }
+  void set_num_archived_objects(size_t n)        { _num_archived_objects = n; }
   void copy_base_archive_name(const char* name);
 
   void set_shared_path_table(SharedPathTable table) {
@@ -314,6 +326,50 @@ public:
   }
 
   void print(outputStream* st);
+};
+
+class ArchiveHeapInfo {
+  MemRegion _buffer_region;             // Contains the archived objects to be written into the CDS archive.
+  CHeapBitMap _oopmap;
+  CHeapBitMap _ptrmap;
+  size_t _heap_roots_offset;            // Offset of the HeapShared::roots() object, from the bottom
+                                        // of the archived heap objects, in bytes.
+  size_t _forwarding_offset;            // Offset of forwarding information from the bottom
+  size_t _roots_highest_dfs_offset;
+  size_t _num_archived_objects;         // The number of archived objects written into the CDS archive.
+
+public:
+  ArchiveHeapInfo()
+    : _buffer_region(),
+      _oopmap(128, mtClassShared),
+      _ptrmap(128, mtClassShared),
+      _heap_roots_offset(),
+      _forwarding_offset(),
+      _roots_highest_dfs_offset(),
+      _num_archived_objects() {}
+
+  bool is_used() { return !_buffer_region.is_empty(); }
+
+  MemRegion buffer_region() { return _buffer_region; }
+  void set_buffer_region(MemRegion r) { _buffer_region = r; }
+
+  char* buffer_start() { return (char*)_buffer_region.start(); }
+  size_t buffer_byte_size() { return _buffer_region.byte_size();    }
+
+  CHeapBitMap* oopmap() { return &_oopmap; }
+  CHeapBitMap* ptrmap() { return &_ptrmap; }
+
+  void set_heap_roots_offset(size_t n) { _heap_roots_offset = n; }
+  size_t heap_roots_offset() const { return _heap_roots_offset; }
+
+  void set_forwarding_offset(size_t n) { _forwarding_offset = n; }
+  size_t forwarding_offset() const { return _forwarding_offset; }
+
+  void set_roots_highest_dfs_offset(size_t n) { _roots_highest_dfs_offset = n; }
+  size_t roots_highest_dfs_offset() const { return _roots_highest_dfs_offset; }
+
+  void set_num_archived_objects(size_t n) { _num_archived_objects = n; }
+  size_t num_archived_objects() const { return _num_archived_objects; }
 };
 
 class FileMapInfo : public CHeapObj<mtInternal> {
@@ -378,8 +434,12 @@ public:
   int     narrow_oop_shift()   const { return header()->narrow_oop_shift(); }
   uintx   max_heap_size()      const { return header()->max_heap_size(); }
   size_t  heap_roots_offset()  const { return header()->heap_roots_offset(); }
+  size_t  forwarding_offset()  const { return header()->forwarding_offset(); }
+  size_t  roots_highest_dfs_offset() const { return header()->roots_highest_dfs_offset(); }
+  size_t  num_archived_objects()  const { return header()->num_archived_objects(); }
   size_t  core_region_alignment() const { return header()->core_region_alignment(); }
 
+  bool object_streaming_mode()                const { return header()->object_streaming_mode(); }
   CompressedOops::Mode narrow_oop_mode()      const { return header()->narrow_oop_mode(); }
   jshort app_module_paths_start_index()       const { return header()->app_module_paths_start_index(); }
   jshort app_class_paths_start_index()        const { return header()->app_class_paths_start_index(); }
@@ -444,13 +504,18 @@ public:
   static size_t readonly_total();
   MapArchiveResult map_regions(int regions[], int num_regions, char* mapped_base_address, ReservedSpace rs);
   void  unmap_regions(int regions[], int num_regions);
+
+  // Heap mapping support
+  void  stream_heap_region() NOT_CDS_JAVA_HEAP_RETURN;
   void  map_or_load_heap_region() NOT_CDS_JAVA_HEAP_RETURN;
   void  fixup_mapped_heap_region() NOT_CDS_JAVA_HEAP_RETURN;
   void  patch_heap_embedded_pointers() NOT_CDS_JAVA_HEAP_RETURN;
-  bool  has_heap_region()  NOT_CDS_JAVA_HEAP_RETURN_(false);
   MemRegion get_heap_region_requested_range() NOT_CDS_JAVA_HEAP_RETURN_(MemRegion());
+
+  bool  has_heap_region()  NOT_CDS_JAVA_HEAP_RETURN_(false);
   bool  read_region(int i, char* base, size_t size, bool do_commit);
   char* map_bitmap_region();
+  char* map_forwarding_region();
   bool map_cached_code_region(ReservedSpace rs);
   void  unmap_region(int i);
   void  close();
@@ -542,18 +607,23 @@ public:
                     unsigned int runtime_prefix_len) NOT_CDS_RETURN_(false);
   bool  validate_boot_class_paths() NOT_CDS_RETURN_(false);
   bool  validate_app_class_paths(int shared_app_paths_len) NOT_CDS_RETURN_(false);
+
+  // Heap mapping support
   bool  map_heap_region_impl() NOT_CDS_JAVA_HEAP_RETURN_(false);
   void  dealloc_heap_region() NOT_CDS_JAVA_HEAP_RETURN;
-  bool  can_use_heap_region();
-  bool  load_heap_region() NOT_CDS_JAVA_HEAP_RETURN_(false);
   bool  map_heap_region() NOT_CDS_JAVA_HEAP_RETURN_(false);
   void  init_heap_region_relocation();
+
+  bool  can_use_heap_region();
   MapArchiveResult map_region(int i, intx addr_delta, char* mapped_base_address, ReservedSpace rs);
   bool  relocate_pointers_in_core_regions(intx addr_delta);
   void  relocate_pointers_in_cached_code_region();
+  char* map_auxiliary_region(int region_index, bool read_only);
+
   static MemRegion _mapped_heap_memregion;
 
 public:
+  // Heap mapping support
   address heap_region_dumptime_address() NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
   address heap_region_requested_address() NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
   narrowOop encoded_heap_region_dumptime_address();

@@ -103,6 +103,7 @@ public:
 
   void register_nmethod(nmethod* nm) override;
   void unregister_nmethod(nmethod* nm) override;
+  size_t bootstrap_max_memory() const override;
   void verify_nmethod(nmethod* nmethod) override;
 
   WorkerThreads* safepoint_workers() override;

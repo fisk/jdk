@@ -95,6 +95,7 @@ Mutex*   CompileTaskAlloc_lock        = nullptr;
 Mutex*   CompileStatistics_lock       = nullptr;
 Mutex*   DirectivesStack_lock         = nullptr;
 Mutex*   MultiArray_lock              = nullptr;
+Monitor* CDSHeapLoading_lock          = nullptr;
 Monitor* Terminator_lock              = nullptr;
 Monitor* InitCompleted_lock           = nullptr;
 Monitor* BeforeExit_lock              = nullptr;
@@ -257,7 +258,6 @@ void mutex_init() {
   MUTEX_DEFN(JmethodIdCreation_lock          , PaddedMutex  , nosafepoint-2); // used for creating jmethodIDs.
   MUTEX_DEFN(InvokeMethodTypeTable_lock      , PaddedMutex  , safepoint);
   MUTEX_DEFN(InvokeMethodIntrinsicTable_lock , PaddedMonitor, safepoint);
-  MUTEX_DEFN(AdapterHandlerLibrary_lock      , PaddedMutex  , safepoint);
   MUTEX_DEFN(SharedDictionary_lock           , PaddedMutex  , safepoint);
   MUTEX_DEFN(VMStatistic_lock                , PaddedMutex  , safepoint);
   MUTEX_DEFN(SignatureHandlerLibrary_lock    , PaddedMutex  , safepoint);
@@ -357,12 +357,8 @@ void mutex_init() {
 
   MUTEX_DEFL(Threads_lock                   , PaddedMonitor, CompileThread_lock, true);
   MUTEX_DEFL(Compile_lock                   , PaddedMutex  , MethodCompileQueue_lock);
-  MUTEX_DEFL(Heap_lock                      , PaddedMonitor, TrainingData_lock  /*AdapterHandlerLibrary_lock*/);
 
-  MUTEX_DEFL(PerfDataMemAlloc_lock          , PaddedMutex  , Heap_lock);
-  MUTEX_DEFL(PerfDataManager_lock           , PaddedMutex  , Heap_lock);
   MUTEX_DEFL(ClassLoaderDataGraph_lock      , PaddedMutex  , MultiArray_lock);
-  MUTEX_DEFL(VMOperation_lock               , PaddedMonitor, Heap_lock, true);
   MUTEX_DEFL(ClassInitError_lock            , PaddedMonitor, Threads_lock);
 
   if (UseG1GC) {
@@ -371,15 +367,21 @@ void mutex_init() {
   }
 
   MUTEX_DEFL(CompileTaskAlloc_lock          , PaddedMutex  ,  MethodCompileQueue_lock);
+  MUTEX_DEFL(OopMapCacheAlloc_lock          , PaddedMutex  ,  Threads_lock, true);
+  MUTEX_DEFL(Module_lock                    , PaddedMutex  ,  ClassLoaderDataGraph_lock);
+  MUTEX_DEFL(AdapterHandlerLibrary_lock     , PaddedMutex  , Module_lock);
+  MUTEX_DEFL(SystemDictionary_lock          , PaddedMonitor, Module_lock);
+  MUTEX_DEFL(CDSHeapLoading_lock            , PaddedMonitor, Module_lock);
+  MUTEX_DEFL(Heap_lock                      , PaddedMonitor, CDSHeapLoading_lock);
+  MUTEX_DEFL(PerfDataMemAlloc_lock          , PaddedMutex  , Heap_lock);
+  MUTEX_DEFL(PerfDataManager_lock           , PaddedMutex  , Heap_lock);
+  MUTEX_DEFL(VMOperation_lock               , PaddedMonitor, Heap_lock, true);
+  MUTEX_DEFL(JNICritical_lock               , PaddedMonitor, AdapterHandlerLibrary_lock); // used for JNI critical regions
 #ifdef INCLUDE_PARALLELGC
   if (UseParallelGC) {
     MUTEX_DEFL(PSOldGenExpand_lock          , PaddedMutex  , Heap_lock, true);
   }
 #endif
-  MUTEX_DEFL(OopMapCacheAlloc_lock          , PaddedMutex  ,  Threads_lock, true);
-  MUTEX_DEFL(Module_lock                    , PaddedMutex  ,  ClassLoaderDataGraph_lock);
-  MUTEX_DEFL(SystemDictionary_lock          , PaddedMonitor, Module_lock);
-  MUTEX_DEFL(JNICritical_lock               , PaddedMonitor, AdapterHandlerLibrary_lock); // used for JNI critical regions
 #if INCLUDE_JVMCI
   // JVMCIRuntime_lock must be acquired before JVMCI_lock to avoid deadlock
   MUTEX_DEFL(JVMCI_lock                     , PaddedMonitor, JVMCIRuntime_lock);

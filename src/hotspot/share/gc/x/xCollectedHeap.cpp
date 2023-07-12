@@ -31,6 +31,7 @@
 #include "gc/x/xDriver.hpp"
 #include "gc/x/xGlobals.hpp"
 #include "gc/x/xHeap.inline.hpp"
+#include "gc/x/xHeuristics.hpp"
 #include "gc/x/xNMethod.hpp"
 #include "gc/x/xObjArrayAllocator.hpp"
 #include "gc/x/xOop.inline.hpp"
@@ -259,6 +260,10 @@ void XCollectedHeap::register_nmethod(nmethod* nm) {
 
 void XCollectedHeap::unregister_nmethod(nmethod* nm) {
   XNMethod::unregister_nmethod(nm);
+}
+
+size_t XCollectedHeap::bootstrap_max_memory() const {
+  return MaxHeapSize - ZFragmentationLimit / 100 * MaxHeapSize;
 }
 
 void XCollectedHeap::verify_nmethod(nmethod* nm) {

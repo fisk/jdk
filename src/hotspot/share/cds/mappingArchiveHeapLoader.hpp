@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef SHARE_CDS_ARCHIVEHEAPLOADER_HPP
-#define SHARE_CDS_ARCHIVEHEAPLOADER_HPP
+#ifndef SHARE_CDS_MAPPINGARCHIVEHEAPLOADER_HPP
+#define SHARE_CDS_MAPPINGARCHIVEHEAPLOADER_HPP
 
 #include "cds/filemap.hpp"
 #include "gc/shared/gc_globals.hpp"
@@ -38,7 +38,7 @@
 class  FileMapInfo;
 struct LoadedArchiveHeapRegion;
 
-class ArchiveHeapLoader : AllStatic {
+class MappingArchiveHeapLoader : AllStatic {
 public:
   // At runtime, the heap region in the CDS archive can be used in two different ways,
   // depending on the GC type:
@@ -128,6 +128,9 @@ private:
   static ptrdiff_t _mapped_heap_delta;
   static bool      _mapped_heap_relocation_initialized;
 
+  // Support for permanent objects
+  static int _permobj_segments;
+
   static void init_narrow_oop_decoding(address base, int shift);
   static bool init_loaded_region(FileMapInfo* mapinfo, LoadedArchiveHeapRegion* loaded_region,
                                  MemRegion& archive_space);
@@ -153,8 +156,18 @@ public:
   static void assert_in_loaded_heap(uintptr_t o) {
     assert(is_in_loaded_heap(o), "must be");
   }
+
+  static oop get_archived_object(int permanent_index);
+  static void populate_permanent_object_table();
+
+  // Mapping heap archive support
+  static void set_permobj_segments(int n) { _permobj_segments = n; }
+  static int permobj_segments() { return _permobj_segments; }
+
+  static void serialize_misc_info(SerializeClosure* soc);
+
 #endif // INCLUDE_CDS_JAVA_HEAP
 
 };
 
-#endif // SHARE_CDS_ARCHIVEHEAPLOADER_HPP
+#endif // SHARE_CDS_MAPPINGARCHIVEHEAPLOADER_HPP
