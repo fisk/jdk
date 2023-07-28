@@ -45,13 +45,17 @@
 #include "runtime/jniHandles.inline.hpp"
 #include "runtime/os.hpp"
 #include "utilities/growableArray.hpp"
+#include "utilities/priorityQueue.inline.hpp"
 #include "utilities/xmlstream.hpp"
 
 TrainingData::TrainingDataSet TrainingData::_training_data_set(1024, 0x3fffffff);
 TrainingDataDictionary TrainingData::_archived_training_data_dictionary;
 GrowableArrayCHeap<DumpTimeTrainingDataInfo, mtClassShared>* TrainingData::_dumptime_training_data_dictionary = nullptr;
 Array<MethodTrainingData*>* TrainingData::_recompilation_schedule = nullptr;
-volatile bool* TrainingData::_recompilation_status = nullptr;
+volatile RecompilationStatus* TrainingData::_recompilation_status = nullptr;
+PriorityQueue<MethodTrainingData, mtCompiler>* TrainingData::_dynamic_recompilation_schedule = nullptr;
+ResizeableResourceHashtable<const MethodTrainingData*, int, AnyObj::C_HEAP, MEMFLAGS::mtCompiler>* TrainingData::_hotness_table = nullptr;
+volatile bool TrainingData::_dynamic_recompilation_schedule_active = false;
 int TrainingData::TrainingDataLocker::_lock_mode;
 TrainingData::Options TrainingData::_options;
 
@@ -116,6 +120,17 @@ void TrainingData::restore_all_unshareable_info(TRAPS) {
 }
 #endif
 
+static bool is_mtd_higher_priority_than(MethodTrainingData* mtd1, MethodTrainingData* mtd2) {
+  // The hotness is the index in the profiled list; lower should be compiled earlier
+  int hotness1 = mtd1->hotness();
+  int hotness2 = mtd2->hotness();
+  if (hotness2 == -1 && hotness1 >= 0) {
+    // Prioritize compilations on the profiled recompilation list
+    return true;
+  }
+  return hotness1 < hotness2;
+}
+
 void TrainingData::initialize() {
   // this is a nop if training modes are not enabled
   if (have_data() || need_data()) {
@@ -136,9 +151,13 @@ void TrainingData::initialize() {
 
     if (_recompilation_schedule != nullptr && _recompilation_schedule->length() > 0) {
       const int size = _recompilation_schedule->length();
-      _recompilation_status = NEW_C_HEAP_ARRAY(bool, size, mtCompiler);
+      _recompilation_status = NEW_C_HEAP_ARRAY(RecompilationStatus, size, mtCompiler);
+      _dynamic_recompilation_schedule = new PriorityQueue<MethodTrainingData, mtCompiler>(is_mtd_higher_priority_than);
+      _hotness_table = new (mtCompiler) ResizeableResourceHashtable<const MethodTrainingData*, int, AnyObj::C_HEAP, MEMFLAGS::mtCompiler>(1024, 0x3fffffff);
       for (int i = 0; i < size; i++) {
-        _recompilation_status[i] = false;
+        _recompilation_status[i] = RecompilationStatus::_not_invoked;
+        MethodTrainingData* mtd = _recompilation_schedule->at(i);
+        mtd->set_hotness(i);
       }
     }
   }
@@ -156,6 +175,16 @@ TrainingData::Key::Key(const InstanceKlass* klass)
 TrainingData::Key::Key(const Method* method)
   : Key(method->name(), method->signature(), KlassTrainingData::make(method->method_holder()))
 {}
+
+void MethodTrainingData::set_hotness(int hotness) {
+  bool created;
+  TrainingData::hotness_table()->put_if_absent(this, hotness, &created);
+}
+
+int MethodTrainingData::hotness() const {
+  auto res = TrainingData::hotness_table()->get(this);
+  return res == nullptr ? -1 : *res;
+}
 
 MethodTrainingData* MethodTrainingData::make(KlassTrainingData* klass, Symbol* name, Symbol* signature) {
   Key key(klass, name, signature);
@@ -1455,6 +1484,52 @@ void TrainingData::prepare_recompilation_schedule(TRAPS) {
   int i = 0;
   for (auto it = dyn_recompilation_schedule.begin(); it != dyn_recompilation_schedule.end(); ++it) {
     recompilation_schedule()->at_put(i++, *it);
+  }
+}
+
+void TrainingData::request_recompilation(nmethod* nm) {
+  if (!have_data() || _recompilation_status == nullptr) {
+    return;
+  }
+
+  const int size = _recompilation_schedule->length();
+  Method* m = nm->method();
+  MethodTrainingData* mtd = m->method_counters()->method_training_data();
+  int hotness = mtd->hotness();
+
+  if (hotness == -2) {
+    // Already in recompilation queue
+    return;
+  } else if (hotness == -1) {
+    // Not in recompilation schedule
+    if (Atomic::load(&_dynamic_recompilation_schedule_active)) {
+      // We seem to have bigger fish to fry; bail
+      return;
+    }
+
+    // The hotness is defined as the index in the profiled recompilation schedule.
+    MutexLocker ml(Recompilation_lock, Mutex::_no_safepoint_check_flag);
+    if (_dynamic_recompilation_schedule_active) {
+      // Someone beat is to it; bail
+      return;
+    }
+
+    // Not the most important compilation, but we do it if we have nothing better to do
+    mtd->set_hotness(-2);
+    _dynamic_recompilation_schedule->insert(mtd);
+    Atomic::store(&_dynamic_recompilation_schedule_active, true);
+  } else {
+    bool success = Atomic::cmpxchg(&_recompilation_status[hotness], RecompilationStatus::_not_invoked, RecompilationStatus::_invoked) == RecompilationStatus::_not_invoked;
+
+    if (!success) {
+      // Someone else beat us to it
+      return;
+    }
+
+    // The hotness is defined as the index in the profiled recompilation schedule.
+    MutexLocker ml(Recompilation_lock, Mutex::_no_safepoint_check_flag);
+    _dynamic_recompilation_schedule->insert(mtd);
+    Atomic::store(&_dynamic_recompilation_schedule_active, true);
   }
 }
 

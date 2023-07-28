@@ -34,6 +34,7 @@
 #include "memory/universe.hpp"
 #include "oops/access.inline.hpp"
 #include "oops/method.inline.hpp"
+#include "oops/trainingData.hpp"
 #include "runtime/frame.inline.hpp"
 #include "runtime/javaThread.hpp"
 #include "runtime/threadWXSetters.inline.hpp"
@@ -168,7 +169,8 @@ void BarrierSetNMethod::arm_all_nmethods() {
 int BarrierSetNMethod::nmethod_stub_entry_barrier(address* return_address_ptr) {
   // Enable WXWrite: the function is called directly from nmethod_entry_barrier
   // stub.
-  MACOS_AARCH64_ONLY(ThreadWXEnable wx(WXWrite, Thread::current()));
+  Thread* thread = Thread::current();
+  MACOS_AARCH64_ONLY(ThreadWXEnable wx(WXWrite, thread));
 
   address return_address = *return_address_ptr;
   AARCH64_PORT_ONLY(return_address = pauth_strip_pointer(return_address));
@@ -177,6 +179,11 @@ int BarrierSetNMethod::nmethod_stub_entry_barrier(address* return_address_ptr) {
 
   nmethod* nm = cb->as_nmethod();
   BarrierSetNMethod* bs_nm = BarrierSet::barrier_set()->barrier_set_nmethod();
+
+  if (UseRecompilation && thread->recompiled_invocation_counter() == 0) {
+    TrainingData::request_recompilation(nm);
+    thread->set_recompiled_invocation_counter(RecompilationProbability);
+  }
 
   if (!bs_nm->is_armed(nm)) {
     return 0;

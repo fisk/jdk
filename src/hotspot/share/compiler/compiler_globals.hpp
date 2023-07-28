@@ -432,6 +432,12 @@
   product(int, RecompilationWorkUnitSize, 5,                                \
           "Queues load avergage after while recompilations are allowed")    \
                                                                             \
+  product(int, RecompilationProbability, 1024,                              \
+          "Recompile a pre-compiled method after N invocations")            \
+                                                                            \
+  product(bool, RecompilationProfiling, false,                              \
+          "Profile recompilation")                                          \
+                                                                            \
   product(bool, UseRecompilation, false,                                    \
           "Recompile methods for peak performance")                         \
                                                                             \

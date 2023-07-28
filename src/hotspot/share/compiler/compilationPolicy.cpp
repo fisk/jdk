@@ -44,6 +44,7 @@
 #include "runtime/handles.inline.hpp"
 #include "runtime/safepoint.hpp"
 #include "runtime/safepointVerifiers.hpp"
+#include "utilities/priorityQueue.inline.hpp"
 #ifdef COMPILER1
 #include "c1/c1_Compiler.hpp"
 #endif
@@ -83,7 +84,18 @@ void CompilationPolicy::sample_load_average() {
 }
 
 bool CompilationPolicy::have_recompilation_work() {
-  if (UseRecompilation && TrainingData::have_data() && TrainingData::recompilation_schedule()->length() > 0 && !_recompilation_done) {
+  if (!UseRecompilation) {
+    return false;
+  }
+
+  if (RecompilationProfiling) {
+    return TrainingData::dynamic_recompilation_schedule_active();
+  }
+
+  if (TrainingData::have_data() &&
+      TrainingData::recompilation_schedule() != nullptr &&
+      TrainingData::recompilation_schedule()->length() > 0 &&
+      !_recompilation_done) {
     if (_load_average.value() <= RecompilationLoadAverageThreshold) {
       return true;
     }
@@ -96,15 +108,52 @@ bool CompilationPolicy::recompilation_step(int step, TRAPS) {
     return false;
   }
 
-  const int size = TrainingData::recompilation_schedule()->length();
-  int i = 0;
-  int count = 0;
-  bool repeat = false;
-  for (; i < size && count < step; i++) {
-    if (!TrainingData::recompilation_status()[i]) {
+  if (RecompilationProfiling) {
+    PriorityQueue<MethodTrainingData, mtCompiler>* queue = TrainingData::dynamic_recompilation_schedule();
+    MethodTrainingData* mtd;
+    const Method* method;
+    {
+      MutexLocker ml(Recompilation_lock, Mutex::_no_safepoint_check_flag);
+      if (queue->is_empty()) {
+        return false;
+      }
+      mtd = queue->remove_first();
+      method = mtd->holder();
+      if (queue->is_empty()) {
+        TrainingData::set_dynamic_recompilation_schedule_active(false);
+      }
+      if (mtd->hotness() > 0) {
+        // Note as requested, if it was on the profiled hot schedule
+        Atomic::store(&TrainingData::recompilation_status()[mtd->hotness()], RecompilationStatus::_requested);
+      }
+    }
+
+    const methodHandle m(THREAD, const_cast<Method*>(method));
+    CompLevel next_level = CompLevel_full_optimization;
+
+    if (method->method_data() == nullptr) {
+      create_mdo(m, THREAD);
+    }
+
+    if (PrintTieredEvents) {
+      print_event(FORCE_RECOMPILE, m(), m(), InvocationEntryBci, next_level);
+    }
+    CompileBroker::compile_method(m, InvocationEntryBci, CompLevel_full_optimization, methodHandle(), 0,
+                                  true /*requires_online_compilation*/, CompileTask::Reason_MustBeCompiled, THREAD);
+    if (HAS_PENDING_EXCEPTION) {
+      CLEAR_PENDING_EXCEPTION;
+    }
+
+    return true;
+  } else {
+    const int size = TrainingData::recompilation_schedule()->length();
+    int i = 0;
+    int count = 0;
+    bool repeat = false;
+    for (; i < size && count < step; i++) {
       MethodTrainingData* mtd = TrainingData::recompilation_schedule()->at(i);
       if (!mtd->has_holder()) {
-        Atomic::release_store(&TrainingData::recompilation_status()[i], true);
+        Atomic::release_store(&TrainingData::recompilation_status()[i], RecompilationStatus::_requested);
         continue;
       }
       const Method* method = mtd->holder();
@@ -122,13 +171,13 @@ bool CompilationPolicy::recompilation_step(int step, TRAPS) {
       if (!ForceRecompilation && !(cm->is_sca() && cm->comp_level() == CompLevel_full_optimization)) {
         // If it's already online-compiled at level 4, mark it as done.
         if (cm->comp_level() == CompLevel_full_optimization) {
-          Atomic::store(&TrainingData::recompilation_status()[i], true);
+          Atomic::store(&TrainingData::recompilation_status()[i], RecompilationStatus::_requested);
         } else {
           repeat = true;
         }
         continue;
       }
-      if (Atomic::cmpxchg(&TrainingData::recompilation_status()[i], false, true) == false) {
+      if (Atomic::cmpxchg(&TrainingData::recompilation_status()[i], RecompilationStatus::_not_invoked, RecompilationStatus::_requested) == RecompilationStatus::_not_invoked) {
         const methodHandle m(THREAD, const_cast<Method*>(method));
         CompLevel next_level = CompLevel_full_optimization;
 
@@ -147,12 +196,13 @@ bool CompilationPolicy::recompilation_step(int step, TRAPS) {
         count++;
       }
     }
+
+    if (i == size && !repeat) {
+      Atomic::release_store(&_recompilation_done, true);
+    }
+    return count > 0;
   }
 
-  if (i == size && !repeat) {
-    Atomic::release_store(&_recompilation_done, true);
-  }
-  return count > 0;
 }
 
 // Returns true if m must be compiled before executing it

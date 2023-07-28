@@ -255,6 +255,8 @@ class CompilationPolicy : AllStatic {
   static CompLevel trained_transition_from_full_profile(const methodHandle& method, CompLevel cur_level, MethodTrainingData* mtd, JavaThread* THREAD);
   static CompLevel trained_transition(const methodHandle& method, CompLevel cur_level, JavaThread* THREAD);
 
+  static void trigger_recompilation(nmethod* nm);
+
   // Transition functions.
   // call_event determines if a method should be compiled at a different
   // level with a regular invocation entry.

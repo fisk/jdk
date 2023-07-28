@@ -387,6 +387,12 @@ void BarrierSetAssembler::nmethod_entry_barrier(MacroAssembler* masm, Label* slo
   }
   Register thread = r15_thread;
   Address disarmed_addr(thread, in_bytes(bs_nm->thread_disarmed_guard_value_offset()));
+  Address invocation_count_addr(thread, in_bytes(Thread::recompiled_invocation_counter_offset()));
+  if (StoreSharedCode && slow_path != nullptr) {
+    // Emit recompilation invocation counters for pre-compiled methods during training
+    __ decrementl(invocation_count_addr, 1);
+    __ jcc(Assembler::zero, *slow_path);
+  }
   // The immediate is the last 4 bytes, so if we align the start of the cmp
   // instruction to 4 bytes, we know that the second half of it is also 4
   // byte aligned, which means that the immediate will not cross a cache line
