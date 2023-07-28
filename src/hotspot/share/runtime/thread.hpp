@@ -120,8 +120,21 @@ class Thread: public ThreadShadow {
   // which reflects if this thread has executed the required fences, after
   // an nmethod gets disarmed. The low order 32 bits denote the disarmed value.
   uint64_t _nmethod_disarmed_guard_value;
+  int      _recompiled_invocation_counter;
 
  public:
+  void set_recompiled_invocation_counter(int value) {
+    _recompiled_invocation_counter = value;
+  }
+
+  int recompiled_invocation_counter() {
+    return _recompiled_invocation_counter;
+  }
+
+  static ByteSize recompiled_invocation_counter_offset() {
+    return byte_offset_of(Thread, _recompiled_invocation_counter);
+  }
+
   void set_nmethod_disarmed_guard_value(int value) {
     _nmethod_disarmed_guard_value = (uint64_t)(uint32_t)value;
   }

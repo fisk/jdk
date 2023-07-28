@@ -37,6 +37,7 @@
 #include "runtime/handles.hpp"
 #include "runtime/mutexLocker.hpp"
 #include "utilities/count_leading_zeros.hpp"
+#include "utilities/priorityQueue.hpp"
 #include "utilities/resizeableResourceHash.hpp"
 
 class ciEnv;
@@ -52,6 +53,12 @@ class DumpTimeTrainingDataInfo;
 class TrainingDataDictionary;
 class RunTimeClassInfo;
 class RunTimeMethodDataInfo;
+
+enum class RecompilationStatus : int8_t {
+  _not_invoked,
+  _invoked,
+  _requested
+};
 
 // Options are a list of comma-separated booleans (for now)
 // For example: TrainingOptions=xml
@@ -237,7 +244,9 @@ private:
   static TrainingDataDictionary _archived_training_data_dictionary;
   static GrowableArrayCHeap<DumpTimeTrainingDataInfo, mtClassShared>* _dumptime_training_data_dictionary;
   static Array<MethodTrainingData*>* _recompilation_schedule;
-  static volatile bool* _recompilation_status;
+  static volatile RecompilationStatus* _recompilation_status;
+  static PriorityQueue<MethodTrainingData, mtCompiler>* _dynamic_recompilation_schedule;
+  static volatile bool _dynamic_recompilation_schedule_active;
 
   static Options* options() { return &_options; }
 public:
@@ -256,7 +265,11 @@ public:
   static TrainingDataSet* training_data_set() { return &_training_data_set; }
   static TrainingDataDictionary* archived_training_data_dictionary() { return &_archived_training_data_dictionary; }
   static Array<MethodTrainingData*>* recompilation_schedule() { return _recompilation_schedule; }
-  static volatile bool* recompilation_status() { return _recompilation_status; }
+  static volatile RecompilationStatus* recompilation_status() { return _recompilation_status; }
+  static bool dynamic_recompilation_schedule_active() { return _dynamic_recompilation_schedule_active; }
+  static void set_dynamic_recompilation_schedule_active(bool active) { _dynamic_recompilation_schedule_active = active; }
+  static PriorityQueue<MethodTrainingData, mtCompiler>* dynamic_recompilation_schedule() { return _dynamic_recompilation_schedule; }
+  static void request_recompilation(nmethod* nm);
 
   virtual MethodTrainingData*   as_MethodTrainingData()  const { return nullptr; }
   virtual KlassTrainingData*    as_KlassTrainingData()   const { return nullptr; }
@@ -756,6 +769,7 @@ class MethodTrainingData : public TrainingData {
   // metadata snapshots of final state:
   MethodCounters* _final_counters;
   MethodData*     _final_profile;
+  int             _hotness;
 
   MethodTrainingData() {
     assert(DumpSharedSpaces || UseSharedSpaces, "only for CDS");
@@ -798,6 +812,8 @@ class MethodTrainingData : public TrainingData {
   int highest_level()         const { return highest_level(_level_mask); }
   int highest_top_level()     const { return _highest_top_level; }
   MethodData* final_profile() const { return _final_profile; }
+  void set_hotness(int hotness) { _hotness = hotness; }
+  int hotness()               const { return _hotness; }
 
   CompileTrainingData* last_toplevel_compile(int level) const {
     if (level > CompLevel_none) {

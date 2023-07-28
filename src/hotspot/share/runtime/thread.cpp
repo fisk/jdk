@@ -64,6 +64,7 @@ THREAD_LOCAL Thread* Thread::_thr_current = nullptr;
 DEBUG_ONLY(Thread* Thread::_starting_thread = nullptr;)
 
 Thread::Thread() {
+  _recompiled_invocation_counter = RecompilationProbability;
 
   DEBUG_ONLY(_run_state = PRE_CALL_RUN;)
 

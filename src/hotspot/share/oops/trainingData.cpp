@@ -45,13 +45,16 @@
 #include "runtime/jniHandles.inline.hpp"
 #include "runtime/os.hpp"
 #include "utilities/growableArray.hpp"
+#include "utilities/priorityQueue.inline.hpp"
 #include "utilities/xmlstream.hpp"
 
 TrainingData::TrainingDataSet TrainingData::_training_data_set(1024, 0x3fffffff);
 TrainingDataDictionary TrainingData::_archived_training_data_dictionary;
 GrowableArrayCHeap<DumpTimeTrainingDataInfo, mtClassShared>* TrainingData::_dumptime_training_data_dictionary = nullptr;
 Array<MethodTrainingData*>* TrainingData::_recompilation_schedule = nullptr;
-volatile bool* TrainingData::_recompilation_status = nullptr;
+volatile RecompilationStatus* TrainingData::_recompilation_status = nullptr;
+PriorityQueue<MethodTrainingData, mtCompiler>* TrainingData::_dynamic_recompilation_schedule = nullptr;
+volatile bool TrainingData::_dynamic_recompilation_schedule_active = false;
 int TrainingData::TrainingDataLocker::_lock_mode;
 TrainingData::Options TrainingData::_options;
 
@@ -116,6 +119,11 @@ void TrainingData::restore_all_unshareable_info(TRAPS) {
 }
 #endif
 
+static bool is_mtd_higher_priority_than(MethodTrainingData* mtd1, MethodTrainingData* mtd2) {
+  // The hotness is the index in the profiled list; lower should be compiled earlier
+  return mtd1->hotness() < mtd2->hotness();
+}
+
 void TrainingData::initialize() {
   // this is a nop if training modes are not enabled
   if (have_data() || need_data()) {
@@ -136,9 +144,10 @@ void TrainingData::initialize() {
 
     if (_recompilation_schedule != nullptr && _recompilation_schedule->length() > 0) {
       const int size = _recompilation_schedule->length();
-      _recompilation_status = NEW_C_HEAP_ARRAY(bool, size, mtCompiler);
+      _recompilation_status = NEW_C_HEAP_ARRAY(RecompilationStatus, size, mtCompiler);
+      _dynamic_recompilation_schedule = new PriorityQueue<MethodTrainingData, mtCompiler>(is_mtd_higher_priority_than);
       for (int i = 0; i < size; i++) {
-        _recompilation_status[i] = false;
+        _recompilation_status[i] = RecompilationStatus::_not_invoked;
       }
     }
   }
@@ -1456,6 +1465,42 @@ void TrainingData::prepare_recompilation_schedule(TRAPS) {
   for (auto it = dyn_recompilation_schedule.begin(); it != dyn_recompilation_schedule.end(); ++it) {
     recompilation_schedule()->at_put(i++, *it);
   }
+}
+
+void TrainingData::request_recompilation(nmethod* nm) {
+  if (!have_data() || _recompilation_status == nullptr) {
+    return;
+  }
+
+  const int size = _recompilation_schedule->length();
+  int found_index = -1;
+  Method* m = nm->method();
+  MethodTrainingData* data;
+
+  for (int i = 0; i < size; i++) {
+    if (recompilation_schedule()->at(i)->holder() == m) {
+      found_index = i;
+      data = recompilation_schedule()->at(i);
+      break;
+    }
+  }
+
+  if (found_index == -1) {
+    // Not found in the recompilation schedule
+    return;
+  }
+
+  bool success = Atomic::cmpxchg(&_recompilation_status[found_index], RecompilationStatus::_not_invoked, RecompilationStatus::_invoked) == RecompilationStatus::_not_invoked;
+
+  if (!success) {
+    // Someone else beat us to it
+    return;
+  }
+
+  MutexLocker ml(Recompilation_lock, Mutex::_no_safepoint_check_flag);
+  data->set_hotness(found_index);
+  _dynamic_recompilation_schedule->insert(data);
+  Atomic::store(&_dynamic_recompilation_schedule_active, true);
 }
 
 void TrainingData::iterate_roots(MetaspaceClosure* it) {
