@@ -233,7 +233,6 @@ private:
   size_t _heap_roots_offset;            // Offset of the HeapShared::roots() object, from the bottom
                                         // of the archived heap objects, in bytes.
   size_t _heap_oopmap_leading_zeros;    // The number of leading zero bits in the heap oopmap.
-  size_t _heap_ptrmap_leading_zeros;    // The number of leading zero bits in the heap ptrmap.
   char* from_mapped_offset(size_t offset) const {
     return mapped_base_address() + offset;
   }
@@ -275,7 +274,6 @@ public:
   bool compressed_class_pointers()         const { return _compressed_class_ptrs; }
   size_t heap_roots_offset()               const { return _heap_roots_offset; }
   size_t heap_oopmap_leading_zeros()       const { return _heap_oopmap_leading_zeros;}
-  size_t heap_ptrmap_leading_zeros()       const { return _heap_ptrmap_leading_zeros;}
   // FIXME: These should really return int
   jshort max_used_path_index()             const { return _max_used_path_index; }
   jshort app_module_paths_start_index()    const { return _app_module_paths_start_index; }
@@ -289,16 +287,15 @@ public:
   void set_mapped_base_address(char* p)          { _mapped_base_address = p; }
   void set_heap_roots_offset(size_t n)           { _heap_roots_offset = n; }
   void set_heap_oopmap_leading_zeros(size_t n)   { _heap_oopmap_leading_zeros = n; }
-  void set_heap_ptrmap_leading_zeros(size_t n)   { _heap_ptrmap_leading_zeros = n; }
   void copy_base_archive_name(const char* name);
-
-  void set_shared_path_table(SharedPathTable table) {
-    set_as_offset((char*)table.table(), &_shared_path_table_offset);
-  }
 
   void set_requested_base(char* b) {
     _requested_base_address = b;
     _mapped_base_address = 0;
+  }
+
+  void set_shared_path_table(SharedPathTable table) {
+    set_as_offset((char*)table.table(), &_shared_path_table_offset);
   }
 
   SharedPathTable shared_path_table() const {
@@ -388,7 +385,6 @@ public:
   size_t  heap_roots_offset()  const { return header()->heap_roots_offset(); }
   size_t  core_region_alignment() const { return header()->core_region_alignment(); }
   size_t  heap_oopmap_leading_zeros() const { return header()->heap_oopmap_leading_zeros(); }
-  size_t  heap_ptrmap_leading_zeros() const { return header()->heap_ptrmap_leading_zeros(); }
 
   CompressedOops::Mode narrow_oop_mode()      const { return header()->narrow_oop_mode(); }
   jshort app_module_paths_start_index()       const { return header()->app_module_paths_start_index(); }
@@ -554,8 +550,6 @@ public:
   char* map_noncore_region(int region_index, bool read_only);
 
 public:
-  address heap_region_requested_address() NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
-
   char* new_map_heap(size_t& size);
 
 private:

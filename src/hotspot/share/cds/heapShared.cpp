@@ -146,7 +146,7 @@ bool HeapShared::is_subgraph_root_class(InstanceKlass* ik) {
          is_subgraph_root_class_of(fmg_archive_subgraph_entry_fields, ik);
 }
 
-// Can this VM write a heap region into the CDS archive? Currently only G1+compressed{oops,cp}
+// Can this VM write a heap region into the CDS archive? Currently only compressed cp
 bool HeapShared::can_write() {
   if (_disable_writing) {
     return false;
@@ -155,7 +155,8 @@ bool HeapShared::can_write() {
     // ArchiveHeapLoader can only handle heap images that have shifts of 3 or below.
     return false;
   }
-  return (UseG1GC && UseCompressedClassPointers);
+
+  return UseCompressedClassPointers;
 }
 
 unsigned HeapShared::oop_hash(oop const& p) {
@@ -252,10 +253,31 @@ oop HeapShared::get_root(int index, bool clear) {
   assert(!DumpSharedSpaces && UseSharedSpaces, "runtime only");
   assert(!_roots.is_empty(), "must have loaded shared heap");
   oop result = roots()->obj_at(index);
+  if (result == nullptr) {
+    result = ArchiveHeapLoader::root(index);
+  }
   if (clear) {
     clear_root(index);
   }
+
   return result;
+}
+
+void HeapShared::finish_materialize_objects() {
+  if (!ArchiveHeapLoader::is_loaded() || _roots.is_empty()) {
+    // No roots to materialize
+    return;
+  }
+
+  // Materialize roots
+  ArchiveHeapLoader::finish_materialize_objects();
+
+  // Nuke oop storage
+  // TODO
+
+  // Unmap regions
+  FileMapInfo::current_info()->unmap_region(MetaspaceShared::hp);
+  FileMapInfo::current_info()->unmap_region(MetaspaceShared::bm);
 }
 
 void HeapShared::clear_root(int index) {
@@ -278,44 +300,37 @@ bool HeapShared::archive_object(oop obj) {
     return true;
   }
 
-  if (ArchiveHeapWriter::is_too_large_to_archive(obj->size())) {
-    log_debug(cds, heap)("Cannot archive, object (" PTR_FORMAT ") is too large: " SIZE_FORMAT,
-                         p2i(obj), obj->size());
-    return false;
-  } else {
-    count_allocation(obj->size());
-    ArchiveHeapWriter::add_source_obj(obj);
+  count_allocation(obj->size());
+  ArchiveHeapWriter::add_source_obj(obj);
 
-    // The archived objects are discovered in a predictable order. Compute
-    // their identity_hash() as soon as we see them. This ensures that the
-    // the identity_hash in the object header will have a predictable value,
-    // making the archive reproducible.
-    obj->identity_hash();
-    CachedOopInfo info = make_cached_oop_info(obj);
-    archived_object_cache()->put(obj, info);
-    mark_native_pointers(obj);
+  // The archived objects are discovered in a predictable order. Compute
+  // their identity_hash() as soon as we see them. This ensures that the
+  // the identity_hash in the object header will have a predictable value,
+  // making the archive reproducible.
+  obj->identity_hash();
+  CachedOopInfo info = make_cached_oop_info(obj);
+  archived_object_cache()->put(obj, info);
 
-    if (log_is_enabled(Debug, cds, heap)) {
-      ResourceMark rm;
-      log_debug(cds, heap)("Archived heap object " PTR_FORMAT " : %s",
-                           p2i(obj), obj->klass()->external_name());
-    }
-
-    if (java_lang_Module::is_instance(obj)) {
-      if (Modules::check_module_oop(obj)) {
-        Modules::update_oops_in_archived_module(obj, append_root(obj));
-      }
-      java_lang_Module::set_module_entry(obj, nullptr);
-    } else if (java_lang_ClassLoader::is_instance(obj)) {
-      // class_data will be restored explicitly at run time.
-      guarantee(obj == SystemDictionary::java_platform_loader() ||
-                obj == SystemDictionary::java_system_loader() ||
-                java_lang_ClassLoader::loader_data(obj) == nullptr, "must be");
-      java_lang_ClassLoader::release_set_loader_data(obj, nullptr);
-    }
-
-    return true;
+  if (log_is_enabled(Debug, cds, heap)) {
+    ResourceMark rm;
+    log_debug(cds, heap)("Archived heap object " PTR_FORMAT " : %s",
+                         p2i(obj), obj->klass()->external_name());
   }
+
+  if (java_lang_Module::is_instance(obj)) {
+    if (Modules::check_module_oop(obj)) {
+      Modules::update_oops_in_archived_module(obj, append_root(obj));
+    }
+    java_lang_Module::set_module_entry(obj, nullptr);
+  } else if (java_lang_ClassLoader::is_instance(obj)) {
+    // class_data will be restored explicitly at run time.
+    guarantee(obj == SystemDictionary::java_platform_loader() ||
+              obj == SystemDictionary::java_system_loader() ||
+              java_lang_ClassLoader::loader_data(obj) == nullptr, "must be");
+    java_lang_ClassLoader::release_set_loader_data(obj, nullptr);
+  }
+
+  return true;
 }
 
 class KlassToOopHandleTable: public ResourceHashtable<Klass*, OopHandle,
@@ -413,7 +428,7 @@ void HeapShared::archive_java_mirrors() {
       if (buffered_k->is_instance_klass()) {
         InstanceKlass* ik = InstanceKlass::cast(buffered_k);
         oop rr = ik->constants()->prepare_resolved_references_for_archiving();
-        if (rr != nullptr && !ArchiveHeapWriter::is_too_large_to_archive(rr)) {
+        if (rr != nullptr) {
           bool success = HeapShared::archive_reachable_objects_from(1, _default_subgraph_info, rr);
           assert(success, "must be");
           int root_index = append_root(rr);
@@ -432,13 +447,6 @@ void HeapShared::archive_strings() {
   // - StringTable::init_shared_table() doesn't create any large arrays.
   assert(success, "shared strings array must not point to arrays or strings that are too large to archive");
   StringTable::set_shared_strings_array_index(append_root(shared_strings_array));
-}
-
-void HeapShared::mark_native_pointers(oop orig_obj) {
-  if (java_lang_Class::is_instance(orig_obj)) {
-    ArchiveHeapWriter::mark_native_pointer(orig_obj, java_lang_Class::klass_offset());
-    ArchiveHeapWriter::mark_native_pointer(orig_obj, java_lang_Class::array_klass_offset());
-  }
 }
 
 bool HeapShared::has_oop_pointers(oop src_obj) {
@@ -571,7 +579,6 @@ void HeapShared::copy_interned_strings() {
 
   auto copier = [&] (oop s, bool value_ignored) {
     assert(s != nullptr, "sanity");
-    assert(!ArchiveHeapWriter::is_string_too_large_to_archive(s), "large strings must have been filtered");
     bool success = archive_reachable_objects_from(1, _default_subgraph_info, s);
     assert(success, "must be");
     // Prevent string deduplication from changing the value field to
@@ -1673,7 +1680,6 @@ void HeapShared::archive_object_subgraphs(ArchivableStaticFieldInfo fields[],
 //   [2] included in the SharedArchiveConfigFile.
 void HeapShared::add_to_dumped_interned_strings(oop string) {
   assert_at_safepoint(); // DumpedInternedStrings uses raw oops
-  assert(!ArchiveHeapWriter::is_string_too_large_to_archive(string), "must be");
   bool created;
   _dumped_interned_strings->put_if_absent(string, true, &created);
 }

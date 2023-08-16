@@ -23,6 +23,7 @@
  */
 
 #include "precompiled.hpp"
+#include "cds/archiveHeapLoader.hpp"
 #include "classfile/classLoaderDataGraph.inline.hpp"
 #include "classfile/javaClasses.hpp"
 #include "classfile/protectionDomainCache.hpp"
@@ -78,7 +79,17 @@ static void cleanup_oopstorages() {
   }
 }
 
+void ServiceThread::accelerate_startup() {
+#if INCLUDE_CDS_JAVA_HEAP
+  if (UseSharedSpaces) {
+    ArchiveHeapLoader::materialize_objects();
+  }
+#endif
+}
+
 void ServiceThread::service_thread_entry(JavaThread* jt, TRAPS) {
+  accelerate_startup();
+
   while (true) {
     bool sensors_changed = false;
     bool has_jvmti_events = false;

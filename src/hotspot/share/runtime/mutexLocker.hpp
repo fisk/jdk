@@ -84,6 +84,7 @@ extern Mutex*   CompileTaskAlloc_lock;           // a lock held when CompileTask
 extern Mutex*   CompileStatistics_lock;          // a lock held when updating compilation statistics
 extern Mutex*   DirectivesStack_lock;            // a lock held when mutating the dirstack and ref counting directives
 extern Mutex*   MultiArray_lock;                 // a lock used to guard allocation of multi-dim arrays
+extern Mutex*   CDSHeapLoading_lock;             // a lock used to guard materialization of CDS heap objects
 extern Monitor* Terminator_lock;                 // a lock used to guard termination of the vm
 extern Monitor* InitCompleted_lock;              // a lock used to signal threads waiting on init completed
 extern Monitor* BeforeExit_lock;                 // a lock used to guard cleanups and shutdown hooks

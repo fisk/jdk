@@ -328,11 +328,6 @@ void MetaspaceShared::read_extra_data(JavaThread* current, const char* filename)
         CLEAR_PENDING_EXCEPTION;
       } else {
 #if INCLUDE_CDS_JAVA_HEAP
-        if (ArchiveHeapWriter::is_string_too_large_to_archive(str)) {
-          log_warning(cds, heap)("[line %d] extra interned string ignored; size too large: %d",
-                                 reader.last_line_no(), utf8_length);
-          continue;
-        }
         // Make sure this string is included in the dumped interned string table.
         assert(str != nullptr, "must succeed");
         _extra_interned_strings->append(OopHandle(Universe::vm_global(), str));
@@ -1419,7 +1414,6 @@ void MetaspaceShared::unmap_archive(FileMapInfo* mapinfo) {
   assert(UseSharedSpaces, "must be runtime");
   if (mapinfo != nullptr) {
     mapinfo->unmap_regions(archive_regions, archive_regions_count);
-    mapinfo->unmap_region(MetaspaceShared::bm);
     mapinfo->set_is_mapped(false);
   }
 }
@@ -1456,7 +1450,6 @@ void MetaspaceShared::initialize_shared_spaces() {
   CDS_JAVA_HEAP_ONLY(Universe::update_archived_basic_type_mirrors());
 
   static_mapinfo->close();
-  static_mapinfo->unmap_region(MetaspaceShared::bm);
 
   FileMapInfo *dynamic_mapinfo = FileMapInfo::dynamic_info();
   if (dynamic_mapinfo != nullptr) {
@@ -1537,10 +1530,6 @@ bool MetaspaceShared::use_full_module_graph() {
   bool result = _use_optimized_module_handling && _use_full_module_graph;
   if (DumpSharedSpaces) {
     result &= HeapShared::can_write();
-  } else if (UseSharedSpaces) {
-    result &= ArchiveHeapLoader::can_load();
-  } else {
-    result = false;
   }
 
   if (result && UseSharedSpaces) {

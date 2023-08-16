@@ -285,11 +285,9 @@ void FileMapHeader::print(outputStream* st) {
   st->print_cr("- mapped_base_address:            " INTPTR_FORMAT, p2i(_mapped_base_address));
   st->print_cr("- heap_roots_offset:              " SIZE_FORMAT, _heap_roots_offset);
   st->print_cr("- heap_oopmap_leading_zeros:      " SIZE_FORMAT, _heap_oopmap_leading_zeros);
-  st->print_cr("- heap_ptrmap_leading_zeros:      " SIZE_FORMAT, _heap_ptrmap_leading_zeros);
   st->print_cr("- allow_archiving_with_java_agent:%d", _allow_archiving_with_java_agent);
   st->print_cr("- use_optimized_module_handling:  %d", _use_optimized_module_handling);
   st->print_cr("- use_full_module_graph           %d", _use_full_module_graph);
-  st->print_cr("- ptrmap_size_in_bits:            " SIZE_FORMAT, _ptrmap_size_in_bits);
 }
 
 void SharedClassPathEntry::init_as_non_existent(const char* path, TRAPS) {
@@ -1548,13 +1546,7 @@ void FileMapInfo::write_region(int region, char* base, size_t size,
     assert(HeapShared::can_write(), "sanity");
 #if INCLUDE_CDS_JAVA_HEAP
     assert(!DynamicDumpSharedSpaces, "must be");
-    requested_base = (char*)ArchiveHeapWriter::requested_address();
-    if (UseCompressedOops) {
-      mapping_offset = (size_t)((address)requested_base - CompressedOops::base());
-      assert((mapping_offset >> CompressedOops::shift()) << CompressedOops::shift() == mapping_offset, "must be");
-    } else {
-      mapping_offset = 0; // not used with !UseCompressedOops
-    }
+    requested_base = nullptr;
 #endif // INCLUDE_CDS_JAVA_HEAP
   } else {
     char* requested_SharedBaseAddress = (char*)MetaspaceShared::requested_base_address();
@@ -1591,13 +1583,11 @@ char* FileMapInfo::write_bitmap_region(const CHeapBitMap* ptrmap, ArchiveHeapInf
 
   if (heap_info->is_used()) {
     size_in_bytes += heap_info->oopmap()->size_in_bytes();
-    size_in_bytes += heap_info->ptrmap()->size_in_bytes();
   }
 
   // The bitmap region contains up to 3 parts:
   // ptrmap:              metaspace pointers inside the ro/rw regions
   // heap_info->oopmap(): Java oop pointers in the heap region
-  // heap_info->ptrmap(): metaspace pointers in the heap region
   char* buffer = NEW_C_HEAP_ARRAY(char, size_in_bytes, mtClassShared);
   size_t written = 0;
   written = write_bitmap(ptrmap, buffer, written);
@@ -1608,9 +1598,6 @@ char* FileMapInfo::write_bitmap_region(const CHeapBitMap* ptrmap, ArchiveHeapInf
 
     r->init_oopmap(written, heap_info->oopmap()->size());
     written = write_bitmap(heap_info->oopmap(), buffer, written);
-
-    r->init_ptrmap(written, heap_info->ptrmap()->size());
-    written = write_bitmap(heap_info->ptrmap(), buffer, written);
   }
 
   write_region(MetaspaceShared::bm, (char*)buffer, size_in_bytes, /*read_only=*/true, /*allow_exec=*/false);
@@ -1623,7 +1610,6 @@ size_t FileMapInfo::write_heap_region(ArchiveHeapInfo* heap_info) {
   write_region(MetaspaceShared::hp, buffer_start, buffer_size, false, false);
   header()->set_heap_roots_offset(heap_info->heap_roots_offset());
   header()->set_heap_oopmap_leading_zeros(heap_info->oopmap()->find_first_set_bit(0));
-  header()->set_heap_ptrmap_leading_zeros(heap_info->ptrmap()->find_first_set_bit(0));
   return buffer_size;
 }
 
@@ -1872,7 +1858,7 @@ char* FileMapInfo::map_noncore_region(int region_index, bool read_only) {
 }
 
 char* FileMapInfo::map_bitmap_region() {
-  return map_noncore_region(MetaspaceShared::bm, true);
+  return map_noncore_region(MetaspaceShared::bm, false);
 }
 
 
@@ -1949,14 +1935,14 @@ bool FileMapInfo::has_heap_region() {
 }
 
 void FileMapInfo::load_heap_region() {
-  bool success = false;
+  // TODO: When should this be false?
+  bool success = true;
 
   if (can_load_heap_region()) {
     int hp = MetaspaceShared::hp;
     if (map_noncore_region(hp, /*readonly=*/false) != nullptr) {
       FileMapRegion* r = region_at(hp);
-      success = ArchiveHeapLoader::load_heap_region(r->mapped_base(), r->used());
-      unmap_region(hp);
+      ArchiveHeapLoader::initialize_roots();
     }
   }
 
@@ -1967,10 +1953,6 @@ void FileMapInfo::load_heap_region() {
 
 bool FileMapInfo::can_load_heap_region() {
   if (!has_heap_region()) {
-    return false;
-  }
-  if (!ArchiveHeapLoader::can_load()) {
-    log_info(cds)("Archived heap exists but cannot be loaded with the current GC setting");
     return false;
   }
   if (JvmtiExport::should_post_class_file_load_hook() && JvmtiExport::has_early_class_hook_env()) {
@@ -2015,36 +1997,6 @@ bool FileMapInfo::can_load_heap_region() {
          "(%d, expected %d)", CompressedKlassPointers::shift(), archive_narrow_klass_shift);
 
   return true;
-}
-
-// The address where this region can be mapped into the runtime heap without
-// patching any of the pointers that are embedded in this region.
-address FileMapInfo::heap_region_requested_address() {
-  assert(UseSharedSpaces, "runtime only");
-  FileMapRegion* r = region_at(MetaspaceShared::hp);
-  assert(is_aligned(r->mapping_offset(), sizeof(HeapWord)), "must be");
-  if (UseCompressedOops) {
-    // FIXME == this needs to be refactored with NarrowOopPatcher::_lowest_requested_narrowOop
-
-    // We can avoid relocation if each region's offset from the runtime CompressedOops::base()
-    // is the same as its offset from the CompressedOops::base() during dumptime.
-    // Note that CompressedOops::base() may be different between dumptime and runtime.
-    //
-    // Example:
-    // Dumptime base = 0x1000 and shift is 0. We have a region at address 0x2000. There's a
-    // narrowOop P stored in this region that points to an object at address 0x2200.
-    // P's encoded value is 0x1200.
-    //
-    // Runtime base = 0x4000 and shift is also 0. If we map this region at 0x5000, then
-    // the value P can remain 0x1200. The decoded address = (0x4000 + (0x1200 << 0)) = 0x5200,
-    // which is the runtime location of the referenced object.
-    return /*runtime*/ CompressedOops::base() + r->mapping_offset();
-  } else {
-    // This was the hard-coded requested base address used at dump time. With uncompressed oops,
-    // the heap range is assigned by the OS so we will most likely have to relocate anyway, no matter
-    // what base address was picked at duump time.
-    return (address)ArchiveHeapWriter::NOCOOPS_REQUESTED_BASE;
-  }
 }
 
 #endif // INCLUDE_CDS_JAVA_HEAP

@@ -74,23 +74,13 @@ const size_t REHASH_LEN = 100;
 const double CLEAN_DEAD_HIGH_WATER_MARK = 0.5;
 
 #if INCLUDE_CDS_JAVA_HEAP
-bool StringTable::_is_two_dimensional_shared_strings_array = false;
 OopHandle StringTable::_shared_strings_array;
 int StringTable::_shared_strings_array_root_index;
 
 inline oop StringTable::read_string_from_compact_hashtable(address base_address, u4 index) {
   assert(ArchiveHeapLoader::is_loaded(), "sanity");
   objArrayOop array = (objArrayOop)(_shared_strings_array.resolve());
-  oop s;
-
-  if (!_is_two_dimensional_shared_strings_array) {
-    s = array->obj_at((int)index);
-  } else {
-    int primary_index = index >> _secondary_array_index_bits;
-    int secondary_index = index & _secondary_array_index_mask;
-    objArrayOop secondary = (objArrayOop)array->obj_at(primary_index);
-    s = secondary->obj_at(secondary_index);
-  }
+  oop s = array->obj_at((int)index);
 
   assert(java_lang_String::is_instance(s), "must be");
   return s;
@@ -812,71 +802,11 @@ void StringTable::allocate_shared_strings_array(TRAPS) {
 
   log_info(cds)("allocated string table for %d strings", total);
 
-  if (!ArchiveHeapWriter::is_too_large_to_archive(single_array_size)) {
-    // The entire table can fit in a single array
-    objArrayOop array = oopFactory::new_objArray(vmClasses::Object_klass(), total, CHECK);
-    _shared_strings_array = OopHandle(Universe::vm_global(), array);
-    log_info(cds)("string table array (single level) length = %d", total);
-  } else {
-    // Split the table in two levels of arrays.
-    int primary_array_length = (total + _secondary_array_max_length - 1) / _secondary_array_max_length;
-    size_t primary_array_size = objArrayOopDesc::object_size(primary_array_length);
-    size_t secondary_array_size = objArrayOopDesc::object_size(_secondary_array_max_length);
-
-    if (ArchiveHeapWriter::is_too_large_to_archive(secondary_array_size)) {
-      // This can only happen if you have an extremely large number of classes that
-      // refer to more than 16384 * 16384 = 26M interned strings! Not a practical concern
-      // but bail out for safety.
-      log_error(cds)("Too many strings to be archived: " SIZE_FORMAT, _items_count);
-      MetaspaceShared::unrecoverable_writing_error();
-    }
-
-    objArrayOop primary = oopFactory::new_objArray(vmClasses::Object_klass(), primary_array_length, CHECK);
-    objArrayHandle primaryHandle(THREAD, primary);
-    _shared_strings_array = OopHandle(Universe::vm_global(), primary);
-
-    log_info(cds)("string table array (primary) length = %d", primary_array_length);
-    for (int i = 0; i < primary_array_length; i++) {
-      int len;
-      if (total > _secondary_array_max_length) {
-        len = _secondary_array_max_length;
-      } else {
-        len = total;
-      }
-      total -= len;
-
-      objArrayOop secondary = oopFactory::new_objArray(vmClasses::Object_klass(), len, CHECK);
-      primaryHandle()->obj_at_put(i, secondary);
-
-      log_info(cds)("string table array (secondary)[%d] length = %d", i, len);
-      assert(!ArchiveHeapWriter::is_too_large_to_archive(secondary), "sanity");
-    }
-
-    assert(total == 0, "must be");
-    _is_two_dimensional_shared_strings_array = true;
-  }
+  // The entire table can fit in a single array
+  objArrayOop array = oopFactory::new_objArray(vmClasses::Object_klass(), total, CHECK);
+  _shared_strings_array = OopHandle(Universe::vm_global(), array);
+  log_info(cds)("string table array (single level) length = %d", total);
 }
-
-#ifndef PRODUCT
-void StringTable::verify_secondary_array_index_bits() {
-  int max;
-  for (max = 1; ; max++) {
-    size_t next_size = objArrayOopDesc::object_size(1 << (max + 1));
-    if (ArchiveHeapWriter::is_too_large_to_archive(next_size)) {
-      break;
-    }
-  }
-  // Currently max is 17 for +UseCompressedOops, 16 for -UseCompressedOops.
-  // When we add support for Shenandoah (which has a smaller mininum region size than G1),
-  // max will become 15/14.
-  //
-  // We use _secondary_array_index_bits==14 as that will be the eventual value, and will
-  // make testing easier.
-  assert(_secondary_array_index_bits <= max,
-         "_secondary_array_index_bits (%d) must be smaller than max possible value (%d)",
-         _secondary_array_index_bits, max);
-}
-#endif // PRODUCT
 
 // This is called AFTER we enter the CDS safepoint.
 //
@@ -887,8 +817,6 @@ oop StringTable::init_shared_table(const DumpedInternedStrings* dumped_interned_
   assert(HeapShared::can_write(), "must be");
   objArrayOop array = (objArrayOop)(_shared_strings_array.resolve());
 
-  verify_secondary_array_index_bits();
-
   _shared_table.reset();
   CompactHashtableWriter writer(_items_count, ArchiveBuilder::string_stats());
 
@@ -897,22 +825,9 @@ oop StringTable::init_shared_table(const DumpedInternedStrings* dumped_interned_
     unsigned int hash = java_lang_String::hash_code(string);
     writer.add(hash, index);
 
-    if (!_is_two_dimensional_shared_strings_array) {
-      assert(index < array->length(), "no strings should have been added");
-      array->obj_at_put(index, string);
-    } else {
-      int primary_index = index >> _secondary_array_index_bits;
-      int secondary_index = index & _secondary_array_index_mask;
-
-      assert(primary_index < array->length(), "no strings should have been added");
-      objArrayOop secondary = (objArrayOop)array->obj_at(primary_index);
-
-      assert(secondary != nullptr && secondary->is_objArray(), "must be");
-      assert(secondary_index < secondary->length(), "no strings should have been added");
-      secondary->obj_at_put(secondary_index, string);
-    }
-
-    index ++;
+    assert(index < array->length(), "no strings should have been added");
+    array->obj_at_put(index, string);
+    index++;
   };
   dumped_interned_strings->iterate_all(copy_into_array);
 
@@ -933,7 +848,6 @@ void StringTable::serialize_shared_table_header(SerializeClosure* soc) {
     _shared_table.reset();
   }
 
-  soc->do_bool(&_is_two_dimensional_shared_strings_array);
   soc->do_int(&_shared_strings_array_root_index);
 }
 #endif //INCLUDE_CDS_JAVA_HEAP

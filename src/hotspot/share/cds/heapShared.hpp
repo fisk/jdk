@@ -323,7 +323,6 @@ private:
   static void resolve_or_init(Klass* k, bool do_init, TRAPS);
   static void init_archived_fields_for(Klass* k, const ArchivedKlassSubGraphInfoRecord* record);
 
-  static void mark_native_pointers(oop orig_obj);
   static bool has_been_archived(oop orig_obj);
   static void archive_java_mirrors();
   static void archive_strings();
@@ -381,6 +380,7 @@ private:
   // Dump-time and runtime
   static objArrayOop roots();
   static oop get_root(int index, bool clear=false);
+  static void finish_materialize_objects();
 
   // Run-time only
   static void clear_root(int index);

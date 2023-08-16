@@ -99,6 +99,9 @@
 #include "utilities/events.hpp"
 #include "utilities/macros.hpp"
 #include "utilities/vmError.hpp"
+#if INCLUDE_CDS_JAVA_HEAP
+#include "cds/heapShared.hpp"
+#endif
 #if INCLUDE_JVMCI
 #include "jvmci/jvmci.hpp"
 #include "jvmci/jvmciEnv.hpp"
@@ -642,6 +645,11 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
 
   initialize_java_lang_classes(main_thread, CHECK_JNI_ERR);
 
+  // Start the service thread
+  // The service thread enqueues JVMTI deferred events and does various hashtable
+  // and other cleanups.  Needs to start before the compilers start posting events.
+  ServiceThread::initialize();
+
   quicken_jni_functions();
 
   // No more stub generation allowed after that point.
@@ -681,11 +689,6 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   }
 
   Chunk::start_chunk_pool_cleaner_task();
-
-  // Start the service thread
-  // The service thread enqueues JVMTI deferred events and does various hashtable
-  // and other cleanups.  Needs to start before the compilers start posting events.
-  ServiceThread::initialize();
 
   // Start the monitor deflation thread:
   MonitorDeflationThread::initialize();
@@ -806,6 +809,12 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   //   aren't, late joiners might appear to start slowly (we might
   //   take a while to process their first tick).
   WatcherThread::run_all_tasks();
+
+#if INCLUDE_CDS_JAVA_HEAP
+  if (UseSharedSpaces) {
+    HeapShared::finish_materialize_objects();
+  }
+#endif
 
   create_vm_timer.end();
 #ifdef ASSERT

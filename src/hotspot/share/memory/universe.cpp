@@ -461,8 +461,6 @@ void Universe::initialize_basic_type_mirrors(TRAPS) {
     if (UseSharedSpaces &&
         ArchiveHeapLoader::is_loaded() &&
         _basic_type_mirrors[T_INT].resolve() != nullptr) {
-      assert(ArchiveHeapLoader::can_load(), "Sanity");
-
       // check that all basic type mirrors are mapped also
       for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
         if (!is_reference_type((BasicType)i)) {
@@ -915,6 +913,7 @@ OopStorage* Universe::vm_global() {
 void Universe::oopstorage_init() {
   Universe::_vm_global = OopStorageSet::create_strong("VM Global", mtInternal);
   Universe::_vm_weak = OopStorageSet::create_weak("VM Weak", mtInternal);
+  ArchiveHeapLoader::initialize_oop_storage();
 }
 
 void universe_oopstorage_init() {
@@ -1052,6 +1051,7 @@ bool universe_post_init() {
   MemoryService::add_metaspace_memory_pools();
 
   MemoryService::set_universe_heap(Universe::heap());
+
 #if INCLUDE_CDS
   MetaspaceShared::post_initialize(CHECK_false);
 #endif
