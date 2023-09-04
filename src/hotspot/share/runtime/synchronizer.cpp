@@ -96,18 +96,26 @@ class ObjectMonitorWorld : public CHeapObj<mtThread> {
       assert(hash != 0, "should have a hash");
       return hash;
     }
-    bool equals(Entry** value, bool* is_dead) {
+    bool equals(Entry** value) {
       // The entry is going to be removed soon.
       if ((*value)->obj->is_null()) {
-        *is_dead = true;
         return false;
       }
       oop woop = (*value)->obj->peek();
       if (woop == nullptr) {
-        *is_dead = true;
         return false;
       }
       return woop == _obj;
+    }
+    bool is_dead(Entry** value) {
+      if ((*value)->obj->is_null()) {
+        return true;
+      }
+      oop woop = (*value)->obj->peek();
+      if (woop == nullptr) {
+        return true;
+      }
+      return false;
     }
   };
 
@@ -118,7 +126,7 @@ class ObjectMonitorWorld : public CHeapObj<mtThread> {
     uintx get_hash() const {
       return _monitor->header().hash();
     }
-    bool equals(Entry** value, bool* is_dead) {
+    bool equals(Entry** value) {
       return (*value)->mon == _monitor;
     }
   };
