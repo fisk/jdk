@@ -395,6 +395,10 @@ bool ObjectSynchronizer::quick_enter(oop obj, JavaThread* current,
     if (m->object_peek() == nullptr) {
       return false;
     }
+
+    current->_om_cache_monitor = m;
+    current->_om_cache_oop = obj;
+
     JavaThread* const owner = static_cast<JavaThread*>(m->owner_raw());
 
     // Lock contention and Transactional Lock Elision (TLE) diagnostics
@@ -1633,6 +1637,12 @@ class HandshakeForDeflation : public HandshakeClosure {
   void do_thread(Thread* thread) {
     log_trace(monitorinflation)("HandshakeForDeflation::do_thread: thread="
                                 INTPTR_FORMAT, p2i(thread));
+    if (thread->is_Java_thread()) {
+      // Clear OM cache
+      JavaThread* jt = JavaThread::cast(thread);
+      jt->_om_cache_monitor = nullptr;
+      jt->_om_cache_oop = nullptr;
+    }
   }
 };
 
