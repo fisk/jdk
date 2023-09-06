@@ -396,9 +396,6 @@ bool ObjectSynchronizer::quick_enter(oop obj, JavaThread* current,
       return false;
     }
 
-    current->_om_cache_monitor = m;
-    current->_om_cache_oop = obj;
-
     JavaThread* const owner = static_cast<JavaThread*>(m->owner_raw());
 
     // Lock contention and Transactional Lock Elision (TLE) diagnostics
@@ -428,6 +425,8 @@ bool ObjectSynchronizer::quick_enter(oop obj, JavaThread* current,
     if (owner == nullptr && m->try_set_owner_from(nullptr, current) == nullptr) {
       assert(m->_recursions == 0, "invariant");
       current->inc_held_monitor_count();
+      current->_om_cache_monitor = m;
+      current->_om_cache_oop = obj;
       return true;
     }
   }
@@ -564,6 +563,8 @@ void ObjectSynchronizer::enter(Handle obj, BasicLock* lock, JavaThread* current)
   while (true) {
     ObjectMonitor* monitor = inflate(current, obj(), inflate_cause_monitor_enter);
     if (monitor->enter(current)) {
+      current->_om_cache_monitor = monitor;
+      current->_om_cache_oop = obj();
       return;
     }
   }
