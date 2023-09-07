@@ -974,12 +974,19 @@ intptr_t ObjectSynchronizer::FastHashCode(Thread* current, oop obj) {
       }
       // Fall thru so we only have one place that installs the hash in
       // the ObjectMonitor.
-    } else if (LockingMode == LM_LIGHTWEIGHT && mark.is_fast_locked() && is_lock_owned(current, obj)) {
+    } else if (LockingMode == LM_LIGHTWEIGHT && mark.is_fast_locked()) {
       // This is a fast-lock owned by the calling thread so use the
       // markWord from the object.
       hash = mark.hash();
       if (hash != 0) {                  // if it has a hash, just return it
         return hash;
+      }
+
+      hash = get_next_hash(current, obj);
+      if (obj->cas_set_mark(mark.copy_set_hash(hash), mark, memory_order_relaxed) == mark) {
+        return hash;
+      } else {
+        continue;
       }
     } else if (LockingMode == LM_LEGACY && mark.has_locker() && current->is_lock_owned((address)mark.locker())) {
       // This is a stack-lock owned by the calling thread so fetch the
@@ -1307,6 +1314,9 @@ static void post_monitor_inflate_event(EventJavaMonitorInflate* event,
 
 // Fast path code shared by multiple functions
 void ObjectSynchronizer::inflate_helper(oop obj) {
+  if (LockingMode == LM_LIGHTWEIGHT) {
+    return;
+  }
   markWord mark = obj->mark_acquire();
   if (mark.has_monitor()) {
     ObjectMonitor* monitor = mark.monitor();
