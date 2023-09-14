@@ -1224,6 +1224,50 @@ void InstanceKlass::set_initialization_state_and_notify(ClassState state, JavaTh
   ml.notify_all();
 }
 
+class SpreadGCCallbackPlagueFieldClosure : public FieldClosure {
+private:
+  Klass* _klass;
+  DeoptimizationScope* _deopt_scope;
+  bool _matched;
+
+public:
+  SpreadGCCallbackPlagueFieldClosure(Klass* klass, DeoptimizationScope* deopt_scope)
+    : _klass(klass),
+      _deopt_scope(deopt_scope),
+      _matched(false) {}
+
+  virtual void do_field(fieldDescriptor* fd) {
+    if (_klass->has_gc_callback()) {
+      return;
+    }
+
+    Symbol* signature = fd->signature();
+    if (Signature::basic_type(signature) != T_OBJECT) { // TODO: Arrays?
+      return;
+    }
+
+    SignatureStream ss(signature, false /* is_method */);
+    Symbol* symbol = ss.as_symbol();
+
+    JavaThread* current = JavaThread::current();
+    Handle h_loader(current, _klass->class_loader_data()->class_loader());
+    Handle h_prot(current, Universe::is_fully_initialized() ? _klass->protection_domain() : nullptr);
+
+    Klass* field_type = SystemDictionary::find_instance_klass(current, symbol, h_loader, h_prot); // TODO: Add hook when loading to taint dependent classes
+    if (field_type != nullptr && field_type->has_gc_callback()) {
+      _matched |= _klass->register_gc_callback_impl(_deopt_scope);
+    }
+  }
+
+  bool matched() const { return _matched; }
+};
+
+bool InstanceKlass::register_dependent_gc_callbacks(DeoptimizationScope* deopt_scope) {
+  SpreadGCCallbackPlagueFieldClosure cl(this, deopt_scope);
+  do_nonstatic_fields(&cl);
+  return cl.matched();
+}
+
 // Update hierarchy. This is done before the new klass has been added to the SystemDictionary. The Compile_lock
 // is grabbed, to ensure that the compiler is not using the class hierarchy.
 void InstanceKlass::add_to_hierarchy(JavaThread* current) {
@@ -1242,6 +1286,11 @@ void InstanceKlass::add_to_hierarchy(JavaThread* current) {
     MutexLocker ml(current, Compile_lock);
 
     set_init_state(InstanceKlass::loaded);
+
+    // Ensure arguments are kept alive when relevant
+    if (register_dependent_gc_callbacks(&deopt_scope)) {
+      register_all_dependent_gc_callbacks(&deopt_scope);
+    }
     // make sure init_state store is already done.
     // The compiler reads the hierarchy outside of the Compile_lock.
     // Access ordering is used to add to hierarchy.

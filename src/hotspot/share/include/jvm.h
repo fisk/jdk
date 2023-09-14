@@ -356,6 +356,9 @@ JVM_HasReferencePendingList(JNIEnv *env);
 JNIEXPORT void JNICALL
 JVM_WaitForReferencePendingList(JNIEnv *env);
 
+JNIEXPORT void JNICALL
+JVM_RegisterGCCallback(JNIEnv *env, jobject referent);
+
 JNIEXPORT jboolean JNICALL
 JVM_ReferenceRefersTo(JNIEnv *env, jobject ref, jobject o);
 

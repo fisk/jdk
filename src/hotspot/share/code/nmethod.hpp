@@ -235,6 +235,10 @@ class nmethod : public CompiledMethod {
   RTMState _rtm_state;
 #endif
 
+  bool _has_gc_callback_type;
+  uint64_t _gc_callback_type_epoch;
+  GrowableArrayCHeap<Klass*, mtCode>* _gc_callbacks;
+
   // These are used for compiled synchronized native methods to
   // locate the owner and stack slot for the BasicLock. They are
   // needed because there is no debug information for compiled native
@@ -290,7 +294,9 @@ class nmethod : public CompiledMethod {
           ExceptionHandlerTable* handler_table,
           ImplicitExceptionTable* nul_chk_table,
           AbstractCompiler* compiler,
-          CompLevel comp_level
+          CompLevel comp_level,
+          bool has_gc_callback_type,
+          uint64_t gc_callback_type_epoch
 #if INCLUDE_JVMCI
           , char* speculations = nullptr,
           int speculations_len = 0,
@@ -341,7 +347,9 @@ class nmethod : public CompiledMethod {
                               ExceptionHandlerTable* handler_table,
                               ImplicitExceptionTable* nul_chk_table,
                               AbstractCompiler* compiler,
-                              CompLevel comp_level
+                              CompLevel comp_level,
+                              bool has_gc_callback_type,
+                              uint64_t gc_callback_type_epoch
 #if INCLUDE_JVMCI
                               , char* speculations = nullptr,
                               int speculations_len = 0,
@@ -523,6 +531,11 @@ public:
 
   // Deallocate this nmethod - called by the GC
   void flush();
+
+  void set_gc_callbacks(GrowableArrayCHeap<Klass*, mtCode>* gc_callbacks);
+
+  // Can this nmethod racingly access state manipulated by a GC callback?
+  bool may_have_gc_callback_type() const;
 
   // See comment at definition of _last_seen_on_stack
   void mark_as_maybe_on_stack();

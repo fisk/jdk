@@ -56,6 +56,8 @@ public:
   void process_one(void* context);
   void process_all(void* context);
   bool has_next() const;
+
+  void abort_iteration() { _is_done = true; }
 };
 
 void StackWatermarkFramesIterator::set_watermark(uintptr_t sp) {
@@ -156,6 +158,10 @@ bool StackWatermarkFramesIterator::has_next() const {
 }
 
 void StackWatermarkFramesIterator::next() {
+  if (_is_done) {
+    // Iteration aborted
+    return;
+  }
   _frame_stream.next();
   _is_done = _frame_stream.is_done();
 }
@@ -226,6 +232,10 @@ void StackWatermark::start_processing_impl(void* context) {
 void StackWatermark::yield_processing() {
   update_watermark();
   MutexUnlocker mul(&_lock, Mutex::_no_safepoint_check_flag);
+}
+
+void StackWatermark::abort_iteration() {
+  _iterator->abort_iteration();
 }
 
 void StackWatermark::update_watermark() {

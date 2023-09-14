@@ -97,6 +97,10 @@ private:
   static jobject _ArrayStoreException_handle;
   static jobject _ClassCastException_handle;
 
+  static volatile uint64_t _global_gc_callback_type_epoch;
+  uint64_t _gc_callback_type_epoch;
+  bool _has_gc_callback_type;
+
   ciInstance* _NullPointerException_instance;
   ciInstance* _ArithmeticException_instance;
   ciInstance* _ArrayIndexOutOfBoundsException_instance;
@@ -510,6 +514,13 @@ public:
   void process_invokedynamic(const constantPoolHandle &cp, int index, JavaThread* thread);
   void process_invokehandle(const constantPoolHandle &cp, int index, JavaThread* thread);
   void find_dynamic_call_sites();
+
+  // Type safety wrt gc callback types
+  static void inc_global_gc_callback_type_epoch();
+  static uint64_t global_gc_callback_type_epoch();
+  bool has_gc_callback_type();
+  void set_has_gc_callback_type();
+  uint64_t gc_callback_type_epoch();
 };
 
 #endif // SHARE_CI_CIENV_HPP

@@ -44,6 +44,12 @@ Java_java_lang_ref_Reference_waitForReferencePendingList(JNIEnv *env, jclass ign
     JVM_WaitForReferencePendingList(env);
 }
 
+JNIEXPORT void JNICALL
+Java_java_lang_ref_Reference_registerGCCallback(JNIEnv *env, jclass ignore, jobject referent)
+{
+    JVM_RegisterGCCallback(env, referent);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_java_lang_ref_Reference_refersTo0(JNIEnv *env, jobject ref, jobject o)
 {

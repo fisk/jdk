@@ -245,6 +245,7 @@ CollectedHeap::CollectedHeap() :
   _last_whole_heap_examined_time_ns(os::javaTimeNanos()),
   _total_collections(0),
   _total_full_collections(0),
+  _total_collections_ended(0),
   _gc_cause(GCCause::_no_gc),
   _gc_lastcause(GCCause::_no_gc)
 {

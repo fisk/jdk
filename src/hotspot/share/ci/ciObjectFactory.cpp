@@ -118,6 +118,54 @@ void ciObjectFactory::initialize() {
 
 }
 
+bool ciObjectFactory::validate_gc_callback_dependencies() {
+  for (int i = 0; i < _ci_metadata.length(); ++i) {
+    ciMetadata* metadata = _ci_metadata.at(i);
+
+    if (!metadata->is_klass()) {
+      continue;
+    }
+
+    ciKlass* ciklass = static_cast<ciKlass*>(metadata);
+    Klass* klass = ciklass->get_Klass();
+    if (!ciklass->should_keep_argument_alive() && klass->has_gc_callback()) {
+      ciklass->set_has_gc_callback();
+      if (ciEnv::current()->comp_level() == CompLevel_full_optimization) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+GrowableArrayCHeap<Klass*, mtCode>* ciObjectFactory::register_gc_callback_dependencies(nmethod* nm) {
+  MutexLocker ml(CodeCache_lock, Mutex::_no_safepoint_check_flag);
+  GrowableArrayCHeap<Klass*, mtCode>* array = new GrowableArrayCHeap<Klass*, mtCode>();
+
+  if (ciEnv::current()->comp_level() != CompLevel_full_optimization) {
+    return array;
+  }
+
+  for (int i = 0; i < _ci_metadata.length(); ++i) {
+    ciMetadata* metadata = _ci_metadata.at(i);
+
+    if (!metadata->is_klass()) {
+      continue;
+    }
+
+    ciKlass* ciklass = static_cast<ciKlass*>(metadata);
+
+    if (!ciklass->should_keep_argument_alive() && !ciklass->has_gc_callback()) {
+      Klass* klass = ciklass->get_Klass();
+      klass->add_gc_callback_dependent_nmethod(nm);
+      array->append(klass);
+    }
+  }
+
+  return array;
+}
+
 void ciObjectFactory::init_shared_objects() {
 
   _next_ident = 1;  // start numbering CI objects at 1

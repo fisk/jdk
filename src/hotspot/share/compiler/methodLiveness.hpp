@@ -106,6 +106,8 @@ class MethodLiveness : public ArenaObj {
     // our _exception_exit member.
     bool merge_exception(const BitMap& other);
 
+    void maybe_keep_arguments_alive(ciBytecodeStream* instruction);
+
     // This helper routine is used to help compute the gen/kill pair for
     // the block.  It is also used to answer queries.
     void compute_gen_kill_range(ciBytecodeStream *bytes);

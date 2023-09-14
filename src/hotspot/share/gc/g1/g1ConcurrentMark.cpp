@@ -1346,6 +1346,7 @@ void G1ConcurrentMark::remark() {
   _remark_times.add((now - start) * 1000.0);
 
   policy->record_concurrent_mark_remark_end();
+  _g1h->increment_total_collections_ended();
 }
 
 class G1ReclaimEmptyRegionsTask : public WorkerTask {

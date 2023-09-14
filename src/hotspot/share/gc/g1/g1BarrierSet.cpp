@@ -30,6 +30,7 @@
 #include "gc/g1/g1SATBMarkQueueSet.hpp"
 #include "gc/g1/g1ThreadLocalData.hpp"
 #include "gc/g1/heapRegion.hpp"
+#include "gc/shared/gcCallbackStackWatermark.hpp"
 #include "gc/shared/satbMarkQueue.hpp"
 #include "logging/log.hpp"
 #include "oops/access.inline.hpp"
@@ -156,6 +157,10 @@ void G1BarrierSet::on_thread_attach(Thread* thread) {
   // set the active field of the SATB queue to true.  That involves
   // copying the global is_active value to this thread's queue.
   satbq.set_active(_satb_mark_queue_set.is_active());
+  if (thread->is_Java_thread()) {
+    JavaThread* const jt = JavaThread::cast(thread);
+    StackWatermarkSet::add_watermark(jt, new GCCallbackStackWatermark(jt));
+  }
 }
 
 void G1BarrierSet::on_thread_detach(Thread* thread) {

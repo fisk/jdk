@@ -25,6 +25,7 @@
 #include "precompiled.hpp"
 #include "ci/ciMethod.hpp"
 #include "ci/ciMethodBlocks.hpp"
+#include "ci/ciObjArrayKlass.hpp"
 #include "ci/ciStreams.hpp"
 #include "classfile/vmIntrinsics.hpp"
 #include "compiler/methodLiveness.hpp"
@@ -461,6 +462,33 @@ void MethodLiveness::BasicBlock::compute_gen_kill_range(ciBytecodeStream *bytes)
   }
 }
 
+void MethodLiveness::BasicBlock::maybe_keep_arguments_alive(ciBytecodeStream* instruction) {
+  if (instruction->method()->intrinsic_id() == vmIntrinsics::_Object_init) {
+    // return from Object.init implicitly registers a finalizer
+    // for the receiver if needed, so keep it alive.
+    load_one(0);
+  } else if (!instruction->method()->is_static() && instruction->method()->holder()->should_keep_argument_alive()) {
+    // It's rather tricky to reason about correctness of code when the "this" pointer
+    // gets GC:ed. We ensure that at least the interpreted state requires this pointers
+    // to be live.
+    load_one(0);
+  }
+
+  // But let's keep the other parameters alive too
+  ciSignature* signature = instruction->method()->signature();
+  for (int i = 0; i < signature->count(); ++i) {
+    ciType* type = signature->type_at(i);
+    if (!is_reference_type(type->basic_type())) {
+      continue;
+    }
+
+    ciKlass* klass = type->as_klass();
+    if (klass->should_keep_argument_alive()) {
+      load_one(i + (instruction->method()->is_static() ? 0 : 1));
+    }
+  }
+}
+
 void MethodLiveness::BasicBlock::compute_gen_kill_single(ciBytecodeStream *instruction) {
   // We prohibit _gen and _kill from having locals in common.  If we
   // know that one is definitely going to be applied before the other,
@@ -579,16 +607,12 @@ void MethodLiveness::BasicBlock::compute_gen_kill_single(ciBytecodeStream *instr
     case Bytecodes::_ifgt:
     case Bytecodes::_ifle:
     case Bytecodes::_tableswitch:
-    case Bytecodes::_ireturn:
-    case Bytecodes::_freturn:
     case Bytecodes::_if_icmpeq:
     case Bytecodes::_if_icmpne:
     case Bytecodes::_if_icmplt:
     case Bytecodes::_if_icmpge:
     case Bytecodes::_if_icmpgt:
     case Bytecodes::_if_icmple:
-    case Bytecodes::_lreturn:
-    case Bytecodes::_dreturn:
     case Bytecodes::_if_acmpeq:
     case Bytecodes::_if_acmpne:
     case Bytecodes::_jsr:
@@ -608,7 +632,6 @@ void MethodLiveness::BasicBlock::compute_gen_kill_single(ciBytecodeStream *instr
     case Bytecodes::_arraylength:
     case Bytecodes::_instanceof:
     case Bytecodes::_athrow:
-    case Bytecodes::_areturn:
     case Bytecodes::_monitorenter:
     case Bytecodes::_monitorexit:
     case Bytecodes::_ifnull:
@@ -618,12 +641,13 @@ void MethodLiveness::BasicBlock::compute_gen_kill_single(ciBytecodeStream *instr
       // These bytecodes have no effect on the method's locals.
       break;
 
+    case Bytecodes::_ireturn:
+    case Bytecodes::_freturn:
+    case Bytecodes::_lreturn:
+    case Bytecodes::_dreturn:
+    case Bytecodes::_areturn:
     case Bytecodes::_return:
-      if (instruction->method()->intrinsic_id() == vmIntrinsics::_Object_init) {
-        // return from Object.init implicitly registers a finalizer
-        // for the receiver if needed, so keep it alive.
-        load_one(0);
-      }
+      maybe_keep_arguments_alive(instruction);
       break;
 
 

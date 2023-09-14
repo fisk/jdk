@@ -64,6 +64,7 @@ class BreakpointInfo;
 #endif
 class ClassFileParser;
 class ClassFileStream;
+class DeoptimizationScope;
 class KlassDepChange;
 class DependencyContext;
 class fieldDescriptor;
@@ -1138,6 +1139,8 @@ public:
   jint jvmti_class_status() const;
 
   virtual void metaspace_pointers_do(MetaspaceClosure* iter);
+
+  bool register_dependent_gc_callbacks(DeoptimizationScope* deopt_scope);
 
  public:
   // Printing

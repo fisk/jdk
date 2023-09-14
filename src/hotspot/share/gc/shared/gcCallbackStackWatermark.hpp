@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -19,15 +19,33 @@
  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
  * or visit www.oracle.com if you need additional information or have any
  * questions.
- *
  */
 
-#ifndef SHARE_RUNTIME_STACKWATERMARKKIND_HPP
-#define SHARE_RUNTIME_STACKWATERMARKKIND_HPP
+#ifndef SHARE_GC_SHARED_GCCALLBACKSTACKWATERMARK_HPP
+#define SHARE_GC_SHARED_GCCALLBACKSTACKWATERMARK_HPP
 
-enum class StackWatermarkKind {
-  gc,
-  gc_callback
+#include "runtime/stackWatermark.hpp"
+#include "utilities/globalDefinitions.hpp"
+
+class frame;
+class JavaThread;
+class RegisterMap;
+
+class GCCallbackStackWatermark : public StackWatermark {
+  bool _record_process;
+  void* _recorded_fp;
+  uint32_t _recorded_epoch;
+  bool _unwind_detected;
+
+  virtual uint32_t epoch_id() const;
+  virtual void start_processing_impl(void* context);
+  virtual void process(const frame& fr, RegisterMap& register_map, void* context);
+  virtual bool process_on_iteration() { return false; }
+
+public:
+  GCCallbackStackWatermark(JavaThread* jt);
+
+  bool make_safe(JavaThread* jt, uint32_t epoch, bool trigger_deopt);
 };
 
-#endif // SHARE_RUNTIME_STACKWATERMARKKIND_HPP
+#endif // SHARE_GC_SHARED_GCCALLBACKSTACKWATERMARK_HPP

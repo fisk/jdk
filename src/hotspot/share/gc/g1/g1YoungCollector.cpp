@@ -1084,6 +1084,8 @@ void G1YoungCollector::collect() {
     jtm.report_pause_type(collector_state()->young_gc_pause_type(_concurrent_operation_is_full_mark));
 
     policy()->record_young_collection_end(_concurrent_operation_is_full_mark, evacuation_failed());
+
+    _g1h->increment_total_collections_ended();
   }
   TASKQUEUE_STATS_ONLY(_g1h->task_queues()->print_and_reset_taskqueue_stats("Oop Queue");)
 }

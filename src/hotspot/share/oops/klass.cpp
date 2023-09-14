@@ -25,6 +25,7 @@
 #include "precompiled.hpp"
 #include "cds/archiveHeapLoader.hpp"
 #include "cds/heapShared.hpp"
+#include "ci/ciEnv.hpp"
 #include "classfile/classLoaderData.inline.hpp"
 #include "classfile/classLoaderDataGraph.inline.hpp"
 #include "classfile/javaClasses.inline.hpp"
@@ -33,6 +34,7 @@
 #include "classfile/systemDictionaryShared.hpp"
 #include "classfile/vmClasses.hpp"
 #include "classfile/vmSymbols.hpp"
+#include "code/dependencyContext.hpp"
 #include "gc/shared/collectedHeap.inline.hpp"
 #include "jvm_io.h"
 #include "logging/log.hpp"
@@ -50,6 +52,7 @@
 #include "prims/jvmtiExport.hpp"
 #include "runtime/arguments.hpp"
 #include "runtime/atomic.hpp"
+#include "runtime/fieldDescriptor.inline.hpp"
 #include "runtime/handles.inline.hpp"
 #include "utilities/macros.hpp"
 #include "utilities/powerOfTwo.hpp"
@@ -723,6 +726,97 @@ jint Klass::jvmti_class_status() const {
   return 0;
 }
 
+bool Klass::has_gc_callback() const {
+  return Atomic::load(&_has_gc_callback);
+}
+
+bool Klass::register_gc_callback_impl(DeoptimizationScope* deopt_scope) {
+  if (_has_gc_callback) {
+    return false;
+  }
+
+  if (_super != nullptr && _super->_super != nullptr) {
+    // Walk class hierarchy up to but excluding Object, as it doesn't have any state and will
+    // likely fan out a lot
+    _super->register_gc_callback_impl(deopt_scope);
+  }
+
+  mark_gc_callback_dependent_nmethods(deopt_scope);
+  Atomic::store(&_has_gc_callback, true);
+  ciEnv::inc_global_gc_callback_type_epoch(); // TODO: Remove the epoch thing
+
+  return true;
+}
+
+void Klass::register_all_dependent_gc_callbacks(DeoptimizationScope* deopt_scope) {
+  assert_locked_or_safepoint(Compile_lock);
+  for (;;) {
+    bool matched = false;
+    Klass* root = vmClasses::Object_klass();
+    Stack<Klass*, mtGC> stack;
+
+    stack.push(root);
+    while (!stack.is_empty()) {
+      Klass* current = stack.pop();
+
+      if (current->is_instance_klass()) {
+        InstanceKlass* ik = InstanceKlass::cast(current);
+
+        if (!ik->has_gc_callback()) {
+          matched |= ik->register_dependent_gc_callbacks(deopt_scope);
+        }
+      }
+
+      Klass* sub = current->subklass();
+      if (sub != nullptr) {
+        stack.push(sub);
+      }
+
+      Klass* sibling = current->next_sibling();
+      if (sibling != nullptr) {
+        stack.push(sibling);
+      }
+    }
+    if (!matched) {
+      // Fixed point iteration ended
+      break;
+    }
+  }
+}
+
+void Klass::register_gc_callback() {
+  if (Atomic::load(&_has_gc_callback)) {
+    return;
+  }
+
+  HandleMark hm(JavaThread::current());
+  DeoptimizationScope deopt_scope;
+  {
+    MutexLocker ml(Compile_lock);
+    if (register_gc_callback_impl(&deopt_scope)) {
+      register_all_dependent_gc_callbacks(&deopt_scope);
+    }
+  }
+  // Perform the deopt handshake outside Compile_lock.
+  deopt_scope.deoptimize_marked();
+}
+
+DependencyContext Klass::gc_callback_dependencies() {
+  DependencyContext dep_context(&_gc_callback_dep_context, &_gc_callback_dep_context_last_cleaned);
+  return dep_context;
+}
+
+void Klass::mark_gc_callback_dependent_nmethods(DeoptimizationScope* deopt_scope) {
+  gc_callback_dependencies().mark_dependent_nmethods(deopt_scope);
+}
+
+void Klass::add_gc_callback_dependent_nmethod(nmethod* nm) {
+  gc_callback_dependencies().add_dependent_nmethod(nm);
+}
+
+void Klass::clean_gc_callback_dependency_context() {
+  gc_callback_dependencies().clean_unloading_dependents();
+}
 
 // Printing
 

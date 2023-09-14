@@ -110,9 +110,8 @@ void StackWatermarkSet::on_iteration(JavaThread* jt, const frame& fr) {
 }
 
 void StackWatermarkSet::on_safepoint(JavaThread* jt) {
-  StackWatermark* watermark = get(jt, StackWatermarkKind::gc);
-  if (watermark != nullptr) {
-    watermark->on_safepoint();
+  for (StackWatermark* current = head(jt); current != nullptr; current = current->next()) {
+    current->on_safepoint();
   }
 }
 
@@ -150,7 +149,9 @@ uintptr_t StackWatermarkSet::lowest_watermark(JavaThread* jt) {
   uintptr_t max_watermark = uintptr_t(0) - 1;
   uintptr_t watermark = max_watermark;
   for (StackWatermark* current = head(jt); current != nullptr; current = current->next()) {
-    watermark = MIN2(watermark, current->watermark());
+    if (!current->processing_completed()) {
+      watermark = MIN2(watermark, current->watermark());
+    }
   }
   if (watermark == max_watermark) {
     return 0;

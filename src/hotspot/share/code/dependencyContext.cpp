@@ -89,6 +89,19 @@ void DependencyContext::mark_dependent_nmethods(DeoptimizationScope* deopt_scope
   }
 }
 
+void DependencyContext::mark_dependent_nmethods(DeoptimizationScope* deopt_scope) {
+  for (nmethodBucket* b = dependencies_not_unloading(); b != nullptr; b = b->next_not_unloading()) {
+    nmethod* nm = b->get_nmethod();
+    if (b->count() > 0) {
+      if (nm->is_marked_for_deoptimization()) {
+        deopt_scope->dependent(nm);
+      } else {
+        deopt_scope->mark(nm, false);
+      }
+    }
+  }
+}
+
 //
 // Add an nmethod to the dependency context.
 // It's possible that an nmethod has multiple dependencies on a klass

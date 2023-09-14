@@ -104,6 +104,8 @@ jobject ciEnv::_ArrayIndexOutOfBoundsException_handle = nullptr;
 jobject ciEnv::_ArrayStoreException_handle = nullptr;
 jobject ciEnv::_ClassCastException_handle = nullptr;
 
+volatile uint64_t ciEnv::_global_gc_callback_type_epoch = 0;
+
 #ifndef PRODUCT
 static bool firstEnv = true;
 #endif /* PRODUCT */
@@ -175,6 +177,11 @@ ciEnv::ciEnv(CompileTask* task)
   _dyno_klasses = nullptr;
   _dyno_locs = nullptr;
   _dyno_name[0] = '\0';
+
+  _has_gc_callback_type = false;
+
+  MutexLocker ml(Compile_lock);
+  _gc_callback_type_epoch = _global_gc_callback_type_epoch;
 }
 
 // Record components of a location descriptor string.  Components are appended by the constructor and
@@ -1093,6 +1100,10 @@ void ciEnv::register_method(ciMethod* target,
 
       // Check for {class loads, evolution, breakpoints, ...} during compilation
       validate_compile_task_dependencies(target);
+
+      if (!_factory->validate_gc_callback_dependencies()) {
+        record_failure("Unexpected GC callback registered");
+      }
     }
 #if INCLUDE_RTM_OPT
     if (!failing() && (rtm_state != NoRTM) &&
@@ -1128,7 +1139,9 @@ void ciEnv::register_method(ciMethod* target,
                                debug_info(), dependencies(), code_buffer,
                                frame_words, oop_map_set,
                                handler_table, inc_table,
-                               compiler, CompLevel(task()->comp_level()));
+                               compiler, CompLevel(task()->comp_level()),
+                               has_gc_callback_type(),
+                               gc_callback_type_epoch());
 
     // Free codeBlobs
     code_buffer->free_blob();
@@ -1137,6 +1150,8 @@ void ciEnv::register_method(ciMethod* target,
       nm->set_has_unsafe_access(has_unsafe_access);
       nm->set_has_wide_vectors(has_wide_vectors);
       nm->set_has_monitors(has_monitors);
+      GrowableArrayCHeap<Klass*, mtCode>* gc_callbacks = _factory->register_gc_callback_dependencies(nm);
+      nm->set_gc_callbacks(gc_callbacks);
       assert(!method->is_synchronized() || nm->has_monitors(), "");
 #if INCLUDE_RTM_OPT
       nm->set_rtm_state(rtm_state);
@@ -1617,6 +1632,28 @@ void ciEnv::find_dynamic_call_sites() {
       }
     }
   }
+}
+
+// Type safety wrt gc callback types
+void ciEnv::inc_global_gc_callback_type_epoch() {
+  assert_locked_or_safepoint(Compile_lock);
+  Atomic::store(&_global_gc_callback_type_epoch, _global_gc_callback_type_epoch + 1);
+}
+
+uint64_t ciEnv::global_gc_callback_type_epoch() {
+  return Atomic::load(&_global_gc_callback_type_epoch);
+}
+
+bool ciEnv::has_gc_callback_type() {
+  return _has_gc_callback_type;
+}
+
+void ciEnv::set_has_gc_callback_type() {
+  _has_gc_callback_type = true;
+}
+
+uint64_t ciEnv::gc_callback_type_epoch() {
+  return _gc_callback_type_epoch;
 }
 
 void ciEnv::dump_compile_data(outputStream* out) {

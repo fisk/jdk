@@ -55,9 +55,12 @@
 template <class T> class Array;
 template <class T> class GrowableArray;
 class ClassLoaderData;
+class DeoptimizationScope;
+class DependencyContext;
 class fieldDescriptor;
 class klassVtable;
 class ModuleEntry;
+class nmethodBucket;
 class PackageEntry;
 class ParCompactionManager;
 class PSPromotionManager;
@@ -164,6 +167,11 @@ class Klass : public Metadata {
                                 // Keep it away from the beginning of a Klass to avoid cacheline
                                 // contention that may happen when a nearby object is modified.
   AccessFlags _access_flags;    // Access flags. The class/interface distinction is stored here.
+
+  volatile bool _has_gc_callback;
+
+  nmethodBucket* volatile _gc_callback_dep_context;
+  uint64_t       volatile _gc_callback_dep_context_last_cleaned;
 
   JFR_ONLY(DEFINE_TRACE_ID_FIELD;)
 
@@ -672,6 +680,17 @@ protected:
   void set_is_value_based()             { _access_flags.set_is_value_based_class(); }
 
   inline bool is_non_strong_hidden() const;
+
+  bool has_gc_callback() const;
+  bool register_gc_callback_impl(DeoptimizationScope* deopt_scope);
+  void register_gc_callback();
+  static void register_all_dependent_gc_callbacks(DeoptimizationScope* deopt_scope);
+
+  // maintenance of deoptimization dependencies
+  DependencyContext gc_callback_dependencies();
+  void mark_gc_callback_dependent_nmethods(DeoptimizationScope* deopt_scope);
+  void add_gc_callback_dependent_nmethod(nmethod* nm);
+  void clean_gc_callback_dependency_context();
 
   bool is_cloneable() const;
   void set_is_cloneable();

@@ -226,6 +226,12 @@ public abstract sealed class Reference<T>
     private static native void waitForReferencePendingList();
 
     /*
+     * Register to the VM that when this object becomes unreachable, a callback
+     * will be invoked, triggered by GC
+     */
+    private static native void registerGCCallback(Object referent);
+
+    /*
      * Enqueue a Reference taken from the pending list.  Calling this method
      * takes us from the Reference<?> domain of the pending list elements to
      * having a Reference<T> with a correspondingly typed queue.
@@ -507,7 +513,12 @@ public abstract sealed class Reference<T>
 
     Reference(T referent, ReferenceQueue<? super T> queue) {
         this.referent = referent;
-        this.queue = (queue == null) ? ReferenceQueue.NULL : queue;
+        if (queue == null) {
+            this.queue = ReferenceQueue.NULL;
+        } else {
+            this.queue = queue;
+            registerGCCallback(referent);
+        }
     }
 
     /**

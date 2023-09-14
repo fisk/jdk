@@ -122,6 +122,8 @@ protected:
   bool processing_started(uint32_t state) const;
   bool processing_completed(uint32_t state) const;
 
+  void abort_iteration();
+
 public:
   StackWatermark(JavaThread* jt, StackWatermarkKind kind, uint32_t epoch);
   virtual ~StackWatermark();

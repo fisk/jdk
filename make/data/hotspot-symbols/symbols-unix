@@ -207,6 +207,7 @@ JVM_SupportsCX8
 JVM_TotalMemory
 JVM_UnloadLibrary
 JVM_WaitForReferencePendingList
+JVM_RegisterGCCallback
 JVM_Yield
 
 # Module related API's

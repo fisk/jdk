@@ -143,6 +143,9 @@ public:
   // RedefineClasses support
   void metadata_do(MetadataClosure* f);
 
+  bool validate_gc_callback_dependencies();
+  GrowableArrayCHeap<Klass*, mtCode>* register_gc_callback_dependencies(nmethod* nm);
+
   void print_contents();
   void print();
 };

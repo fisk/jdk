@@ -24,10 +24,64 @@
 
 #include "precompiled.hpp"
 #include "ci/ciKlass.hpp"
+#include "ci/ciObjArrayKlass.hpp"
 #include "ci/ciSymbol.hpp"
 #include "ci/ciUtilities.inline.hpp"
+#include "classfile/vmSymbols.hpp"
 #include "oops/klass.inline.hpp"
 #include "oops/oop.inline.hpp"
+
+void ciKlass::register_type_for_gc_callback(Klass* klass) {
+  if (klass->has_gc_callback() || klass->is_mirror_instance_klass()) {
+    CURRENT_ENV->set_has_gc_callback_type();
+    _has_gc_callback = true;
+  }
+}
+
+bool ciKlass::should_keep_argument_alive() {
+  if (ciEnv::current()->comp_level() != CompLevel_full_optimization) {
+    return true;
+  }
+
+  if (has_gc_callback()) {
+    return true;
+  }
+
+  if (is_java_lang_Object()) {
+    // Could be GC sensitive
+    return true;
+  }
+
+  if (!is_loaded()) {
+    // Warmup optimization; C2 usually deals with loaded classes. So in order to avoid
+    // a deopt carpet when we load new classes, we conservatively assume not loaded classes
+    // will reqire keeping the argument alive
+    return true;
+  }
+
+  if (is_interface()) {
+    // Could be Object because the interface doesn't do appropriate type checks on interfaces
+    return true;
+  }
+
+  if (is_obj_array_klass()) {
+    ciObjArrayKlass* array_klass = static_cast<ciObjArrayKlass*>(this);
+    ciKlass* element_klass = array_klass->base_element_klass();
+    return element_klass->should_keep_argument_alive();
+  }
+
+  if (!is_instance_klass()) {
+    // If it isn't an interface, array or instance... just keep it alive
+    return true;
+  }
+
+  if (_name->sid() == vmSymbols::find_sid(vmSymbols::java_lang_Class()) || _name->sid() == vmSymbols::find_sid(vmSymbols::java_lang_ClassLoader())) {
+    // Is it a weird instance klass? Keep it alive.
+    return true;
+  }
+
+  return false;
+}
 
 // ciKlass
 //
@@ -36,30 +90,38 @@
 
 // ------------------------------------------------------------------
 // ciKlass::ciKlass
-ciKlass::ciKlass(Klass* k) : ciType(k) {
+ciKlass::ciKlass(Klass* k)
+  : ciType(k),
+    _has_gc_callback(false) {
   assert(get_Klass()->is_klass(), "wrong type");
   Klass* klass = get_Klass();
   _layout_helper = klass->layout_helper();
   Symbol* klass_name = klass->name();
   assert(klass_name != nullptr, "wrong ciKlass constructor");
   _name = CURRENT_ENV->get_symbol(klass_name);
+  register_type_for_gc_callback(k);
 }
 
 // ------------------------------------------------------------------
 // ciKlass::ciKlass
 //
 // Nameless klass variant.
-ciKlass::ciKlass(Klass* k, ciSymbol* name) : ciType(k) {
+ciKlass::ciKlass(Klass* k, ciSymbol* name)
+  : ciType(k),
+    _has_gc_callback(false) {
   assert(get_Klass()->is_klass(), "wrong type");
   _name = name;
   _layout_helper = Klass::_lh_neutral_value;
+  register_type_for_gc_callback(k);
 }
 
 // ------------------------------------------------------------------
 // ciKlass::ciKlass
 //
 // Unloaded klass variant.
-ciKlass::ciKlass(ciSymbol* name, BasicType bt) : ciType(bt) {
+ciKlass::ciKlass(ciSymbol* name, BasicType bt)
+  : ciType(bt),
+    _has_gc_callback(false) {
   _name = name;
   _layout_helper = Klass::_lh_neutral_value;
 }

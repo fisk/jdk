@@ -131,6 +131,7 @@ class CollectedHeap : public CHeapObj<mtGC> {
 
   unsigned int _total_collections;          // ... started
   unsigned int _total_full_collections;     // ... started
+  uint32_t _total_collections_ended;
   NOT_PRODUCT(volatile size_t _promotion_failure_alot_count;)
   NOT_PRODUCT(volatile size_t _promotion_failure_alot_gc_number;)
 
@@ -390,6 +391,7 @@ class CollectedHeap : public CHeapObj<mtGC> {
   // Total number of GC collections (started)
   unsigned int total_collections() const { return _total_collections; }
   unsigned int total_full_collections() const { return _total_full_collections;}
+  uint32_t total_collections_ended() const { return _total_collections_ended; }
 
   // Increment total number of GC collections (started)
   void increment_total_collections(bool full = false) {
@@ -397,6 +399,10 @@ class CollectedHeap : public CHeapObj<mtGC> {
     if (full) {
       increment_total_full_collections();
     }
+  }
+
+  void increment_total_collections_ended() {
+    _total_collections_ended++;
   }
 
   void increment_total_full_collections() { _total_full_collections++; }

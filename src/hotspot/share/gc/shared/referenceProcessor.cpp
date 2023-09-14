@@ -445,6 +445,7 @@ void RefProcTask::process_discovered_list(uint worker_id,
                                           BoolObjectClosure* is_alive,
                                           OopClosure* keep_alive,
                                           EnqueueDiscoveredFieldClosure* enqueue) {
+
   ReferenceProcessor::RefProcSubPhases subphase;
   DiscoveredList* dl;
   switch (ref_type) {

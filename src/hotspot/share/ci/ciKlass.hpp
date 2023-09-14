@@ -48,8 +48,11 @@ class ciKlass : public ciType {
   friend class ciReceiverTypeData;
 
 private:
+  bool _has_gc_callback;
   ciSymbol* _name;
   jint _layout_helper;
+
+  void register_type_for_gc_callback(Klass* klass);
 
 protected:
   ciKlass(Klass* k, ciSymbol* name);
@@ -80,6 +83,11 @@ public:
 
   // What is its layout helper value?
   jint layout_helper() { return _layout_helper; }
+
+  // Will a GC callback run when an object of this type dies?
+  bool has_gc_callback() { return _has_gc_callback; }
+  void set_has_gc_callback() { _has_gc_callback = true; }
+  bool should_keep_argument_alive();
 
   bool is_subtype_of(ciKlass* klass);
   bool is_subclass_of(ciKlass* klass);

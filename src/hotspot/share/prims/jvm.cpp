@@ -44,6 +44,7 @@
 #include "classfile/vmClasses.hpp"
 #include "classfile/vmSymbols.hpp"
 #include "gc/shared/collectedHeap.inline.hpp"
+#include "gc/shared/gcCallbackStackWatermark.hpp"
 #include "interpreter/bytecode.hpp"
 #include "interpreter/bytecodeUtils.hpp"
 #include "jfr/jfrEvents.hpp"
@@ -86,6 +87,7 @@
 #include "runtime/osThread.hpp"
 #include "runtime/perfData.hpp"
 #include "runtime/reflection.hpp"
+#include "runtime/stackWatermarkSet.inline.hpp"
 #include "runtime/synchronizer.hpp"
 #include "runtime/threadIdentifier.hpp"
 #include "runtime/threadSMR.hpp"
@@ -3241,14 +3243,69 @@ JVM_END
 
 // java.lang.ref.Reference ///////////////////////////////////////////////////////////////
 
-
-JVM_ENTRY(jobject, JVM_GetAndClearReferencePendingList(JNIEnv* env))
+static oop get_and_clear_reference_pending_list() {
   MonitorLocker ml(Heap_lock);
   oop ref = Universe::reference_pending_list();
   if (ref != nullptr) {
     Universe::clear_reference_pending_list();
   }
-  return JNIHandles::make_local(THREAD, ref);
+  return ref;
+}
+
+class GetPendingListHandshakeClosure : public HandshakeClosure {
+  JavaThread* _processing_thread;
+  uint32_t _current_epoch;
+  bool _trigger_deopt;
+  volatile bool _should_trigger_deopt;
+
+public:
+  GetPendingListHandshakeClosure(JavaThread* processing_thread, uint32_t current_epoch, bool trigger_deopt)
+    : HandshakeClosure("GetPendingListHandshakeClosure"),
+      _processing_thread(processing_thread),
+      _current_epoch(current_epoch),
+      _trigger_deopt(trigger_deopt),
+      _should_trigger_deopt(false) {}
+
+  virtual void do_thread(Thread* thread) {
+    if (!thread->is_Java_thread()) {
+      return;
+    }
+
+    JavaThread* jt = JavaThread::cast(thread);
+    if (jt == _processing_thread) {
+      return;
+    }
+
+    GCCallbackStackWatermark* watermark = static_cast<GCCallbackStackWatermark*>(StackWatermarkSet::get(jt, StackWatermarkKind::gc_callback));
+    if (watermark != nullptr) {
+      if (!watermark->make_safe(jt, _current_epoch, _trigger_deopt)) {
+        Atomic::store(&_should_trigger_deopt, true);
+      }
+    }
+  }
+
+  bool should_trigger_deopt() const {
+    return _should_trigger_deopt;
+  }
+};
+
+JVM_ENTRY(jobject, JVM_GetAndClearReferencePendingList(JNIEnv* env))
+  JavaThread* current = JavaThread::current();
+  HandleMark hm(current);
+  uint32_t current_epoch = Universe::heap()->total_collections_ended();
+  Handle list(current, get_and_clear_reference_pending_list());
+  if (list() != nullptr) {
+    GetPendingListHandshakeClosure op1(current, current_epoch, false /* should_trigger_deopt */);
+    Handshake::execute(&op1);
+    if (op1.should_trigger_deopt()) {
+      // Wow, we actually found a not safe frame that requires deopt;
+      // Go for a walk and see if we still need to, and if so deliver the bad news
+      current->sleep(100); // TODO: Better heuristic for how long to wait
+      GetPendingListHandshakeClosure op2(current, current_epoch, true /* should_trigger_deopt */);
+      Handshake::execute(&op2);
+    }
+  }
+  return JNIHandles::make_local(THREAD, list());
 JVM_END
 
 JVM_ENTRY(jboolean, JVM_HasReferencePendingList(JNIEnv* env))
@@ -3261,6 +3318,15 @@ JVM_ENTRY(void, JVM_WaitForReferencePendingList(JNIEnv* env))
   while (!Universe::has_reference_pending_list()) {
     ml.wait();
   }
+JVM_END
+
+JVM_ENTRY(void, JVM_RegisterGCCallback(JNIEnv* env, jobject referent))
+  if (referent == nullptr) {
+    return;
+  }
+  oop referent_oop = JNIHandles::resolve_non_null(referent);
+  Klass* klass = referent_oop->klass();
+  klass->register_gc_callback();
 JVM_END
 
 JVM_ENTRY(jboolean, JVM_ReferenceRefersTo(JNIEnv* env, jobject ref, jobject o))

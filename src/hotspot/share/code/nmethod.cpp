@@ -546,7 +546,9 @@ nmethod* nmethod::new_nmethod(const methodHandle& method,
   ExceptionHandlerTable* handler_table,
   ImplicitExceptionTable* nul_chk_table,
   AbstractCompiler* compiler,
-  CompLevel comp_level
+  CompLevel comp_level,
+  bool has_gc_callback_type,
+  uint64_t gc_callback_type_epoch
 #if INCLUDE_JVMCI
   , char* speculations,
   int speculations_len,
@@ -582,7 +584,9 @@ nmethod* nmethod::new_nmethod(const methodHandle& method,
             handler_table,
             nul_chk_table,
             compiler,
-            comp_level
+            comp_level,
+            has_gc_callback_type,
+            gc_callback_type_epoch
 #if INCLUDE_JVMCI
             , speculations,
             speculations_len,
@@ -639,6 +643,7 @@ nmethod::nmethod(
   OopMapSet* oop_maps )
   : CompiledMethod(method, "native nmethod", type, nmethod_size, sizeof(nmethod), code_buffer, offsets->value(CodeOffsets::Frame_Complete), frame_size, oop_maps, false, true),
   _unlinked_next(nullptr),
+  _gc_callbacks(nullptr),
   _native_receiver_sp_offset(basic_lock_owner_sp_offset),
   _native_basic_lock_sp_offset(basic_lock_sp_offset),
   _is_unloading_state(0)
@@ -774,7 +779,9 @@ nmethod::nmethod(
   ExceptionHandlerTable* handler_table,
   ImplicitExceptionTable* nul_chk_table,
   AbstractCompiler* compiler,
-  CompLevel comp_level
+  CompLevel comp_level,
+  bool has_gc_callback_type,
+  uint64_t gc_callback_type_epoch
 #if INCLUDE_JVMCI
   , char* speculations,
   int speculations_len,
@@ -783,6 +790,7 @@ nmethod::nmethod(
   )
   : CompiledMethod(method, "nmethod", type, nmethod_size, sizeof(nmethod), code_buffer, offsets->value(CodeOffsets::Frame_Complete), frame_size, oop_maps, false, true),
   _unlinked_next(nullptr),
+  _gc_callbacks(nullptr),
   _native_receiver_sp_offset(in_ByteSize(-1)),
   _native_basic_lock_sp_offset(in_ByteSize(-1)),
   _is_unloading_state(0)
@@ -884,6 +892,9 @@ nmethod::nmethod(
       jvmci_nmethod_data()->copy(jvmci_data);
     }
 #endif
+
+    _has_gc_callback_type = has_gc_callback_type;
+    _gc_callback_type_epoch = gc_callback_type_epoch;
 
     Universe::heap()->register_nmethod(this);
     debug_only(Universe::heap()->verify_nmethod(this));
@@ -1462,6 +1473,8 @@ void nmethod::flush() {
     ec = next;
   }
 
+  delete _gc_callbacks;
+
   Universe::heap()->unregister_nmethod(this);
   CodeCache::unregister_old_nmethod(this);
 
@@ -1481,6 +1494,17 @@ oop nmethod::oop_at_phantom(int index) const {
     return nullptr;
   }
   return NMethodAccess<ON_PHANTOM_OOP_REF>::oop_load(oop_addr_at(index));
+}
+
+void nmethod::set_gc_callbacks(GrowableArrayCHeap<Klass*, mtCode>* gc_callbacks) {
+  _gc_callbacks = gc_callbacks;
+}
+
+bool nmethod::may_have_gc_callback_type() const {
+  if (_has_gc_callback_type) {
+    return true;
+  }
+  return _gc_callback_type_epoch < ciEnv::global_gc_callback_type_epoch();
 }
 
 //
@@ -1503,6 +1527,13 @@ void nmethod::flush_dependencies() {
         // During GC liveness of dependee determines class that needs to be updated.
         // The GC may clean dependency contexts concurrently and in parallel.
         ik->clean_dependency_context();
+      }
+    }
+
+    if (_gc_callbacks != nullptr) {
+      for (int i = 0; i < _gc_callbacks->length(); ++i) {
+        Klass* klass = _gc_callbacks->at(i);
+        klass->clean_gc_callback_dependency_context();
       }
     }
   }

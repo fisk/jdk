@@ -1269,6 +1269,9 @@ bool ZGenerationOld::mark_end() {
   // when marking terminates.
   CodeCache::on_gc_marking_cycle_finish();
 
+  // Notify that things died
+  Universe::heap()->increment_total_collections_ended();
+
   return true;
 }
 
