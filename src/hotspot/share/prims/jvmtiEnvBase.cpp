@@ -1443,136 +1443,137 @@ JvmtiEnvBase::check_non_suspended_or_opaque_frame(JavaThread* jt, oop thr_obj, b
 
 jvmtiError
 JvmtiEnvBase::get_object_monitor_usage(JavaThread* calling_thread, jobject object, jvmtiMonitorUsage* info_ptr) {
-  assert(SafepointSynchronize::is_at_safepoint(), "must be at safepoint");
-  Thread* current_thread = VMThread::vm_thread();
-  assert(current_thread == Thread::current(), "must be");
+  ShouldNotReachHere(); // TODO: JVMTI
+  //assert(SafepointSynchronize::is_at_safepoint(), "must be at safepoint");
+  //Thread* current_thread = VMThread::vm_thread();
+  //assert(current_thread == Thread::current(), "must be");
 
-  HandleMark hm(current_thread);
-  Handle hobj;
+  //HandleMark hm(current_thread);
+  //Handle hobj;
 
-  // Check arguments
-  {
-    oop mirror = JNIHandles::resolve_external_guard(object);
-    NULL_CHECK(mirror, JVMTI_ERROR_INVALID_OBJECT);
-    NULL_CHECK(info_ptr, JVMTI_ERROR_NULL_POINTER);
+  //// Check arguments
+  //{
+  //  oop mirror = JNIHandles::resolve_external_guard(object);
+  //  NULL_CHECK(mirror, JVMTI_ERROR_INVALID_OBJECT);
+  //  NULL_CHECK(info_ptr, JVMTI_ERROR_NULL_POINTER);
 
-    hobj = Handle(current_thread, mirror);
-  }
+  //  hobj = Handle(current_thread, mirror);
+  //}
 
-  ThreadsListHandle tlh(current_thread);
-  JavaThread *owning_thread = nullptr;
-  jvmtiMonitorUsage ret = {
-      nullptr, 0, 0, nullptr, 0, nullptr
-  };
+  //ThreadsListHandle tlh(current_thread);
+  //JavaThread *owning_thread = nullptr;
+  //jvmtiMonitorUsage ret = {
+  //    nullptr, 0, 0, nullptr, 0, nullptr
+  //};
 
-  uint32_t debug_bits = 0;
-  // first derive the object's owner and entry_count (if any)
-  owning_thread = ObjectSynchronizer::get_lock_owner(tlh.list(), hobj);
-  if (owning_thread != nullptr) {
-    Handle th(current_thread, get_vthread_or_thread_oop(owning_thread));
-    ret.owner = (jthread)jni_reference(calling_thread, th);
+  //uint32_t debug_bits = 0;
+  //// first derive the object's owner and entry_count (if any)
+  //owning_thread = ObjectSynchronizer::get_lock_owner(tlh.list(), hobj);
+  //if (owning_thread != nullptr) {
+  //  Handle th(current_thread, get_vthread_or_thread_oop(owning_thread));
+  //  ret.owner = (jthread)jni_reference(calling_thread, th);
 
-    // The recursions field of a monitor does not reflect recursions
-    // as lightweight locks before inflating the monitor are not included.
-    // We have to count the number of recursive monitor entries the hard way.
-    // We pass a handle to survive any GCs along the way.
-    ret.entry_count = count_locked_objects(owning_thread, hobj);
-  }
-  // implied else: entry_count == 0
+  //  // The recursions field of a monitor does not reflect recursions
+  //  // as lightweight locks before inflating the monitor are not included.
+  //  // We have to count the number of recursive monitor entries the hard way.
+  //  // We pass a handle to survive any GCs along the way.
+  //  ret.entry_count = count_locked_objects(owning_thread, hobj);
+  //}
+  //// implied else: entry_count == 0
 
-  jint nWant = 0, nWait = 0;
-  markWord mark = hobj->mark();
+  //jint nWant = 0, nWait = 0;
+  //markWord mark = hobj->mark();
 
-  ObjectMonitor* mon = mark.has_monitor()
-      ? ObjectSynchronizer::read_monitor(current_thread, hobj(), mark)
-      : nullptr;
+  //ObjectMonitor* mon = mark.has_monitor()
+  //    ? ObjectSynchronizer::read_monitor(current_thread, hobj(), mark)
+  //    : nullptr;
 
-  if (mon != nullptr) {
-    // this object has a heavyweight monitor
-    nWant = mon->contentions(); // # of threads contending for monitor
-    nWait = mon->waiters();     // # of threads in Object.wait()
-    ret.waiter_count = nWant + nWait;
-    ret.notify_waiter_count = nWait;
-  } else {
-    // this object has a lightweight monitor
-    ret.waiter_count = 0;
-    ret.notify_waiter_count = 0;
-  }
+  //if (mon != nullptr) {
+  //  // this object has a heavyweight monitor
+  //  nWant = mon->contentions(); // # of threads contending for monitor
+  //  nWait = mon->waiters();     // # of threads in Object.wait()
+  //  ret.waiter_count = nWant + nWait;
+  //  ret.notify_waiter_count = nWait;
+  //} else {
+  //  // this object has a lightweight monitor
+  //  ret.waiter_count = 0;
+  //  ret.notify_waiter_count = 0;
+  //}
 
-  // Allocate memory for heavyweight and lightweight monitor.
-  jvmtiError err;
-  err = allocate(ret.waiter_count * sizeof(jthread *), (unsigned char**)&ret.waiters);
-  if (err != JVMTI_ERROR_NONE) {
-    return err;
-  }
-  err = allocate(ret.notify_waiter_count * sizeof(jthread *),
-                 (unsigned char**)&ret.notify_waiters);
-  if (err != JVMTI_ERROR_NONE) {
-    deallocate((unsigned char*)ret.waiters);
-    return err;
-  }
+  //// Allocate memory for heavyweight and lightweight monitor.
+  //jvmtiError err;
+  //err = allocate(ret.waiter_count * sizeof(jthread *), (unsigned char**)&ret.waiters);
+  //if (err != JVMTI_ERROR_NONE) {
+  //  return err;
+  //}
+  //err = allocate(ret.notify_waiter_count * sizeof(jthread *),
+  //               (unsigned char**)&ret.notify_waiters);
+  //if (err != JVMTI_ERROR_NONE) {
+  //  deallocate((unsigned char*)ret.waiters);
+  //  return err;
+  //}
 
-  // now derive the rest of the fields
-  if (mon != nullptr) {
-    // this object has a heavyweight monitor
+  //// now derive the rest of the fields
+  //if (mon != nullptr) {
+  //  // this object has a heavyweight monitor
 
-    // Number of waiters may actually be less than the waiter count.
-    // So null out memory so that unused memory will be null.
-    memset(ret.waiters, 0, ret.waiter_count * sizeof(jthread *));
-    memset(ret.notify_waiters, 0, ret.notify_waiter_count * sizeof(jthread *));
+  //  // Number of waiters may actually be less than the waiter count.
+  //  // So null out memory so that unused memory will be null.
+  //  memset(ret.waiters, 0, ret.waiter_count * sizeof(jthread *));
+  //  memset(ret.notify_waiters, 0, ret.notify_waiter_count * sizeof(jthread *));
 
-    if (ret.waiter_count > 0) {
-      // we have contending and/or waiting threads
-      if (nWant > 0) {
-        // we have contending threads
-        ResourceMark rm(current_thread);
-        // get_pending_threads returns only java thread so we do not need to
-        // check for non java threads.
-        GrowableArray<JavaThread*>* wantList = Threads::get_pending_threads(tlh.list(), nWant, (address)mon);
-        if (wantList->length() < nWant) {
-          // robustness: the pending list has gotten smaller
-          nWant = wantList->length();
-        }
-        for (int i = 0; i < nWant; i++) {
-          JavaThread *pending_thread = wantList->at(i);
-          Handle th(current_thread, get_vthread_or_thread_oop(pending_thread));
-          ret.waiters[i] = (jthread)jni_reference(calling_thread, th);
-        }
-      }
-      if (nWait > 0) {
-        // we have threads in Object.wait()
-        int offset = nWant;  // add after any contending threads
-        ObjectWaiter *waiter = mon->first_waiter();
-        for (int i = 0, j = 0; i < nWait; i++) {
-          if (waiter == nullptr) {
-            // robustness: the waiting list has gotten smaller
-            nWait = j;
-            break;
-          }
-          JavaThread *w = mon->thread_of_waiter(waiter);
-          if (w != nullptr) {
-            // If the thread was found on the ObjectWaiter list, then
-            // it has not been notified. This thread can't change the
-            // state of the monitor so it doesn't need to be suspended.
-            Handle th(current_thread, get_vthread_or_thread_oop(w));
-            ret.waiters[offset + j] = (jthread)jni_reference(calling_thread, th);
-            ret.notify_waiters[j++] = (jthread)jni_reference(calling_thread, th);
-          }
-          waiter = mon->next_waiter(waiter);
-        }
-      }
-    } // ThreadsListHandle is destroyed here.
+  //  if (ret.waiter_count > 0) {
+  //    // we have contending and/or waiting threads
+  //    if (nWant > 0) {
+  //      // we have contending threads
+  //      ResourceMark rm(current_thread);
+  //      // get_pending_threads returns only java thread so we do not need to
+  //      // check for non java threads.
+  //      GrowableArray<JavaThread*>* wantList = Threads::get_pending_threads(tlh.list(), nWant, (address)mon);
+  //      if (wantList->length() < nWant) {
+  //        // robustness: the pending list has gotten smaller
+  //        nWant = wantList->length();
+  //      }
+  //      for (int i = 0; i < nWant; i++) {
+  //        JavaThread *pending_thread = wantList->at(i);
+  //        Handle th(current_thread, get_vthread_or_thread_oop(pending_thread));
+  //        ret.waiters[i] = (jthread)jni_reference(calling_thread, th);
+  //      }
+  //    }
+  //    if (nWait > 0) {
+  //      // we have threads in Object.wait()
+  //      int offset = nWant;  // add after any contending threads
+  //      ObjectWaiter *waiter = mon->first_waiter();
+  //      for (int i = 0, j = 0; i < nWait; i++) {
+  //        if (waiter == nullptr) {
+  //          // robustness: the waiting list has gotten smaller
+  //          nWait = j;
+  //          break;
+  //        }
+  //        JavaThread *w = mon->thread_of_waiter(waiter);
+  //        if (w != nullptr) {
+  //          // If the thread was found on the ObjectWaiter list, then
+  //          // it has not been notified. This thread can't change the
+  //          // state of the monitor so it doesn't need to be suspended.
+  //          Handle th(current_thread, get_vthread_or_thread_oop(w));
+  //          ret.waiters[offset + j] = (jthread)jni_reference(calling_thread, th);
+  //          ret.notify_waiters[j++] = (jthread)jni_reference(calling_thread, th);
+  //        }
+  //        waiter = mon->next_waiter(waiter);
+  //      }
+  //    }
+  //  } // ThreadsListHandle is destroyed here.
 
-    // Adjust count. nWant and nWait count values may be less than original.
-    ret.waiter_count = nWant + nWait;
-    ret.notify_waiter_count = nWait;
-  } else {
-    // this object has a lightweight monitor and we have nothing more
-    // to do here because the defaults are just fine.
-  }
+  //  // Adjust count. nWant and nWait count values may be less than original.
+  //  ret.waiter_count = nWant + nWait;
+  //  ret.notify_waiter_count = nWait;
+  //} else {
+  //  // this object has a lightweight monitor and we have nothing more
+  //  // to do here because the defaults are just fine.
+  //}
 
-  // we don't update return parameter unless everything worked
-  *info_ptr = ret;
+  //// we don't update return parameter unless everything worked
+  //*info_ptr = ret;
 
   return JVMTI_ERROR_NONE;
 }
