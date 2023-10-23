@@ -81,6 +81,11 @@ inline oop LockStack::pop() {
   return o;
 }
 
+inline oop LockStack::bottom() {
+  assert(to_index(_top) > 0, "must contain an oop");
+  return _base[0];
+}
+
 inline bool LockStack::is_empty() const {
   return to_index(_top) == 0;
 }

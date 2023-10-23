@@ -511,8 +511,11 @@ void ObjectSynchronizer::enter(Handle obj, BasicLock* lock, JavaThread* current)
     if (LockingMode == LM_LIGHTWEIGHT) {
       // Fast-locking does not use the 'lock' argument.
       LockStack& lock_stack = current->lock_stack();
+      markWord mark = obj()->mark_acquire();
+      if (!lock_stack.can_push() && !mark.has_monitor()) {
+        inflate(current, lock_stack.bottom(), inflate_cause_vm_internal);
+      }
       if (lock_stack.can_push()) {
-        markWord mark = obj()->mark_acquire();
         if (mark.is_neutral()) {
           assert(!lock_stack.contains(obj()), "thread must not already hold the lock");
           // Try to swing into 'fast-locked' state.

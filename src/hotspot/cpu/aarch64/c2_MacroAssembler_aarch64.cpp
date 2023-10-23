@@ -58,13 +58,38 @@ void C2_MacroAssembler::fast_lock(Register objectReg, Register boxReg, Register 
   assert_different_registers(oop, box, tmp, disp_hdr);
 
   // Load markWord from object into displaced_header.
-  ldr(disp_hdr, Address(oop, oopDesc::mark_offset_in_bytes()));
+  if (LockingMode != LM_LIGHTWEIGHT) {
+    ldr(disp_hdr, Address(oop, oopDesc::mark_offset_in_bytes()));
+  }
 
   if (DiagnoseSyncOnValueBasedClasses != 0) {
     load_klass(tmp, oop);
     ldrw(tmp, Address(tmp, Klass::access_flags_offset()));
     tstw(tmp, JVM_ACC_IS_VALUE_BASED_CLASS);
     br(Assembler::NE, cont);
+  }
+
+  Label success, recursive_check;
+
+  if (LockingMode == LM_LIGHTWEIGHT) {
+    // Check if we would have space on lock-stack for the object.
+    // todo: goto slow path if stack if full and inflate in runtime
+    ldrw(tmp, Address(rthread, JavaThread::lock_stack_top_offset()));
+    cmpw(tmp, (unsigned)LockStack::end_offset() - 1);
+    br(Assembler::GT, no_count);
+
+    if (OMRecursiveLightweight) {
+      subw(tmp3Reg, tmp, oopSize);
+      ldr(tmp3Reg, Address(rthread, tmp3Reg));
+      cmp(oop, tmp3Reg);
+      br(Assembler::EQ, success);
+    }
+
+    assert(oopDesc::mark_offset_in_bytes() == 0, "assumed");
+    if (OMPrefetchHeader) {
+      prfm(Address(oop), PSTL1STRM);
+    }
+    ldr(disp_hdr, Address(oop));
   }
 
   // Check for existing monitor
@@ -104,7 +129,27 @@ void C2_MacroAssembler::fast_lock(Register objectReg, Register boxReg, Register 
     b(cont);
   } else {
     assert(LockingMode == LM_LIGHTWEIGHT, "must be");
-    lightweight_lock(oop, disp_hdr, tmp, tmp3Reg, no_count);
+    // lightweight_lock(oop, disp_hdr, tmp, tmp3Reg, no_count);
+    ldaxr(disp_hdr, oop);
+
+    // Need to check that the disp_hdr is unlocked
+    // This checks that it is 0b01 and not 0b00
+    orr(tmp3Reg, disp_hdr, markWord::unlocked_value);
+    cmp(disp_hdr, tmp3Reg);
+    br(Assembler::NE, no_count);
+
+    // disp_hdr = must be 0b01 here
+    andr(disp_hdr, disp_hdr, ~markWord::unlocked_value);
+    stxr(rscratch1, disp_hdr, oop);
+    cmpw(rscratch1, 0u);
+    br(Assembler::NE, no_count);
+
+    bind(success);
+
+    // After successful lock, push object on lock-stack
+    str(oop, Address(rthread, tmp));
+    addw(tmp, tmp, oopSize);
+    strw(tmp, Address(rthread, JavaThread::lock_stack_top_offset()));
     b(count);
   }
 
@@ -168,8 +213,29 @@ void C2_MacroAssembler::fast_unlock(Register objectReg, Register boxReg, Registe
     br(Assembler::EQ, cont);
   }
 
-  // Handle existing monitor.
-  ldr(tmp, Address(oop, oopDesc::mark_offset_in_bytes()));
+  Register t1 = box;
+  Register t2 = disp_hdr;
+  Label success;
+
+  if (LockingMode != LM_LIGHTWEIGHT) {
+    // Handle existing monitor.
+    ldr(tmp, Address(oop, oopDesc::mark_offset_in_bytes()));
+  } else {
+    if (OMRecursiveLightweight) {
+      ldrw(t1, Address(rthread, JavaThread::lock_stack_top_offset()));
+      // oopSize * 2 may underflow but is _top and padding, probably does not look like this oop. TODO: ensure this.
+      subw(t2, t1, oopSize * 2);
+      ldr(t2, Address(rthread, t2));
+      cmp(oop, t2);
+      // next to last obj on lock_stack is also this oop, recursive unlock
+      br(Assembler::EQ, success);
+    }
+    assert(oopDesc::mark_offset_in_bytes() == 0, "assumed");
+    if (OMPrefetchHeader) {
+      prfm(Address(oop), PSTL1STRM);
+    }
+    ldxr(tmp, oop);
+  }
   tbnz(tmp, exact_log2(markWord::monitor_value), object_has_monitor);
 
   if (LockingMode == LM_MONITOR) {
@@ -185,7 +251,25 @@ void C2_MacroAssembler::fast_unlock(Register objectReg, Register boxReg, Registe
     b(cont);
   } else {
     assert(LockingMode == LM_LIGHTWEIGHT, "must be");
-    lightweight_unlock(oop, tmp, box, disp_hdr, no_count);
+    // lightweight_unlock(oop, tmp, box, disp_hdr, no_count);
+
+    // Load the new header (unlocked) into t1
+    orr(tmp, tmp, markWord::unlocked_value);
+    stlxr(rscratch1, tmp, oop);
+    cmpw(rscratch1, 0u);
+    br(Assembler::NE, no_count);
+
+    bind(success);
+    if (!OMRecursiveLightweight) {
+      ldrw(t1, Address(rthread, JavaThread::lock_stack_top_offset()));
+    }
+
+    // After successful unlock, pop object from lock-stack
+    subw(t1, t1, oopSize);
+  #ifdef ASSERT
+    str(zr, Address(rthread, t1));
+  #endif
+    strw(t1, Address(rthread, JavaThread::lock_stack_top_offset()));
     b(count);
   }
 

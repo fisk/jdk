@@ -86,6 +86,9 @@ public:
   // Pops an oop from this lock-stack.
   inline oop pop();
 
+  // Get the oldest oop from this lock-stack.
+  inline oop bottom();
+
   // Is the lock-stack empty
   inline bool is_empty() const;
 
