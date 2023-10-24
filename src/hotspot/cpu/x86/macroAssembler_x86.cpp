@@ -9797,22 +9797,24 @@ void MacroAssembler::check_stack_alignment(Register sp, const char* msg, unsigne
 // hdr: the (pre-loaded) header of the object, must be rax
 // thread: the thread which attempts to lock obj
 // tmp: a temporary register
-void MacroAssembler::lightweight_lock(Register obj, Register hdr, Register thread, Register tmp, Label& slow) {
+void MacroAssembler::lightweight_lock(Register obj, Register hdr, Register thread, Register tmp, Label& slow, bool check_recursion) {
   assert(hdr == rax, "header must be in rax for cmpxchg");
   assert_different_registers(obj, hdr, thread, tmp);
   Label success;
-
-  // First we need to check if the lock-stack has room for pushing the object reference.
-  // Note: we subtract 1 from the end-offset so that we can do a 'greater' comparison, instead
-  // of 'greaterEqual' below, which readily clears the ZF. This makes C2 code a little simpler and
-  // avoids one branch.
-  cmpl(Address(thread, JavaThread::lock_stack_top_offset()), LockStack::end_offset() - 1);
-  jcc(Assembler::greater, slow);
-
   Label recursion;
-  if (OMRecursiveLightweight && OMRecursiveFastPath2) {
-    testptr(hdr, markWord::unlocked_value);
-    jccb(Assembler::zero, recursion);
+
+  if (check_recursion) {
+    // First we need to check if the lock-stack has room for pushing the object reference.
+    // Note: we subtract 1 from the end-offset so that we can do a 'greater' comparison, instead
+    // of 'greaterEqual' below, which readily clears the ZF. This makes C2 code a little simpler and
+    // avoids one branch.
+    cmpl(Address(thread, JavaThread::lock_stack_top_offset()), LockStack::end_offset() - 1);
+    jcc(Assembler::greater, slow);
+
+    if (OMRecursiveLightweight) {
+      testptr(hdr, markWord::unlocked_value);
+      jccb(Assembler::zero, recursion);
+    }
   }
 
   // Now we attempt to take the fast-lock.
@@ -9824,7 +9826,7 @@ void MacroAssembler::lightweight_lock(Register obj, Register hdr, Register threa
   lock();
   cmpxchgptr(tmp, Address(obj, oopDesc::mark_offset_in_bytes()));
 
-  if (OMRecursiveLightweight) {
+  if (check_recursion && OMRecursiveLightweight) {
     // CAS successful
     jccb(Assembler::equal, success);
 
@@ -9855,12 +9857,12 @@ void MacroAssembler::lightweight_lock(Register obj, Register hdr, Register threa
 // obj: the object to be unlocked
 // hdr: the (pre-loaded) header of the object, must be rax
 // tmp: a temporary register
-void MacroAssembler::lightweight_unlock(Register obj, Register hdr, Register tmp, Label& slow) {
+void MacroAssembler::lightweight_unlock(Register obj, Register hdr, Register tmp, Label& slow, bool check_recursion) {
   assert(hdr == rax, "header must be in rax for cmpxchg");
   assert_different_registers(obj, hdr, tmp);
   Label success;
 
-  if (OMRecursiveLightweight) {
+  if (check_recursion && OMRecursiveLightweight) {
 #ifdef _LP64
     movl(tmp, Address(r15_thread, JavaThread::lock_stack_top_offset()));
     // oopSize * 2 may underflow but is _top and padding, probably does not look like this oop. TODO: ensure this.
@@ -9872,9 +9874,6 @@ void MacroAssembler::lightweight_unlock(Register obj, Register hdr, Register tmp
     cmpptr(obj, Address(tmp, -oopSize * 2));
 #endif
     jccb(Assembler::equal, success);
-
-    // TODO: x86 we can push tmp (ptr to top of lock stack) onto the stack here
-    //       and pop it after the CAS to avoid reloading the thread
   }
 
   // Mark-word must be lock_mask now, try to swing it back to unlocked_value.

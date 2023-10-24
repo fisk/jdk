@@ -247,6 +247,26 @@ void C2_MacroAssembler::fast_lock_rtm(Register objReg, Register boxReg, Register
 
 void C2_MacroAssembler::fast_unlock_prequel(Register objReg, Register boxReg, Register tmpReg,
                                             Label& Stacked, Label& COUNT, Label& NO_COUNT) {
+  if (LockingMode == LM_LIGHTWEIGHT && OMRecursiveLightweight) {
+    Label not_recursive;
+#ifdef _LP64
+    movl(tmpReg, Address(r15_thread, JavaThread::lock_stack_top_offset()));
+    // oopSize * 2 may underflow but is _top and padding, probably does not look like this oop. TODO: ensure this.
+    cmpptr(objReg, Address(r15_thread, tmpReg, Address::times_1, -oopSize * 2));
+    // next to last obj on lock_stack is also this oop, recursive unlock
+    jcc(Assembler::notEqual, not_recursive);
+    subl(Address(r15_thread, JavaThread::lock_stack_top_offset()), oopSize);
+#else
+    get_thread(tmpReg);
+    addptr(tmpReg, Address(tmpReg, JavaThread::lock_stack_top_offset()));
+    cmpptr(obj, Address(tmpReg, -oopSize * 2));
+    jcc(Assembler::notEqual, not_recursive);
+    // TODO: thread reg drama
+    subl(Address(r15_thread, JavaThread::lock_stack_top_offset()), oopSize);
+#endif
+    jmp(COUNT);
+    bind(not_recursive);
+  }
   if (LockingMode == LM_LEGACY) {
     cmpptr(Address(boxReg, 0), NULL_WORD);                            // Examine the displaced header
     jcc   (Assembler::zero, COUNT);                                   // 0 indicates recursive stack-lock
@@ -699,6 +719,29 @@ void C2_MacroAssembler::fast_lock_value_class_check(Register objReg, Register tm
 void C2_MacroAssembler::fast_lock_prequel(Register objReg, Register boxReg, Register tmpReg,
                                           Register scrReg, Register thread,
                                           Label& IsInflated, Label& DONE_LABEL, Label& NO_COUNT, Label& COUNT) {
+  if (LockingMode == LM_LIGHTWEIGHT && OMRecursiveLightweight) {
+    Label not_recursive;
+    // First we need to check if the lock-stack has room for pushing the object reference.
+    // Note: we subtract 1 from the end-offset so that we can do a 'greater' comparison, instead
+    // of 'greaterEqual' below, which readily clears the ZF. This makes C2 code a little simpler and
+    // avoids one branch.
+
+    movl(tmpReg, Address(thread, JavaThread::lock_stack_top_offset()));
+    cmpl(tmpReg, LockStack::end_offset() - 1);
+    jcc(Assembler::greater, NO_COUNT);
+
+    cmpptr(objReg, Address(thread, tmpReg, Address::times_1, -oopSize));
+    jcc(Assembler::notEqual, not_recursive);
+
+    // If successful, push object to lock-stack.
+    movptr(Address(thread, tmpReg), objReg);
+    incrementl(tmpReg, oopSize);
+    movl(Address(thread, JavaThread::lock_stack_top_offset()), tmpReg);
+    jmp(COUNT);
+
+    bind(not_recursive);
+  }
+
   movptr(tmpReg, Address(objReg, oopDesc::mark_offset_in_bytes()));          // [FETCH]
   testptr(tmpReg, markWord::monitor_value); // inflated vs stack-locked|neutral
   jcc(Assembler::notZero, IsInflated);
@@ -723,7 +766,7 @@ void C2_MacroAssembler::fast_lock_prequel(Register objReg, Register boxReg, Regi
     movptr(Address(boxReg, 0), tmpReg);
   } else {
     assert(LockingMode == LM_LIGHTWEIGHT, "");
-    lightweight_lock(objReg, tmpReg, thread, scrReg, NO_COUNT);
+    lightweight_lock(objReg, tmpReg, thread, scrReg, NO_COUNT, false);
     jmp(COUNT);
   }
   jmp(DONE_LABEL);
@@ -963,7 +1006,7 @@ void C2_MacroAssembler::fast_unlock_inflated(Register objReg, Register boxReg, R
     bind  (Stacked);
     if (LockingMode == LM_LIGHTWEIGHT) {
       mov(boxReg, tmpReg);
-      lightweight_unlock(objReg, boxReg, tmpReg, NO_COUNT);
+      lightweight_unlock(objReg, boxReg, tmpReg, NO_COUNT, false);
       jmp(COUNT);
     } else if (LockingMode == LM_LEGACY) {
       movptr(tmpReg, Address (boxReg, 0));      // re-fetch
