@@ -973,6 +973,8 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
     Label push;
     const Register top = box;
 
+    movptr(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
+
     cmpl(Address(thread, JavaThread::lock_stack_top_offset()), LockStack::end_offset() - 1);
     jcc(Assembler::greater, slow_path);
 
@@ -983,7 +985,6 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
     }
 
     // Check for inflated
-    movptr(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
     testptr(mark, markWord::monitor_value);
     jcc(Assembler::notZero, inflated);
 
@@ -1053,6 +1054,8 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register reg_rax, 
   { // Lightweight Unlock
     const Register top = reg_rax;
 
+    movptr(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
+
     movl(top, Address(thread, JavaThread::lock_stack_top_offset()));
     subl(top, oopSize);
     cmpptr(obj, Address(thread, top));
@@ -1067,8 +1070,6 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register reg_rax, 
       cmpptr(obj, Address(thread, top));
       jcc(Assembler::equal, unlocked);
     }
-
-    movptr(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
     testptr(mark, markWord::monitor_value);
     jccb(Assembler::notZero, inflated);
 
