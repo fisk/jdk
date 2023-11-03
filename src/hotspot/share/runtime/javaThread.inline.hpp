@@ -55,12 +55,6 @@ inline void JavaThread::clear_suspend_flag(SuspendFlags f) {
   while (Atomic::cmpxchg(&_suspend_flags, flags, (flags & ~f)) != flags);
 }
 
-inline void JavaThread::set_trace_flag() {
-  set_suspend_flag(_trace_flag);
-}
-inline void JavaThread::clear_trace_flag() {
-  clear_suspend_flag(_trace_flag);
-}
 inline void JavaThread::set_obj_deopt_flag() {
   set_suspend_flag(_obj_deopt);
 }

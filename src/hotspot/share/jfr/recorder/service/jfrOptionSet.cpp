@@ -127,16 +127,6 @@ void JfrOptionSet::set_retransform(jboolean value) {
   _retransform = value;
 }
 
-bool JfrOptionSet::sample_protection() {
-  return _sample_protection == JNI_TRUE;
-}
-
-#ifdef ASSERT
-void JfrOptionSet::set_sample_protection(jboolean protection) {
-  _sample_protection = protection;
-}
-#endif
-
 bool JfrOptionSet::compressed_integers() {
   // Set this to false for debugging purposes.
   return true;
@@ -167,7 +157,6 @@ const char* const default_stack_depth = "64";
 const char* const default_retransform = "true";
 const char* const default_old_object_queue_size = "256";
 const char* const default_preserve_repository = "false";
-DEBUG_ONLY(const char* const default_sample_protection = "false";)
 
 // statics
 static DCmdArgument<char*> _dcmd_repository(
@@ -233,15 +222,6 @@ static DCmdArgument<bool> _dcmd_sample_threads(
   false,
   default_sample_threads);
 
-#ifdef ASSERT
-static DCmdArgument<bool> _dcmd_sample_protection(
-  "sampleprotection",
-  "Safeguard for stackwalking while sampling threads (false by default)",
-  "BOOLEAN",
-  false,
-  default_sample_protection);
-#endif
-
 static DCmdArgument<jlong> _dcmd_stackdepth(
   "stackdepth",
   "Stack depth for stacktraces (minimum 1, maximum 2048)",
@@ -278,7 +258,6 @@ static void register_parser_options() {
   _parser.add_dcmd_option(&_dcmd_retransform);
   _parser.add_dcmd_option(&_dcmd_old_object_queue_size);
   _parser.add_dcmd_option(&_dcmd_preserve_repository);
-  DEBUG_ONLY(_parser.add_dcmd_option(&_dcmd_sample_protection);)
 }
 
 static bool parse_flight_recorder_options_internal(TRAPS) {
@@ -318,11 +297,6 @@ jlong JfrOptionSet::_num_global_buffers = 0;
 jlong JfrOptionSet::_old_object_queue_size = 0;
 u4 JfrOptionSet::_stack_depth = STACK_DEPTH_DEFAULT;
 jboolean JfrOptionSet::_retransform = JNI_TRUE;
-#ifdef ASSERT
-jboolean JfrOptionSet::_sample_protection = JNI_FALSE;
-#else
-jboolean JfrOptionSet::_sample_protection = JNI_TRUE;
-#endif
 
 bool JfrOptionSet::initialize(JavaThread* thread) {
   register_parser_options();

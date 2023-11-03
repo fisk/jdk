@@ -65,6 +65,4 @@
 #define THREAD_LOCAL_WRITER_OFFSET_JFR \
   JfrThreadLocal::java_event_writer_offset() + THREAD_LOCAL_OFFSET_JFR
 
-#define SUSPEND_THREAD_CONDITIONAL(thread) if ((thread)->is_trace_suspend()) JfrThreadSampling::on_javathread_suspend(thread)
-
 #endif // SHARE_JFR_SUPPORT_JFRTHREADEXTENSION_HPP
