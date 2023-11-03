@@ -37,6 +37,7 @@ class JfrStackTraceRepository : public JfrCHeapObj {
   friend class JfrRecorder;
   friend class JfrRecorderService;
   friend class JfrThreadSampleClosure;
+  friend class JfrThreadSampler;
   friend class ObjectSampleCheckpoint;
   friend class ObjectSampler;
   friend class RecordStackTrace;

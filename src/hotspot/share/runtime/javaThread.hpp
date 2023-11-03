@@ -47,6 +47,7 @@
 #include "utilities/macros.hpp"
 #if INCLUDE_JFR
 #include "jfr/support/jfrThreadExtension.hpp"
+#include "jfr/utilities/jfrTime.hpp"
 #endif
 
 class AsyncExceptionHandshake;
@@ -74,6 +75,12 @@ class javaVFrame;
 
 class JavaThread;
 typedef void (*ThreadFunction)(JavaThread*, TRAPS);
+
+struct JfrSampleRequest {
+  void*    _sample_pc;
+  void*    _sample_sp;
+  JfrTicks _sample_ticks;
+};
 
 class JavaThread: public Thread {
   friend class VMStructs;
@@ -212,8 +219,6 @@ class JavaThread: public Thread {
   inline void clear_suspend_flag(SuspendFlags f);
 
  public:
-  inline void set_trace_flag();
-  inline void clear_trace_flag();
   inline void set_obj_deopt_flag();
   inline void clear_obj_deopt_flag();
   bool is_trace_suspend()      { return (_suspend_flags & _trace_flag) != 0; }
@@ -308,6 +313,24 @@ class JavaThread: public Thread {
   //
   volatile TerminatedTypes _terminated;
 
+  Monitor                  _jfr_sample_monitor;
+  JfrSampleRequest         _jfr_sample_request;
+  volatile int             _jfr_sample_state;
+
+  GrowableArrayCHeap<JfrSampleRequest, mtTracing> _jfr_sample_requests;
+
+ public:
+  void set_jfr_sample_request(JfrSampleRequest request) { _jfr_sample_request = request; }
+  void set_jfr_sample_state(int state)                  { _jfr_sample_state = state; }
+
+  JfrSampleRequest jfr_sample_request() const { return _jfr_sample_request; }
+  int              jfr_sample_state()   const { return _jfr_sample_state; }
+
+  Monitor*        jfr_sample_monitor()        { return &_jfr_sample_monitor; }
+
+  GrowableArrayCHeap<JfrSampleRequest, mtTracing>* jfr_sample_requests() { return &_jfr_sample_requests; }
+
+ private:
   jint                  _in_deopt_handler;       // count of deoptimization
                                                  // handlers thread is in
   volatile bool         _doing_unsafe_access;    // Thread may fault due to unsafe access

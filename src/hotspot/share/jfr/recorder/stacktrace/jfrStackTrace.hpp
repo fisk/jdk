@@ -64,9 +64,9 @@ class JfrStackFrame {
 class JfrStackTrace : public JfrCHeapObj {
   friend class JfrNativeSamplerCallback;
   friend class JfrStackTraceRepository;
+  friend class JfrThreadSampler;
   friend class ObjectSampleCheckpoint;
   friend class ObjectSampler;
-  friend class OSThreadSampler;
   friend class StackTraceResolver;
  private:
   const JfrStackTrace* _next;
@@ -94,8 +94,8 @@ class JfrStackTrace : public JfrCHeapObj {
   void resolve_linenos() const;
 
   bool record(JavaThread* current_thread, int skip);
+  bool record_inner(JavaThread* jt, const frame& frame, int skip);
   bool record(JavaThread* current_thread, const frame& frame, int skip);
-  bool record_async(JavaThread* other_thread, const frame& frame);
 
   bool have_lineno() const { return _lineno; }
   bool full_stacktrace() const { return _reached_root; }

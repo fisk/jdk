@@ -48,7 +48,9 @@ class JfrThreadSampling : public JfrCHeapObj {
  public:
   static void set_java_sample_period(int64_t period_millis);
   static void set_native_sample_period(int64_t period_millis);
-  static void on_javathread_suspend(JavaThread* thread);
+
+  static void handle_requested_sampling(JavaThread* thread);
+  static bool has_requested_sampling(JavaThread* thread);
 };
 
 #endif // SHARE_JFR_PERIODIC_SAMPLING_JFRTHREADSAMPLER_HPP

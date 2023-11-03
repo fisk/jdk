@@ -433,6 +433,12 @@ JavaThread::JavaThread() :
 #endif
 
   _terminated(_not_terminated),
+
+  _jfr_sample_monitor(Monitor::nosafepoint, "jfr sample monitor"),
+  _jfr_sample_request(),
+  _jfr_sample_state(0),
+  _jfr_sample_requests(),
+
   _in_deopt_handler(0),
   _doing_unsafe_access(false),
   _do_not_unlock_if_synchronized(false),
@@ -1035,7 +1041,6 @@ void JavaThread::handle_special_runtime_exit_condition() {
     frame_anchor()->make_walkable();
     wait_for_object_deoptimization();
   }
-  JFR_ONLY(SUSPEND_THREAD_CONDITIONAL(this);)
 }
 
 
