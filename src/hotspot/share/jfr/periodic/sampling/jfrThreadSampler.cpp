@@ -192,16 +192,26 @@ static bool compute_top_java_frame(JavaThread* thread, JfrSampleRequest request,
   void* sampled_pc = request._sample_pc;
   const char* sampler = (thread == Thread::current()) ? "self" : "remote";
 
-  CodeBlob* cb = CodeCache::find_blob(sampled_pc);
+  CodeBlob* sampled_cb = CodeCache::find_blob(sampled_pc);
 
-  if (cb == nullptr || !cb->is_nmethod()) {
-    // If we didn't sample an nmethod, we use normal safepoint based stack traces
-    // Hot code will get compiled, and hence get good accuracy
+  if (sampled_cb == nullptr) {
+    // No code blob... probably native code. Perform a biased sample
     *top_frame = thread->last_frame();
     return true;
   }
 
-  nmethod* nm = cb->as_nmethod();
+  if (!sampled_cb->is_nmethod() &&
+      !sampled_cb->is_vtable_blob() &&
+      !sampled_cb->is_adapter_blob() &&
+      !sampled_cb->is_method_handles_adapter_blob()) {
+    // Cold code blob... perform a biased sample
+    *top_frame = thread->last_frame();
+    return true;
+  }
+
+  // For nmethods, vtable stubs, itable stubs, adapter blobs and method handle intrinsic blobs,
+  // want to perform an accurate unbiased sample
+  nmethod* sampled_nm = sampled_cb->as_nmethod_or_null();
 
   // We sampled an nmethod. Let's find the frame it came from.
   RegisterMap map(thread,
@@ -220,21 +230,28 @@ static bool compute_top_java_frame(JavaThread* thread, JfrSampleRequest request,
       continue;
     }
 
+    // Seek the first matching frame
     if (f->real_fp() <= sampled_sp) {
       // Continue searching the matching frame or its caller
       continue;
     }
 
+    if (sampled_nm == nullptr) {
+      // The sample didn't have an nmethod; we decided to trace from its caller
+      *top_frame = *f;
+      return true;
+    }
+
     // We might have a matching frame; check it
-    if (f->cb()->as_nmethod_or_null() == nm) {
+    if (f->cb()->as_nmethod_or_null() == sampled_nm) {
       // We found the sampled nmethod! Let's correct the safepoint bias
-      PcDesc* pc_desc = nm->pc_desc_near(address(sampled_pc) + 1);
+      PcDesc* pc_desc = sampled_nm->pc_desc_near(address(sampled_pc) + 1);
       if (pc_desc == nullptr || pc_desc->scope_decode_offset() == DebugInformationRecorder::serialized_null) {
         // Bogus PC at frame boundary; we are close enough to the caller; trace from there
         continue;
       }
-      f->set_pc(pc_desc->real_pc(nm));
-      assert(nm->pc_desc_at(f->pc()) != nullptr, "invalid pc");
+      f->set_pc(pc_desc->real_pc(sampled_nm));
+      assert(sampled_nm->pc_desc_at(f->pc()) != nullptr, "invalid pc");
 
       *top_frame = *f;
       return true;
@@ -243,19 +260,19 @@ static bool compute_top_java_frame(JavaThread* thread, JfrSampleRequest request,
       address saved_exception_pc = thread->saved_exception_pc();
       nmethod* exception_nm = saved_exception_pc == nullptr ? nullptr : CodeCache::find_blob(saved_exception_pc)->as_nmethod_or_null();
 
-      if (exception_nm == nm && nm->is_at_poll_return(saved_exception_pc)) {
+      if (exception_nm == sampled_nm && sampled_nm->is_at_poll_return(saved_exception_pc)) {
         // We have polled at an unwind site in the compiled method. Let's reconstruct what the frame
         // would have looked like before unwinding. This will point into garbage stack memory, but
         // is safe, as the stack sampling only cares about PCs, and not the content of the stack.
-        intptr_t* previous_sp = f->sp() - nm->frame_size();
+        intptr_t* previous_sp = f->sp() - sampled_nm->frame_size();
 
         // We found the sampled nmethod! Let's correct the safepoint bias
-        PcDesc* pc_desc = nm->pc_desc_near(address(sampled_pc) + 1);
+        PcDesc* pc_desc = sampled_nm->pc_desc_near(address(sampled_pc) + 1);
         if (pc_desc == nullptr || pc_desc->scope_decode_offset() == DebugInformationRecorder::serialized_null) {
           // Bogus PC at frame boundary; we are close enough to the caller; trace from there
           *top_frame = *f;
         } else {
-          *top_frame = frame(previous_sp, previous_sp, (intptr_t*)f->sp(), (address)pc_desc->real_pc(nm), nm);
+          *top_frame = frame(previous_sp, previous_sp, (intptr_t*)f->sp(), (address)pc_desc->real_pc(sampled_nm), sampled_nm);
         }
       } else {
         // Mismatched sample; trace from caller
