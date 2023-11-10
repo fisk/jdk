@@ -72,10 +72,10 @@
 
 
 #define UNSAFE_ENTRY(result_type, header) \
-  JVM_ENTRY(static result_type, header)
+  JVM_ENTRY(static result_type, header) if (JavaThread::current()->has_async_exception_condition()) {return (result_type)0;}
 
 #define UNSAFE_LEAF(result_type, header) \
-  JVM_LEAF(static result_type, header)
+  JVM_LEAF(static result_type, header) if (JavaThread::current()->has_async_exception_condition()) {return (result_type)0;}
 
 #define UNSAFE_END JVM_END
 

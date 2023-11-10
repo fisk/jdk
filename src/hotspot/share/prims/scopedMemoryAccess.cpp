@@ -69,20 +69,27 @@ public:
 
 class CloseScopedMemoryClosure : public HandshakeClosure {
   jobject _deopt;
+  jobject _error;
 
 public:
-  jboolean _found;
-
-  CloseScopedMemoryClosure(jobject deopt, jobject exception)
+  CloseScopedMemoryClosure(jobject deopt, jobject error)
     : HandshakeClosure("CloseScopedMemory")
     , _deopt(deopt)
-    , _found(false) {}
+    , _error(error) {}
 
   void do_thread(Thread* thread) {
-
     JavaThread* jt = JavaThread::cast(thread);
 
     if (!jt->has_last_Java_frame()) {
+      // No frames; not in a scoped memory access
+      return;
+    }
+
+    if (jt->exception_oop() != nullptr || jt->has_pending_exception() || jt->has_async_exception_condition()) {
+      // Target thread is either currently or is just about to process an exception,
+      // and will then unwind out from the scoped memory access. Not only do we not
+      // need to throw an async exception here... if we do, it might hit the target
+      // thread some time after the scoped access, and it would look rather weird.
       return;
     }
 
@@ -122,7 +129,12 @@ public:
           if (var->type() == T_OBJECT) {
             if (var->get_obj() == JNIHandles::resolve(_deopt)) {
               assert(depth < max_critical_stack_depth, "can't have more than %d critical frames", max_critical_stack_depth);
-              _found = true;
+              // We have found that the target thread is inside of a scoped access.
+              // An asynchronous handshake is sent to the target thread, telling it
+              // to throw an exception, which will unwind the target thread out from
+              // the scoped access.
+              OopHandle error(Universe::vm_global(), JNIHandles::resolve(_error));
+              jt->install_async_exception(new AsyncExceptionHandshake(error));
               return;
             }
           }
@@ -146,10 +158,9 @@ public:
  * class annotated with the '@Scoped' annotation), and whose local variables mention the session being
  * closed (deopt), this method returns false, signalling that the session cannot be closed safely.
  */
-JVM_ENTRY(jboolean, ScopedMemoryAccess_closeScope(JNIEnv *env, jobject receiver, jobject deopt, jobject exception))
-  CloseScopedMemoryClosure cl(deopt, exception);
+JVM_ENTRY(void, ScopedMemoryAccess_closeScope(JNIEnv *env, jobject receiver, jobject session, jobject error))
+  CloseScopedMemoryClosure cl(session, error);
   Handshake::execute(&cl);
-  return !cl._found;
 JVM_END
 
 /// JVM_RegisterUnsafeMethods
@@ -157,14 +168,14 @@ JVM_END
 #define PKG_MISC "Ljdk/internal/misc/"
 #define PKG_FOREIGN "Ljdk/internal/foreign/"
 
-#define MEMACCESS "ScopedMemoryAccess"
-#define SCOPE PKG_FOREIGN "MemorySessionImpl;"
+#define SESSION PKG_FOREIGN "MemorySessionImpl;"
+#define ERROR PKG_MISC "ScopedMemoryAccess$ScopedAccessError;"
 
 #define CC (char*)  /*cast a literal from (const char*)*/
 #define FN_PTR(f) CAST_FROM_FN_PTR(void*, &f)
 
 static JNINativeMethod jdk_internal_misc_ScopedMemoryAccess_methods[] = {
-    {CC "closeScope0",   CC "(" SCOPE ")Z",           FN_PTR(ScopedMemoryAccess_closeScope)},
+  {CC "closeScope0",   CC "(" SESSION ERROR ")V",           FN_PTR(ScopedMemoryAccess_closeScope)},
 };
 
 #undef CC
@@ -172,8 +183,8 @@ static JNINativeMethod jdk_internal_misc_ScopedMemoryAccess_methods[] = {
 
 #undef PKG_MISC
 #undef PKG_FOREIGN
-#undef MEMACCESS
-#undef SCOPE
+#undef SESSION
+#undef ERROR
 
 // This function is exported, used by NativeLookup.
 
