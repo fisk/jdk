@@ -196,14 +196,14 @@ JVM_END
 #define PKG_MISC "Ljdk/internal/misc/"
 #define PKG_FOREIGN "Ljdk/internal/foreign/"
 
-#define SESSION PKG_FOREIGN "MemorySessionImpl;"
-#define ERROR PKG_MISC "ScopedMemoryAccess$ScopedAccessError;"
+#define SCOPED_SESSION PKG_FOREIGN "MemorySessionImpl;"
+#define SCOPED_ERROR PKG_MISC "ScopedMemoryAccess$ScopedAccessError;"
 
 #define CC (char*)  /*cast a literal from (const char*)*/
 #define FN_PTR(f) CAST_FROM_FN_PTR(void*, &f)
 
 static JNINativeMethod jdk_internal_misc_ScopedMemoryAccess_methods[] = {
-  {CC "closeScope0",   CC "(" SESSION ERROR ")V",           FN_PTR(ScopedMemoryAccess_closeScope)},
+  {CC "closeScope0", CC "(" SCOPED_SESSION SCOPED_ERROR ")V", FN_PTR(ScopedMemoryAccess_closeScope)},
 };
 
 #undef CC
@@ -211,8 +211,8 @@ static JNINativeMethod jdk_internal_misc_ScopedMemoryAccess_methods[] = {
 
 #undef PKG_MISC
 #undef PKG_FOREIGN
-#undef SESSION
-#undef ERROR
+#undef SCOPED_SESSION
+#undef SCOPED_ERROR
 
 // This function is exported, used by NativeLookup.
 
