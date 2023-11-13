@@ -67,14 +67,65 @@ public:
   }
 };
 
+static bool is_in_scoped_access(JavaThread* jt, oop session) {
+  const int max_critical_stack_depth = 10;
+  int depth = 0;
+  for (vframeStream stream(jt); !stream.at_end(); stream.next()) {
+    Method* m = stream.method();
+    if (m->is_scoped()) {
+      StackValueCollection* locals = stream.asJavaVFrame()->locals();
+      for (int i = 0; i < locals->size(); i++) {
+        StackValue* var = locals->at(i);
+        if (var->type() == T_OBJECT) {
+          if (var->get_obj() == session) {
+            assert(depth < max_critical_stack_depth, "can't have more than %d critical frames", max_critical_stack_depth);
+            return true;
+          }
+        }
+      }
+      break;
+    }
+    depth++;
+#ifndef ASSERT
+    if (depth >= max_critical_stack_depth) {
+      break;
+    }
+#endif
+  }
+
+  return false;
+}
+
+class ScopedAsyncExceptionHandshake : public AsyncExceptionHandshake {
+  OopHandle _session;
+
+public:
+  ScopedAsyncExceptionHandshake(OopHandle& session, OopHandle& error)
+    : AsyncExceptionHandshake(error),
+      _session(session) {}
+
+  ~ScopedAsyncExceptionHandshake() {
+    _session.release(Universe::vm_global());
+  }
+
+  virtual void do_thread(Thread* thread) {
+    JavaThread* jt = JavaThread::cast(thread);
+    ResourceMark rm;
+    if (is_in_scoped_access(jt, _session.resolve())) {
+      // Throw exception to unwind out from the scoped access
+      AsyncExceptionHandshake::do_thread(thread);
+    }
+  }
+};
+
 class CloseScopedMemoryClosure : public HandshakeClosure {
-  jobject _deopt;
+  jobject _session;
   jobject _error;
 
 public:
-  CloseScopedMemoryClosure(jobject deopt, jobject error)
+  CloseScopedMemoryClosure(jobject session, jobject error)
     : HandshakeClosure("CloseScopedMemory")
-    , _deopt(deopt)
+    , _session(session)
     , _error(error) {}
 
   void do_thread(Thread* thread) {
@@ -82,14 +133,6 @@ public:
 
     if (!jt->has_last_Java_frame()) {
       // No frames; not in a scoped memory access
-      return;
-    }
-
-    if (jt->exception_oop() != nullptr || jt->has_pending_exception() || jt->has_async_exception_condition()) {
-      // Target thread is either currently or is just about to process an exception,
-      // and will then unwind out from the scoped memory access. Not only do we not
-      // need to throw an async exception here... if we do, it might hit the target
-      // thread some time after the scoped access, and it would look rather weird.
       return;
     }
 
@@ -104,8 +147,8 @@ public:
     }
 
     ResourceMark rm;
-    if (_deopt != nullptr && last_frame.is_compiled_frame() && last_frame.can_be_deoptimized()) {
-      CloseScopedMemoryFindOopClosure cl(_deopt);
+    if (_session != nullptr && last_frame.is_compiled_frame() && last_frame.can_be_deoptimized()) {
+      CloseScopedMemoryFindOopClosure cl(_session);
       CompiledMethod* cm = last_frame.cb()->as_compiled_method();
 
       /* FIXME: this doesn't work if reachability fences are violated by C2
@@ -118,35 +161,20 @@ public:
       Deoptimization::deoptimize(jt, last_frame);
     }
 
-    const int max_critical_stack_depth = 10;
-    int depth = 0;
-    for (vframeStream stream(jt); !stream.at_end(); stream.next()) {
-      Method* m = stream.method();
-      if (m->is_scoped()) {
-        StackValueCollection* locals = stream.asJavaVFrame()->locals();
-        for (int i = 0; i < locals->size(); i++) {
-          StackValue* var = locals->at(i);
-          if (var->type() == T_OBJECT) {
-            if (var->get_obj() == JNIHandles::resolve(_deopt)) {
-              assert(depth < max_critical_stack_depth, "can't have more than %d critical frames", max_critical_stack_depth);
-              // We have found that the target thread is inside of a scoped access.
-              // An asynchronous handshake is sent to the target thread, telling it
-              // to throw an exception, which will unwind the target thread out from
-              // the scoped access.
-              OopHandle error(Universe::vm_global(), JNIHandles::resolve(_error));
-              jt->install_async_exception(new AsyncExceptionHandshake(error));
-              return;
-            }
-          }
-        }
-        break;
-      }
-      depth++;
-#ifndef ASSERT
-      if (depth >= max_critical_stack_depth) {
-        break;
-      }
-#endif
+    if (jt->has_async_exception_condition()) {
+      // Target thread just about to throw an async exception using async handshakes,
+      // we will then unwind out from the scoped memory access.
+      return;
+    }
+
+    if (is_in_scoped_access(jt, JNIHandles::resolve(_session))) {
+      // We have found that the target thread is inside of a scoped access.
+      // An asynchronous handshake is sent to the target thread, telling it
+      // to throw an exception, which will unwind the target thread out from
+      // the scoped access.
+      OopHandle session(Universe::vm_global(), JNIHandles::resolve(_session));
+      OopHandle error(Universe::vm_global(), JNIHandles::resolve(_error));
+      jt->install_async_exception(new ScopedAsyncExceptionHandshake(session, error));
     }
   }
 };
