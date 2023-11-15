@@ -30,7 +30,6 @@
 #include "code/vtableStubs.hpp"
 #include "interp_masm_riscv.hpp"
 #include "memory/resourceArea.hpp"
-#include "oops/compiledICHolder.hpp"
 #include "oops/instanceKlass.hpp"
 #include "oops/klassVtable.hpp"
 #include "runtime/sharedRuntime.hpp"

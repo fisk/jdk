@@ -634,8 +634,8 @@ void MacroAssembler::unimplemented(const char* what) {
 }
 
 void MacroAssembler::emit_static_call_stub() {
-  IncompressibleRegion ir(this);  // Fixed length: see CompiledStaticCall::to_interp_stub_size().
-  // CompiledDirectStaticCall::set_to_interpreted knows the
+  IncompressibleRegion ir(this);  // Fixed length: see CompiledDirectCall::to_interp_stub_size().
+  // CompiledDirectCall::set_to_interpreted knows the
   // exact layout of this stub.
 
   mov_metadata(xmethod, (Metadata*)nullptr);

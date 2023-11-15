@@ -25,6 +25,7 @@
 #include "precompiled.hpp"
 #include "asm/assembler.hpp"
 #include "asm/assembler.inline.hpp"
+#include "code/compiledIC.hpp"
 #include "compiler/compiler_globals.hpp"
 #include "compiler/disassembler.hpp"
 #include "crc32c.h"
@@ -1337,15 +1338,51 @@ void MacroAssembler::call(AddressLiteral entry, Register rscratch) {
   }
 }
 
+intptr_t MacroAssembler::create_ic_data() {
+#ifdef COMPILER2
+  if (code_section()->scratch_emit()) {
+    return (intptr_t)Universe::non_oop_word();
+  }
+#endif
+
+  return (intptr_t)new CompiledICData();
+}
+
 void MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
 #ifdef _LP64
   // Needs full 64-bit immediate for later patching.
-  mov64(rax, (intptr_t)Universe::non_oop_word());
+  mov64(rax, create_ic_data());
 #else
-  movptr(rax, (intptr_t)Universe::non_oop_word());
+  movptr(rax, create_ic_data());
 #endif
   call(AddressLiteral(entry, rh));
+}
+
+int MacroAssembler::ic_check_size() {
+  return LP64_ONLY(14) NOT_LP64(12);
+}
+
+int MacroAssembler::ic_check(int end_alignment) {
+  Register receiver = j_rarg0;
+  Register data = rax;
+
+  align(end_alignment, offset() + ic_check_size());
+
+  int uep_offset = offset();
+
+  if (UseCompressedClassPointers) {
+    movl(rscratch1, Address(receiver, oopDesc::klass_offset_in_bytes()));
+    cmpl(rscratch1, Address(data, CompiledICData::speculated_klass_offset()));
+  } else {
+    movptr(rscratch1, Address(receiver, oopDesc::klass_offset_in_bytes()));
+    cmpptr(rscratch1, Address(data, CompiledICData::speculated_klass_offset()));
+  }
+  // if inline cache check fails, then jump to runtime routine
+  jump_cc(Assembler::notEqual, RuntimeAddress(SharedRuntime::get_ic_miss_stub()));
+  assert((offset() % end_alignment) == 0, "Misaligned verified entry point");
+
+  return uep_offset;
 }
 
 void MacroAssembler::emit_static_call_stub() {
@@ -4388,7 +4425,7 @@ void MacroAssembler::lookup_interface_method(Register recv_klass,
 }
 
 // Look up the method for a megamorphic invokeinterface call in a single pass over itable:
-// - check recv_klass (actual object class) is a subtype of resolved_klass from CompiledICHolder
+// - check recv_klass (actual object class) is a subtype of resolved_klass from CompiledICData
 // - find a holder_klass (class that implements the method) vtable offset and get the method from vtable by index
 // The target method is determined by <holder_klass, itable_index>.
 // The receiver klass is in recv_klass.

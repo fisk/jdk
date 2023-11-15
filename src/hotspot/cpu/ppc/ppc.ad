@@ -3452,7 +3452,7 @@ encode %{
       __ bl(__ pc());  // Emits a relocation.
 
       // The stub for call to interpreter.
-      address stub = CompiledStaticCall::emit_to_interp_stub(cbuf);
+      address stub = CompiledDirectCall::emit_to_interp_stub(cbuf);
       if (stub == NULL) {
         ciEnv::current()->record_failure("CodeCache is full");
         return;

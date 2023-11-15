@@ -28,7 +28,6 @@
 #include "code/vtableStubs.hpp"
 #include "interp_masm_s390.hpp"
 #include "memory/resourceArea.hpp"
-#include "oops/compiledICHolder.hpp"
 #include "oops/instanceKlass.hpp"
 #include "oops/klass.inline.hpp"
 #include "oops/klassVtable.hpp"
