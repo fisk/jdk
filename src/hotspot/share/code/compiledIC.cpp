@@ -75,25 +75,33 @@ bool CompiledICLocker::is_safe(address code) {
   return CompiledICProtectionBehaviour::current()->is_safe(cm);
 }
 
-//-----------------------------------------------------------------------------
-// Low-level access to an inline cache. Private, since they might not be
-// MT-safe to use.
+CompiledICHolder::CompiledICHolder(Metadata* metadata, Klass* klass, address destination, CompiledICState state)
+  : _holder_metadata(metadata), _holder_klass(klass), _destination(destination), _next(nullptr), _state(state) {
+}
 
-void* CompiledIC::cached_value() const {
-  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  assert (!is_optimized(), "an optimized virtual call does not have a cached metadata");
-
-  if (!is_in_transition_state()) {
-    void* data = get_data();
-    // If we let the metadata value here be initialized to zero...
-    assert(data != nullptr || Universe::non_oop_word() == nullptr,
-           "no raw nulls in CompiledIC metadatas, because of patching races");
-    return (data == (void*)Universe::non_oop_word()) ? nullptr : data;
-  } else {
-    return InlineCacheBuffer::cached_value_for((CompiledIC *)this);
+void CompiledICHolder::release() {
+  for (;;) {
+    CompiledICHolder* head = Atomic::load(&_unlink_list);
+    set_next(head);
+    if (Atomic::cmpxchg(&_unlink_list, head, this) == head) {
+      return;
+    }
   }
 }
 
+bool CompiledICHolder::is_loader_alive() {
+  if (_holder_metadata != nullptr) {
+    Klass* k = _state == CompiledICState::_monomorphic ? ((Method*)_holder_metadata)->method_holder() : (Klass*)_holder_metadata;
+    if (!k->is_loader_alive()) {
+      return false;
+    }
+  }
+
+  if (_holder_klass != nullptr && !_holder_klass->is_loader_alive()) {
+    return false;
+  }
+  return true;
+}
 
 void CompiledIC::set_holder(CompiledICHolder* holder) {
   assert(entry_point != nullptr, "must set legal entry point");
@@ -106,42 +114,6 @@ void CompiledIC::set_holder(CompiledICHolder* holder) {
   }
 
   _call->set_data(_value, holder);
-}
-
-address CompiledIC::ic_destination() const {
-  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  if (!is_in_transition_state()) {
-    return _call->destination();
-  } else {
-    return InlineCacheBuffer::ic_destination_for((CompiledIC *)this);
-  }
-}
-
-
-bool CompiledIC::is_in_transition_state() const {
-  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  return InlineCacheBuffer::contains(_call->destination());;
-}
-
-
-bool CompiledIC::is_icholder_call() const {
-  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  return !_is_optimized && is_icholder_entry(ic_destination());
-}
-
-// Returns native address of 'call' instruction in inline-cache. Used by
-// the InlineCacheBuffer when it needs to find the stub.
-address CompiledIC::stub_address() const {
-  assert(is_in_transition_state(), "should only be called when we are in a transition state");
-  return _call->destination();
-}
-
-// Clears the IC stub if the compiled IC is in transition state
-void CompiledIC::clear_ic_stub() {
-  if (is_in_transition_state()) {
-    ICStub* stub = ICStub_from_destination_address(stub_address());
-    stub->clear();
-  }
 }
 
 //-----------------------------------------------------------------------------
@@ -205,6 +177,7 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
   assert(is_call_to_compiled() || is_call_to_interpreted(), "going directly to megamorphic?");
 
   address entry;
+  CompiledICHolder* holder;
   if (call_info->call_kind() == CallInfo::itable_call) {
     assert(bytecode == Bytecodes::_invokeinterface, "");
     int itable_index = call_info->itable_index();
@@ -218,9 +191,10 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
     InstanceKlass* k = call_info->resolved_method()->method_holder();
     assert(k->verify_itable_index(itable_index), "sanity check");
 #endif //ASSERT
-    CompiledICHolder* holder = new CompiledICHolder(call_info->resolved_method()->method_holder(),
-                                                    call_info->resolved_klass(), false);
-    holder->claim();
+    holder = new CompiledICHolder(call_info->resolved_method()->method_holder(),
+                                  call_info->resolved_klass(),
+                                  entry,
+                                  CompiledICState::_itable);
     // LSan appears unable to follow malloc-based memory consistently when embedded as an immediate
     // in generated machine code. So we have to ignore it.
     LSAN_IGNORE_OBJECT(holder);
@@ -233,10 +207,10 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
     if (entry == nullptr) {
       return false;
     }
-    if (!InlineCacheBuffer::create_transition_stub(this, nullptr, entry)) {
-      needs_ic_stub_refill = true;
-      return false;
-    }
+    holder = new CompiledICHolder(nullptr,
+                                  nullptr,
+                                  entry,
+                                  CompiledICState::_vtable);
   }
 
   if (TraceICs) {
@@ -245,6 +219,8 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
     tty->print_cr ("IC@" INTPTR_FORMAT ": to megamorphic %s entry: " INTPTR_FORMAT,
                    p2i(instruction_address()), call_info->selected_method()->print_value_string(), p2i(entry));
   }
+
+  set_holder(holder);
 
   // We can't check this anymore. With lazy deopt we could have already
   // cleaned this IC entry before we even return. This is possible if
@@ -263,95 +239,23 @@ bool CompiledIC::is_megamorphic() const {
   assert(!is_optimized(), "an optimized call cannot be megamorphic");
 
   // Cannot rely on cached_value. It is either an interface or a method.
-  return VtableStubs::entry_point(ic_destination()) != nullptr;
+  return holder()->is_megamorphic();
 }
 
-bool CompiledIC::is_call_to_compiled() const {
-  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-
-  CodeBlob* cb = CodeCache::find_blob(ic_destination());
-  bool is_monomorphic = (cb != nullptr && cb->is_compiled());
-  // Check that the cached_value is a klass for non-optimized monomorphic calls
-  // This assertion is invalid for compiler1: a call that does not look optimized (no static stub) can be used
-  // for calling directly to vep without using the inline cache (i.e., cached_value == nullptr).
-  // For JVMCI this occurs because CHA is only used to improve inlining so call sites which could be optimized
-  // virtuals because there are no currently loaded subclasses of a type are left as virtual call sites.
-#ifdef ASSERT
-  CodeBlob* caller = CodeCache::find_blob(instruction_address());
-  bool is_c1_or_jvmci_method = caller->is_compiled_by_c1() || caller->is_compiled_by_jvmci();
-  assert( is_c1_or_jvmci_method ||
-         !is_monomorphic ||
-         is_optimized() ||
-         (cached_metadata() != nullptr && cached_metadata()->is_klass()), "sanity check");
-#endif // ASSERT
-  return is_monomorphic;
-}
-
-
-bool CompiledIC::is_call_to_interpreted() const {
-  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  // Call to interpreter if destination is either calling to a stub (if it
-  // is optimized), or calling to an I2C blob
-  bool is_call_to_interpreted = false;
-  if (!is_optimized()) {
-    CodeBlob* cb = CodeCache::find_blob(ic_destination());
-    is_call_to_interpreted = (cb != nullptr && cb->is_adapter_blob());
-    assert(!is_call_to_interpreted || (is_icholder_call() && cached_icholder() != nullptr), "sanity check");
-  } else {
-    // Check if we are calling into our own codeblob (i.e., to a stub)
-    address dest = ic_destination();
-#ifdef ASSERT
-    {
-      _call->verify_resolve_call(dest);
-    }
-#endif /* ASSERT */
-    is_call_to_interpreted = _call->is_call_to_interpreted(dest);
-  }
-  return is_call_to_interpreted;
-}
-
-bool CompiledIC::set_to_clean(bool in_use) {
+void CompiledIC::set_to_clean() {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
   if (TraceInlineCacheClearing || TraceICs) {
     tty->print_cr("IC@" INTPTR_FORMAT ": set to clean", p2i(instruction_address()));
     print();
   }
 
-  address entry = _call->get_resolve_call_stub(is_optimized());
-
-  bool safe_transition = _call->is_safe_for_patching() || !in_use || is_optimized() || SafepointSynchronize::is_at_safepoint();
-
-  if (safe_transition) {
-    // Kill any leftover stub we might have too
-    clear_ic_stub();
-    if (is_optimized()) {
-      set_ic_destination(entry);
-    } else {
-      set_ic_destination_and_value(entry, (void*)nullptr);
-    }
-  } else {
-    // Unsafe transition - create stub.
-    if (!InlineCacheBuffer::create_transition_stub(this, nullptr, entry)) {
-      return false;
-    }
-  }
-  // We can't check this anymore. With lazy deopt we could have already
-  // cleaned this IC entry before we even return. This is possible if
-  // we ran out of space in the inline cache buffer trying to do the
-  // set_next and we safepointed to free up space. This is a benign
-  // race because the IC entry was complete when we safepointed so
-  // cleaning it immediately is harmless.
-  // assert(is_clean(), "sanity check");
-  return true;
+  address entry = SharedRuntime::get_resolve_virtual_call_stub();
+  set_holder(new CompiledICHolder(nullptr, nullptr, entry, CompiledICState::_clean));
 }
 
 bool CompiledIC::is_clean() const {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  bool is_clean = false;
-  address dest = ic_destination();
-  is_clean = dest == _call->get_resolve_call_stub(is_optimized());
-  assert(!is_clean || is_optimized() || cached_value() == nullptr, "sanity check");
-  return is_clean;
+  return holder()->is_clean();
 }
 
 bool CompiledIC::set_to_monomorphic(CompiledICInfo& info) {
@@ -576,13 +480,6 @@ void CompiledStaticCall::compute_entry(const methodHandle& m, bool caller_is_nme
     assert(!m->is_method_handle_intrinsic(), "Compiled code should never call interpreter MH intrinsics");
     info._to_interpreter = true;
     info._entry      = m()->get_c2i_entry();
-  }
-}
-
-void CompiledStaticCall::compute_entry_for_continuation_entry(const methodHandle& m, StaticCallInfo& info) {
-  if (ContinuationEntry::is_interpreted_call(instruction_address())) {
-    info._to_interpreter = true;
-    info._entry = m()->get_c2i_entry();
   }
 }
 

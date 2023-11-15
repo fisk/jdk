@@ -3239,93 +3239,12 @@ void nmethod::print_code_comment_on(outputStream* st, int column, address begin,
 
 #endif
 
-class DirectNativeCallWrapper: public NativeCallWrapper {
-private:
-  NativeCall* _call;
-
-public:
-  DirectNativeCallWrapper(NativeCall* call) : _call(call) {}
-
-  virtual address destination() const { return _call->destination(); }
-  virtual address instruction_address() const { return _call->instruction_address(); }
-  virtual address next_instruction_address() const { return _call->next_instruction_address(); }
-  virtual address return_address() const { return _call->return_address(); }
-
-  virtual address get_resolve_call_stub(bool is_optimized) const {
-    if (is_optimized) {
-      return SharedRuntime::get_resolve_opt_virtual_call_stub();
-    }
-    return SharedRuntime::get_resolve_virtual_call_stub();
-  }
-
-  virtual void set_destination_mt_safe(address dest) {
-    _call->set_destination_mt_safe(dest);
-  }
-
-  virtual void set_to_interpreted(const methodHandle& method, CompiledICInfo& info) {
-    CompiledDirectStaticCall* csc = CompiledDirectStaticCall::at(instruction_address());
-    {
-      csc->set_to_interpreted(method, info.entry());
-    }
-  }
-
-  virtual void verify() const {
-    // make sure code pattern is actually a call imm32 instruction
-    _call->verify();
-    _call->verify_alignment();
-  }
-
-  virtual void verify_resolve_call(address dest) const {
-    CodeBlob* db = CodeCache::find_blob(dest);
-    assert(db != nullptr && !db->is_adapter_blob(), "must use stub!");
-  }
-
-  virtual bool is_call_to_interpreted(address dest) const {
-    CodeBlob* cb = CodeCache::find_blob(_call->instruction_address());
-    return cb->contains(dest);
-  }
-
-  virtual bool is_safe_for_patching() const { return false; }
-
-  virtual NativeInstruction* get_load_instruction(virtual_call_Relocation* r) const {
-    return nativeMovConstReg_at(r->cached_value());
-  }
-
-  virtual void *get_data(NativeInstruction* instruction) const {
-    return (void*)((NativeMovConstReg*) instruction)->data();
-  }
-
-  virtual void set_data(NativeInstruction* instruction, intptr_t data) {
-    ((NativeMovConstReg*) instruction)->set_data(data);
-  }
-};
-
-NativeCallWrapper* nmethod::call_wrapper_at(address call) const {
-  return new DirectNativeCallWrapper((NativeCall*) call);
-}
-
-NativeCallWrapper* nmethod::call_wrapper_before(address return_pc) const {
-  return new DirectNativeCallWrapper(nativeCall_before(return_pc));
-}
-
 address nmethod::call_instruction_address(address pc) const {
   if (NativeCall::is_call_before(pc)) {
     NativeCall *ncall = nativeCall_before(pc);
     return ncall->instruction_address();
   }
   return nullptr;
-}
-
-CompiledStaticCall* nmethod::compiledStaticCall_at(Relocation* call_site) const {
-  return CompiledDirectStaticCall::at(call_site);
-}
-
-CompiledStaticCall* nmethod::compiledStaticCall_at(address call_site) const {
-  return CompiledDirectStaticCall::at(call_site);
-}
-
-CompiledStaticCall* nmethod::compiledStaticCall_before(address return_addr) const {
-  return CompiledDirectStaticCall::before(return_addr);
 }
 
 #if defined(SUPPORT_DATA_STRUCTS)

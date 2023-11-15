@@ -76,96 +76,61 @@ public:
   static bool is_safe(address code);
 };
 
-class CompiledICInfo : public StackObj {
- private:
-  address _entry;              // entry point for call
-  void*   _cached_value;         // Value of cached_value (either in stub or inline cache)
-  bool    _is_icholder;          // Is the cached value a CompiledICHolder*
-  bool    _is_optimized;       // it is an optimized virtual call (i.e., can be statically bound)
-  bool    _to_interpreter;     // Call it to interpreter
-  bool    _release_icholder;
- public:
-  address entry() const        { return _entry; }
-  Metadata*    cached_metadata() const         { assert(!_is_icholder, ""); return (Metadata*)_cached_value; }
-  CompiledICHolder*    claim_cached_icholder() {
-    assert(_is_icholder, "");
-    assert(_cached_value != nullptr, "must be non-null");
-    _release_icholder = false;
-    CompiledICHolder* icholder = (CompiledICHolder*)_cached_value;
-    icholder->claim();
-    return icholder;
-  }
-  bool    is_optimized() const { return _is_optimized; }
-  bool  to_interpreter() const { return _to_interpreter; }
+// A CompiledICHolder* is a helper object for the inline cache implementation.
+// It holds:
+//   (1) (dest) when the inline cache is clean
+//   (2) (method+klass+dest) when the inline cache is monomorphic
+//   (3) (klass+klass+dest) when calling itable stub from megamorphic compiled call
+//   (4) (dest) when calling vtable stub from megamorphic compiled call
+//
 
-  void set_compiled_entry(address entry, Klass* klass, bool is_optimized) {
-    _entry      = entry;
-    _cached_value = (void*)klass;
-    _to_interpreter = false;
-    _is_icholder = false;
-    _is_optimized = is_optimized;
-    _release_icholder = false;
-  }
-
-  void set_interpreter_entry(address entry, Method* method) {
-    _entry      = entry;
-    _cached_value = (void*)method;
-    _to_interpreter = true;
-    _is_icholder = false;
-    _is_optimized = true;
-    _release_icholder = false;
-  }
-
-  void set_icholder_entry(address entry, CompiledICHolder* icholder) {
-    _entry      = entry;
-    _cached_value = (void*)icholder;
-    _to_interpreter = true;
-    _is_icholder = true;
-    _is_optimized = false;
-    _release_icholder = true;
-  }
-
-  CompiledICInfo(): _entry(nullptr), _cached_value(nullptr), _is_icholder(false),
-                    _is_optimized(false), _to_interpreter(false), _release_icholder(false) {
-  }
-  ~CompiledICInfo() {
-    // In rare cases the info is computed but not used, so release any
-    // CompiledICHolder* that was created
-    if (_release_icholder) {
-      assert(_is_icholder, "must be");
-      CompiledICHolder* icholder = (CompiledICHolder*)_cached_value;
-      icholder->claim();
-      delete icholder;
-    }
-  }
+enum class CompiledICState {
+  _clean,
+  _monomorphic,
+  _vtable,
+  _itable
 };
 
-class NativeCallWrapper: public ResourceObj {
-public:
-  virtual address destination() const = 0;
-  virtual address instruction_address() const = 0;
-  virtual address next_instruction_address() const = 0;
-  virtual address return_address() const = 0;
-  virtual address get_resolve_call_stub(bool is_optimized) const = 0;
-  virtual void set_destination_mt_safe(address dest) = 0;
-  virtual void set_to_interpreted(const methodHandle& method, CompiledICInfo& info) = 0;
-  virtual void verify() const = 0;
-  virtual void verify_resolve_call(address dest) const = 0;
+class CompiledICHolder : public CHeapObj<mtCompiler> {
+  friend class VMStructs;
+ private:
+  static CompiledICHolder* volatile _unlink_list;
+  static CompiledICHolder* _purge_list;
 
-  virtual bool is_call_to_interpreted(address dest) const = 0;
-  virtual bool is_safe_for_patching() const = 0;
+  Metadata* _holder_metadata;
+  Klass*    _holder_klass;    // to avoid name conflict with oopDesc::_klass
+  address   _destination;
+  CompiledICHolder* _next;
+  CompiledICState _state;
 
-  virtual NativeInstruction* get_load_instruction(virtual_call_Relocation* r) const = 0;
+ public:
+  // Constructor
+  CompiledICHolder(Metadata* metadata, Klass* klass, address destination, CompiledICState state);
 
-  virtual CompiledICHolder* get_data(NativeInstruction* instruction) const = 0;
-  virtual void set_data(NativeInstruction* instruction, CompiledICHolder* holder) = 0;
+  // accessors
+  Klass*    holder_klass()  const     { return _holder_klass; }
+  Metadata* holder_metadata() const   { return _holder_metadata; }
+  address   destination() const       { return _destination; }
+
+  static ByteSize holder_metadata_offset() { return byte_offset_of(CompiledICHolder, _holder_metadata); }
+  static ByteSize holder_klass_offset()    { return byte_offset_of(CompiledICHolder, _holder_klass); }
+  static ByteSize destination_offset()     { return byte_offset_of(CompiledICHolder, _destination); }
+
+  bool is_clean() { return _state == CompiledICState::_clean; }
+  bool is_monomorphic() { return _state == CompiledICState::_monomorphic; }
+  bool is_megamorphic() { return _state == CompiledICState::_itable || _state == CompiledICState::_vtable; }
+
+  CompiledICHolder* next()     { return _next; }
+  void set_next(CompiledICHolder* n) { _next = n; }
+
+  void release();
+
+  bool is_loader_alive();
 };
 
 class CompiledIC: public ResourceObj {
  private:
-  NativeCallWrapper* _call;
   NativeInstruction* _value;    // patchable value cell for this IC
-  bool          _is_optimized;  // an optimized virtual call (i.e., no compiled IC)
   CompiledMethod* _method;
 
   CompiledIC(CompiledMethod* cm, NativeCall* ic_call);
@@ -190,10 +155,6 @@ class CompiledIC: public ResourceObj {
     return (CompiledICHolder*)_call->get_data(_value);
   }
 
-  address ic_destination() const;
-
-  bool is_optimized() const   { return _is_optimized; }
-
   // State
   bool is_clean() const;
   bool is_megamorphic() const;
@@ -204,13 +165,7 @@ class CompiledIC: public ResourceObj {
 
   // MT-safe patching of inline caches. Note: Only safe to call is_xxx when holding the CompiledICLocker
   // so you are guaranteed that no patching takes place. The same goes for verify.
-  //
-  // Note: We do not provide any direct access to the stub code, to prevent parts of the code
-  // to manipulate the inline cache in MT-unsafe ways.
-  //
-  // They all takes a TRAP argument, since they can cause a GC if the inline-cache buffer is full.
-  //
-  void set_to_clean(bool in_use = true);
+  void set_to_clean();
   void set_to_monomorphic(CompiledICInfo& info);
   void clear_ic_stub();
 

@@ -1301,85 +1301,16 @@ methodHandle SharedRuntime::resolve_helper(bool is_virtual, bool is_optimized, T
   return callee_method;
 }
 
-void SharedRuntime::resolve_sub_helper_internal(methodHandle callee_method, const frame& caller_frame,
-                                                CompiledMethod* caller_nm, bool is_virtual, bool is_optimized,
-                                                Handle receiver, CallInfo& call_info, Bytecodes::Code invoke_code, TRAPS) {
-  StaticCallInfo static_call_info;
-  CompiledICInfo virtual_call_info;
+static address compute_static_entry(NativeCall *ncall, Method* callee_method) {
+  // TODO: Static call stub
+  CompiledMethod* code = callee_method->code();
 
-  // Make sure the callee nmethod does not get deoptimized and removed before
-  // we are done patching the code.
-  CompiledMethod* callee = callee_method->code();
-
-  if (callee != nullptr) {
-    assert(callee->is_compiled(), "must be nmethod for patching");
-  }
-
-  if (callee != nullptr && !callee->is_in_use()) {
-    // Patch call site to C2I adapter if callee nmethod is deoptimized or unloaded.
-    callee = nullptr;
-  }
-#ifdef ASSERT
-  address dest_entry_point = callee == nullptr ? 0 : callee->entry_point(); // used below
-#endif
-
-  bool is_nmethod = caller_nm->is_nmethod();
-
-  if (is_virtual) {
-    assert(receiver.not_null() || invoke_code == Bytecodes::_invokehandle, "sanity check");
-    bool static_bound = call_info.resolved_method()->can_be_statically_bound();
-    Klass* klass = invoke_code == Bytecodes::_invokehandle ? nullptr : receiver->klass();
-    CompiledIC::compute_monomorphic_entry(callee_method, klass,
-                     is_optimized, static_bound, is_nmethod, virtual_call_info,
-                     CHECK_false);
+  if (code == nullptr || !code->is_in_use() || ContinuationEntry::is_interpreted_call(ncall->instruction_address())) {
+    // Patch call site to C2I adapter if code is deoptimized or unloaded.
+    return callee_method->get_c2i_entry();
   } else {
-    // static call
-    CompiledStaticCall::compute_entry(callee_method, is_nmethod, static_call_info);
+    return code->verified_entry();
   }
-
-  // grab lock, check for deoptimization and potentially patch caller
-  {
-    CompiledICLocker ml(caller_nm);
-
-    // Lock blocks for safepoint during which both nmethods can change state.
-
-    // Now that we are ready to patch if the Method* was redefined then
-    // don't update call site and let the caller retry.
-    // Don't update call site if callee nmethod was unloaded or deoptimized.
-    // Don't update call site if callee nmethod was replaced by an other nmethod
-    // which may happen when multiply alive nmethod (tiered compilation)
-    // will be supported.
-    if (!callee_method->is_old() &&
-        (callee == nullptr || (callee->is_in_use() && callee_method->code() == callee))) {
-      NoSafepointVerifier nsv;
-#ifdef ASSERT
-      // We must not try to patch to jump to an already unloaded method.
-      if (dest_entry_point != 0) {
-        CodeBlob* cb = CodeCache::find_blob(dest_entry_point);
-        assert((cb != nullptr) && cb->is_compiled() && (((CompiledMethod*)cb) == callee),
-               "should not call unloaded nmethod");
-      }
-#endif
-      if (is_virtual) {
-        CompiledIC* inline_cache = CompiledIC_before(caller_nm, caller_frame.pc());
-        if (inline_cache->is_clean()) {
-          inline_cache->set_to_monomorphic(virtual_call_info);
-        }
-      } else {
-        if (VM_Version::supports_fast_class_init_checks() &&
-            invoke_code == Bytecodes::_invokestatic &&
-            callee_method->needs_clinit_barrier() &&
-            callee != nullptr && callee->is_compiled_by_jvmci()) {
-          return;
-        }
-        CompiledStaticCall* ssc = caller_nm->compiledStaticCall_before(caller_frame.pc());
-        if (is_nmethod && caller_nm->method()->is_continuation_enter_intrinsic()) {
-          ssc->compute_entry_for_continuation_entry(callee_method, static_call_info);
-        }
-        if (ssc->is_clean()) ssc->set(static_call_info);
-      }
-    }
-  } // unlock CompiledICLocker
 }
 
 // Resolves a call.  The compilers generate code for calls that go here
@@ -1395,7 +1326,7 @@ methodHandle SharedRuntime::resolve_sub_helper(bool is_virtual, bool is_optimize
 
   CodeBlob* caller_cb = caller_frame.cb();
   guarantee(caller_cb != nullptr && caller_cb->is_compiled(), "must be called from compiled method");
-  CompiledMethod* caller_nm = caller_cb->as_compiled_method_or_null();
+  CompiledMethod* caller_nm = caller_cb->as_compiled_method();
 
   // determine call info & receiver
   // note: a) receiver is null for static calls
@@ -1403,6 +1334,9 @@ methodHandle SharedRuntime::resolve_sub_helper(bool is_virtual, bool is_optimize
   CallInfo call_info;
   Bytecodes::Code invoke_code = Bytecodes::_illegal;
   Handle receiver = find_callee_info(invoke_code, call_info, CHECK_(methodHandle()));
+
+  NoSafepointVerifier nsv;
+
   methodHandle callee_method(current, call_info.selected_method());
 
   assert((!is_virtual && invoke_code == Bytecodes::_invokestatic ) ||
@@ -1435,7 +1369,8 @@ methodHandle SharedRuntime::resolve_sub_helper(bool is_virtual, bool is_optimize
     assert(callee_method->method_holder()->is_initialized() ||
            callee_method->method_holder()->is_init_thread(current),
            "invalid class initialization state for invoke_static");
-    if (!VM_Version::supports_fast_class_init_checks() && callee_method->needs_clinit_barrier()) {
+    bool supports_clinit_checks = VM_Version::supports_fast_class_init_checks() && !callee->is_compiled_by_jvmci();
+    if (!supports_clinit_checks && callee_method->needs_clinit_barrier()) {
       // In order to keep class initialization check, do not patch call
       // site for static call when the class is not fully initialized.
       // Proper check is enforced by call site re-resolution on every invocation.
@@ -1447,25 +1382,33 @@ methodHandle SharedRuntime::resolve_sub_helper(bool is_virtual, bool is_optimize
     }
   }
 
+
   // JSR 292 key invariant:
   // If the resolved method is a MethodHandle invoke target, the call
   // site must be a MethodHandle call site, because the lambda form might tail-call
   // leaving the stack in a state unknown to either caller or callee
-  // TODO detune for now but we might need it again
-//  assert(!callee_method->is_compiled_lambda_form() ||
-//         caller_nm->is_method_handle_return(caller_frame.pc()), "must be MH call site");
 
-  // Compute entry points. This might require generation of C2I converter
-  // frames, so we cannot be holding any locks here. Furthermore, the
-  // computation of the entry points is independent of patching the call.  We
-  // always return the entry-point, but we only patch the stub if the call has
-  // not been deoptimized.  Return values: For a virtual call this is an
-  // (cached_oop, destination address) pair. For a static call/optimized
-  // virtual this is just a destination address.
+  // Compute entry points. The computation of the entry points is independent of
+  // patching the call. For a static call/optimized virtual this is just a destination address.
 
-  resolve_sub_helper_internal(callee_method, caller_frame, caller_nm,
-                              is_virtual, is_optimized, receiver,
-                              call_info, invoke_code, CHECK_(methodHandle()));
+  // Make sure the callee nmethod does not get deoptimized and removed before
+  // we are done patching the code.
+
+  CompiledICLocker ml(caller_nm);
+
+  if (is_virtual && !is_optimized) {
+    // Callsite has has inline cache; try transitioning it to monomorphic
+    CompiledIC* inline_cache = CompiledIC_before(caller_nm, caller_frame.pc());
+    if (inline_cache->is_clean()) {
+      inline_cache->set_to_monomorphic(callee_method);
+    }
+  } else {
+    // Callsite is statically bound, i.e. it's a direct call instruction
+    assert(NativeCall::is_call_before(caller_frame.pc()), "weird callsite");
+    NativeCall *ncall = nativeCall_before(pc);
+    address entry = compute_static_entry(callee_method);
+    ncall->set_destination_mt_safe(entry);
+  }
 
   return callee_method;
 }
