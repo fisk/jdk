@@ -883,12 +883,6 @@ const int ObjectAlignmentInBytes = 8;
   develop(bool, TraceOopMapRewrites, false,                                 \
           "Trace rewriting of methods during oop map generation")           \
                                                                             \
-  develop(bool, TraceICBuffer, false,                                       \
-          "Trace usage of IC buffer")                                       \
-                                                                            \
-  develop(bool, TraceCompiledIC, false,                                     \
-          "Trace changes of compiled IC")                                   \
-                                                                            \
   develop(bool, FLSVerifyDictionary, false,                                 \
           "Do lots of (expensive) FLS dictionary verification")             \
                                                                             \

@@ -30,11 +30,14 @@
 #include "oops/klass.inline.hpp"
 
 inline bool CompiledICHolder::is_loader_alive() {
-  Klass* k = _is_metadata_method ? ((Method*)_holder_metadata)->method_holder() : (Klass*)_holder_metadata;
-  if (!k->is_loader_alive()) {
-    return false;
+  if (_holder_metadata != nullptr) {
+    Klass* k = _state == CompiledICState::_monomorphic ? ((Method*)_holder_metadata)->method_holder() : (Klass*)_holder_metadata;
+    if (!k->is_loader_alive()) {
+      return false;
+    }
   }
-  if (!_holder_klass->is_loader_alive()) {
+
+  if (_holder_klass != nullptr && !_holder_klass->is_loader_alive()) {
     return false;
   }
   return true;

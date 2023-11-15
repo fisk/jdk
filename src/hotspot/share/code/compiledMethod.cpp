@@ -431,7 +431,7 @@ void CompiledMethod::clear_inline_caches() {
   }
 }
 
-// Clear IC callsites, releasing ICStubs of all compiled ICs
+// Clear IC callsites
 // as well as any associated CompiledICHolders.
 void CompiledMethod::clear_ic_callsites() {
   assert(CompiledICLocker::is_safe(this), "mt unsafe call");

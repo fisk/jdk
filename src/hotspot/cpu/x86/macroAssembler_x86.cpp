@@ -1339,8 +1339,9 @@ void MacroAssembler::call(AddressLiteral entry, Register rscratch) {
 
 void MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
-  movptr(rax, (intptr_t)Universe::non_oop_word());
-  call(AddressLiteral(entry, rh));
+  movptr(rax, (intptr_t)(void*)new CompiledICHolder(nullptr, nullptr, entry, method_index, CompiledICState::_clean)); // TODO: don't emit during scratch_emit
+  relocate(rh);
+  call(Address(rax, CompiledICHolder::destination_offset()));
 }
 
 void MacroAssembler::emit_static_call_stub() {

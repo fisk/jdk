@@ -95,64 +95,18 @@ void* CompiledIC::cached_value() const {
 }
 
 
-void CompiledIC::internal_set_ic_destination(address entry_point, bool is_icstub, void* cache, bool is_icholder) {
+void CompiledIC::set_holder(CompiledICHolder* holder) {
   assert(entry_point != nullptr, "must set legal entry point");
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
   assert (!is_optimized() || cache == nullptr, "an optimized virtual call does not have a cached metadata");
-  assert (cache == nullptr || cache != (Metadata*)badOopVal, "invalid metadata");
 
-  assert(!is_icholder || is_icholder_entry(entry_point), "must be");
-
-  // Don't use ic_destination for this test since that forwards
-  // through ICBuffer instead of returning the actual current state of
-  // the CompiledIC.
-  if (is_icholder_entry(_call->destination())) {
-    // When patching for the ICStub case the cached value isn't
-    // overwritten until the ICStub copied into the CompiledIC during
-    // the next safepoint.  Make sure that the CompiledICHolder* is
-    // marked for release at this point since it won't be identifiable
-    // once the entry point is overwritten.
-    InlineCacheBuffer::queue_for_release((CompiledICHolder*)get_data());
+  if (holder != nullptr) {
+    // TODO remove in cleanup
+    holder()->release();
   }
 
-  if (TraceCompiledIC) {
-    tty->print("  ");
-    print_compiled_ic();
-    tty->print(" changing destination to " INTPTR_FORMAT, p2i(entry_point));
-    if (!is_optimized()) {
-      tty->print(" changing cached %s to " INTPTR_FORMAT, is_icholder ? "icholder" : "metadata", p2i((address)cache));
-    }
-    if (is_icstub) {
-      tty->print(" (icstub)");
-    }
-    tty->cr();
-  }
-
-  {
-    CodeBlob* cb = CodeCache::find_blob(_call->instruction_address());
-    assert(cb != nullptr && cb->is_compiled(), "must be compiled");
-    _call->set_destination_mt_safe(entry_point);
-  }
-
-  if (is_optimized() || is_icstub) {
-    // Optimized call sites don't have a cache value and ICStub call
-    // sites only change the entry point.  Changing the value in that
-    // case could lead to MT safety issues.
-    assert(cache == nullptr, "must be null");
-    return;
-  }
-
-  if (cache == nullptr)  cache = Universe::non_oop_word();
-
-  set_data((intptr_t)cache);
+  _call->set_data(_value, holder);
 }
-
-
-void CompiledIC::set_ic_destination(ICStub* stub) {
-  internal_set_ic_destination(stub->code_begin(), true, nullptr, false);
-}
-
-
 
 address CompiledIC::ic_destination() const {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
@@ -245,8 +199,7 @@ CompiledIC::CompiledIC(RelocIterator* iter)
 // transitional state. The needs_ic_stub_refill value will be set if the failure
 // was due to running out of IC stubs, in which case the caller will refill IC
 // stubs and retry.
-bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode,
-                                    bool& needs_ic_stub_refill, TRAPS) {
+bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode, TRAPS) {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
   assert(!is_optimized(), "cannot set an optimized virtual call to megamorphic");
   assert(is_call_to_compiled() || is_call_to_interpreted(), "going directly to megamorphic?");
@@ -268,11 +221,6 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
     CompiledICHolder* holder = new CompiledICHolder(call_info->resolved_method()->method_holder(),
                                                     call_info->resolved_klass(), false);
     holder->claim();
-    if (!InlineCacheBuffer::create_transition_stub(this, holder, entry)) {
-      delete holder;
-      needs_ic_stub_refill = true;
-      return false;
-    }
     // LSan appears unable to follow malloc-based memory consistently when embedded as an immediate
     // in generated machine code. So we have to ignore it.
     LSAN_IGNORE_OBJECT(holder);
@@ -554,26 +502,6 @@ void CompiledIC::compute_monomorphic_entry(const methodHandle& method,
     }
   }
   assert(info.is_optimized() == is_optimized, "must agree");
-}
-
-
-bool CompiledIC::is_icholder_entry(address entry) {
-  CodeBlob* cb = CodeCache::find_blob(entry);
-  if (cb == nullptr) {
-    return false;
-  }
-  if (cb->is_adapter_blob()) {
-    return true;
-  } else if (cb->is_vtable_blob()) {
-    return VtableStubs::is_icholder_entry(entry);
-  }
-  return false;
-}
-
-bool CompiledIC::is_icholder_call_site(virtual_call_Relocation* call_site, const CompiledMethod* cm) {
-  // This call site might have become stale so inspect it carefully.
-  address dest = cm->call_wrapper_at(call_site->addr())->destination();
-  return is_icholder_entry(dest);
 }
 
 // ----------------------------------------------------------------------------

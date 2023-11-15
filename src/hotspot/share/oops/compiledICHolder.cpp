@@ -31,8 +31,8 @@ volatile int CompiledICHolder::_live_count;
 volatile int CompiledICHolder::_live_not_claimed_count;
 #endif
 
-CompiledICHolder::CompiledICHolder(Metadata* metadata, Klass* klass, bool is_method)
-  : _holder_metadata(metadata), _holder_klass(klass), _next(nullptr), _is_metadata_method(is_method) {
+CompiledICHolder::CompiledICHolder(Metadata* metadata, Klass* klass, address destination, int table_index, CompiledICState state, bool is_method)
+  : _holder_metadata(metadata), _holder_klass(klass), _destination(destination), _next(nullptr), _table_index(table_index), _state(state) {
 #ifdef ASSERT
   Atomic::inc(&_live_count);
   Atomic::inc(&_live_not_claimed_count);
@@ -58,6 +58,15 @@ void CompiledICHolder::print_value_on(outputStream* st) const {
   st->print("%s", internal_name());
 }
 
+void CompiledICHolder::release() {
+  for (;;) {
+    CompiledICHolder* head = Atomic::load(&_unlink_list);
+    set_next(head);
+    if (Atomic::cmpxchg(&_unlink_list, head, this) == head) {
+      return;
+    }
+  }
+}
 
 // Verification
 

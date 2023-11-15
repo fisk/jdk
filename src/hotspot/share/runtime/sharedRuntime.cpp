@@ -1301,8 +1301,7 @@ methodHandle SharedRuntime::resolve_helper(bool is_virtual, bool is_optimized, T
   return callee_method;
 }
 
-// This fails if resolution required refilling of IC stubs
-bool SharedRuntime::resolve_sub_helper_internal(methodHandle callee_method, const frame& caller_frame,
+void SharedRuntime::resolve_sub_helper_internal(methodHandle callee_method, const frame& caller_frame,
                                                 CompiledMethod* caller_nm, bool is_virtual, bool is_optimized,
                                                 Handle receiver, CallInfo& call_info, Bytecodes::Code invoke_code, TRAPS) {
   StaticCallInfo static_call_info;
@@ -1364,16 +1363,14 @@ bool SharedRuntime::resolve_sub_helper_internal(methodHandle callee_method, cons
       if (is_virtual) {
         CompiledIC* inline_cache = CompiledIC_before(caller_nm, caller_frame.pc());
         if (inline_cache->is_clean()) {
-          if (!inline_cache->set_to_monomorphic(virtual_call_info)) {
-            return false;
-          }
+          inline_cache->set_to_monomorphic(virtual_call_info);
         }
       } else {
         if (VM_Version::supports_fast_class_init_checks() &&
             invoke_code == Bytecodes::_invokestatic &&
             callee_method->needs_clinit_barrier() &&
             callee != nullptr && callee->is_compiled_by_jvmci()) {
-          return true; // skip patching for JVMCI
+          return;
         }
         CompiledStaticCall* ssc = caller_nm->compiledStaticCall_before(caller_frame.pc());
         if (is_nmethod && caller_nm->method()->is_continuation_enter_intrinsic()) {
@@ -1383,7 +1380,6 @@ bool SharedRuntime::resolve_sub_helper_internal(methodHandle callee_method, cons
       }
     }
   } // unlock CompiledICLocker
-  return true;
 }
 
 // Resolves a call.  The compilers generate code for calls that go here
@@ -1467,20 +1463,11 @@ methodHandle SharedRuntime::resolve_sub_helper(bool is_virtual, bool is_optimize
   // (cached_oop, destination address) pair. For a static call/optimized
   // virtual this is just a destination address.
 
-  // Patching IC caches may fail if we run out if transition stubs.
-  // We refill the ic stubs then and try again.
-  for (;;) {
-    ICRefillVerifier ic_refill_verifier;
-    bool successful = resolve_sub_helper_internal(callee_method, caller_frame, caller_nm,
-                                                  is_virtual, is_optimized, receiver,
-                                                  call_info, invoke_code, CHECK_(methodHandle()));
-    if (successful) {
-      return callee_method;
-    } else {
-      InlineCacheBuffer::refill_ic_stubs();
-    }
-  }
+  resolve_sub_helper_internal(callee_method, caller_frame, caller_nm,
+                              is_virtual, is_optimized, receiver,
+                              call_info, invoke_code, CHECK_(methodHandle()));
 
+  return callee_method;
 }
 
 
@@ -1666,10 +1653,9 @@ JRT_END
 // to transitional states. The needs_ic_stub_refill value will be set if
 // the failure was due to running out of IC stubs, in which case handle_ic_miss_helper
 // refills the IC stubs and tries again.
-bool SharedRuntime::handle_ic_miss_helper_internal(Handle receiver, CompiledMethod* caller_nm,
+void SharedRuntime::handle_ic_miss_helper_internal(Handle receiver, CompiledMethod* caller_nm,
                                                    const frame& caller_frame, methodHandle callee_method,
-                                                   Bytecodes::Code bc, CallInfo& call_info,
-                                                   bool& needs_ic_stub_refill, TRAPS) {
+                                                   Bytecodes::Code bc, CallInfo& call_info, TRAPS) {
   CompiledICLocker ml(caller_nm);
   CompiledIC* inline_cache = CompiledIC_before(caller_nm, caller_frame.pc());
   bool should_be_mono = false;
@@ -1686,10 +1672,7 @@ bool SharedRuntime::handle_ic_miss_helper_internal(Handle receiver, CompiledMeth
     if (ic_oop != nullptr) {
       if (!ic_oop->is_loader_alive()) {
         // Deferred IC cleaning due to concurrent class unloading
-        if (!inline_cache->set_to_clean()) {
-          needs_ic_stub_refill = true;
-          return false;
-        }
+        inline_cache->set_to_clean();
       } else if (receiver()->klass() == ic_oop->holder_klass()) {
         // This isn't a real miss. We must have seen that compiled code
         // is now available and we want the call site converted to a
@@ -1718,22 +1701,13 @@ bool SharedRuntime::handle_ic_miss_helper_internal(Handle receiver, CompiledMeth
                                             inline_cache->is_optimized(),
                                             false, caller_nm->is_nmethod(),
                                             info, CHECK_false);
-    if (!inline_cache->set_to_monomorphic(info)) {
-      needs_ic_stub_refill = true;
-      return false;
-    }
+    inline_cache->set_to_monomorphic(info);
   } else if (!inline_cache->is_megamorphic() && !inline_cache->is_clean()) {
     // Potential change to megamorphic
 
-    bool successful = inline_cache->set_to_megamorphic(&call_info, bc, needs_ic_stub_refill, CHECK_false);
-    if (needs_ic_stub_refill) {
-      return false;
-    }
-    if (!successful) {
-      if (!inline_cache->set_to_clean()) {
-        needs_ic_stub_refill = true;
-        return false;
-      }
+    if (!inline_cache->set_to_megamorphic(&call_info, bc, CHECK_false)) {
+      // Ran out of vtable/itable stub memory; need to resolve every call
+      inline_cache->set_to_clean();
     }
   } else {
     // Either clean or megamorphic
@@ -1821,17 +1795,9 @@ methodHandle SharedRuntime::handle_ic_miss_helper(TRAPS) {
   CodeBlob* cb = caller_frame.cb();
   CompiledMethod* caller_nm = cb->as_compiled_method();
 
-  for (;;) {
-    ICRefillVerifier ic_refill_verifier;
-    bool needs_ic_stub_refill = false;
-    bool successful = handle_ic_miss_helper_internal(receiver, caller_nm, caller_frame, callee_method,
-                                                     bc, call_info, needs_ic_stub_refill, CHECK_(methodHandle()));
-    if (successful || !needs_ic_stub_refill) {
-      return callee_method;
-    } else {
-      InlineCacheBuffer::refill_ic_stubs();
-    }
-  }
+  handle_ic_miss_helper_internal(receiver, caller_nm, caller_frame, callee_method,
+                                 bc, call_info, needs_ic_stub_refill, CHECK_(methodHandle()));
+  return callee_method;
 }
 
 static bool clear_ic_at_addr(CompiledMethod* caller_nm, address call_addr, bool is_static_call) {
@@ -3390,8 +3356,8 @@ frame SharedRuntime::look_for_reserved_stack_annotated_method(JavaThread* curren
           method = sd->method();
           if (method != nullptr && method->has_reserved_stack_access()) {
             found = true;
-      }
-    }
+          }
+        }
       }
     }
     if (found) {

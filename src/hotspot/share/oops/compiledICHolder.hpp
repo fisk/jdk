@@ -32,18 +32,25 @@
 
 // A CompiledICHolder* is a helper object for the inline cache implementation.
 // It holds:
-//   (1) (method+klass pair) when converting from compiled to an interpreted call
-//   (2) (klass+klass pair) when calling itable stub from megamorphic compiled call
+//   (1) (dest) when the inline cache is clean
+//   (2) (method+klass+dest) when the inline cache is monomorphic
+//   (3) (method+klass+dest) when converting from compiled to an interpreted call
+//   (4) (klass+klass+dest) when calling itable stub from megamorphic compiled call
 //
-// These are always allocated in the C heap and are freed during a
-// safepoint by the ICBuffer logic.  It's unsafe to free them earlier
-// since they might be in use.
-//
+
+enum class CompiledICState {
+  _clean,
+  _monomorphic,
+  _vtable,
+  _itable
+};
 
 
 class CompiledICHolder : public CHeapObj<mtCompiler> {
   friend class VMStructs;
  private:
+  static CompiledICHolder* volatile _unlink_list;
+  static CompiledICHolder* _purge_list;
 #ifdef ASSERT
   static volatile int _live_count; // allocated
   static volatile int _live_not_claimed_count; // allocated but not yet in use so not
@@ -52,12 +59,14 @@ class CompiledICHolder : public CHeapObj<mtCompiler> {
 
   Metadata* _holder_metadata;
   Klass*    _holder_klass;    // to avoid name conflict with oopDesc::_klass
+  address   _destination;
   CompiledICHolder* _next;
-  bool _is_metadata_method;
+  int _table_index;
+  CompiledICState _state;
 
  public:
   // Constructor
-  CompiledICHolder(Metadata* metadata, Klass* klass, bool is_method = true);
+  CompiledICHolder(Metadata* metadata, Klass* klass, address destination, int table_index, CompiledICState state);
   ~CompiledICHolder() NOT_DEBUG_RETURN;
 
 #ifdef ASSERT
@@ -68,12 +77,16 @@ class CompiledICHolder : public CHeapObj<mtCompiler> {
   // accessors
   Klass*    holder_klass()  const     { return _holder_klass; }
   Metadata* holder_metadata() const   { return _holder_metadata; }
+  address   destination() const       { return _destination; }
 
   static ByteSize holder_metadata_offset() { return byte_offset_of(CompiledICHolder, _holder_metadata); }
   static ByteSize holder_klass_offset()    { return byte_offset_of(CompiledICHolder, _holder_klass); }
+  static ByteSize destination_offset()     { return byte_offset_of(CompiledICHolder, _destination); }
 
   CompiledICHolder* next()     { return _next; }
   void set_next(CompiledICHolder* n) { _next = n; }
+
+  void release();
 
   inline bool is_loader_alive();
 
