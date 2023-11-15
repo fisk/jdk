@@ -1080,7 +1080,7 @@ public:
 
   static int far_branch_size() {
     if (far_branches()) {
-      return 2 * 4;  // auipc + jalr, see far_call() & far_jump()
+      return 2 * NativeInstruction::instruction_size;  // auipc + jalr, see far_call() & far_jump()
     } else {
       return 4;
     }
@@ -1178,7 +1178,10 @@ public:
   //
   // Return: the call PC or null if CodeCache is full.
   address trampoline_call(Address entry);
+
   address ic_call(address entry, jint method_index = 0);
+  static int ic_check_size();
+  int ic_check(int end_alignment = NativeInstruction::instruction_size);
 
   // Support for memory inc/dec
   // n.b. increment/decrement calls with an Address destination will
