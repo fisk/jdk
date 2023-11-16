@@ -344,7 +344,9 @@ address CompiledDirectCall::find_stub() {
 void CompiledDirectCall::print() {
   // TODO: implement
 }
-void CompiledDirectCall::verify() {
+void CompiledDirectCall::verify_mt_safe(const methodHandle& callee, address entry,
+                                        NativeMovConstReg* method_holder,
+                                        NativeJump*        jump) {
   // TODO: implement
 }
 #endif
