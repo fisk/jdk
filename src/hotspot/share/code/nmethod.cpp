@@ -1220,29 +1220,29 @@ void nmethod::verify_clean_inline_caches() {
   RelocIterator iter(this, oops_reloc_begin());
   while(iter.next()) {
     switch(iter.type()) {
-      case relocInfo::virtual_call_type:
-      case relocInfo::opt_virtual_call_type: {
+      case relocInfo::virtual_call_type: {
         CompiledIC *ic = CompiledIC_at(&iter);
-        CodeBlob *cb = CodeCache::find_blob(ic->ic_destination());
+        CodeBlob *cb = CodeCache::find_blob(ic->holder()->destination());
         assert(cb != nullptr, "destination not in CodeBlob?");
         nmethod* nm = cb->as_nmethod_or_null();
         if( nm != nullptr ) {
           // Verify that inline caches pointing to bad nmethods are clean
-          if (!nm->is_in_use() || (nm->method()->code() != nm)) {
+          if (!nm->is_in_use() || nm->is_unloading() || (nm->method()->code() != nm)) {
             assert(ic->is_clean(), "IC should be clean");
           }
         }
         break;
       }
-      case relocInfo::static_call_type: {
-        CompiledDirectCall *csc = CompiledDirectCall::at(iter.reloc());
-        CodeBlob *cb = CodeCache::find_blob(csc->destination());
+      case relocInfo::static_call_type:
+      case relocInfo::opt_virtual_call_type: {
+        CompiledDirectCall *cdc = CompiledDirectCall::at(iter.reloc());
+        CodeBlob *cb = CodeCache::find_blob(cdc->destination());
         assert(cb != nullptr, "destination not in CodeBlob?");
         nmethod* nm = cb->as_nmethod_or_null();
-        if( nm != nullptr ) {
+        if (nm != nullptr) {
           // Verify that inline caches pointing to bad nmethods are clean
-          if (!nm->is_in_use() || (nm->method()->code() != nm)) {
-            assert(csc->is_clean(), "IC should be clean");
+          if (!nm->is_in_use() || nm->is_unloading() || (nm->method()->code() != nm)) {
+            assert(cdc->is_clean(), "IC should be clean");
           }
         }
         break;
@@ -1601,15 +1601,12 @@ void nmethod::metadata_do(MetadataClosure* f) {
         // Check compiledIC holders associated with this nmethod
         ResourceMark rm;
         CompiledIC *ic = CompiledIC_at(&iter);
-        if (ic->is_icholder_call()) {
-          CompiledICHolder* cichk = ic->cached_icholder();
-          f->do_metadata(cichk->holder_metadata());
-          f->do_metadata(cichk->holder_klass());
-        } else {
-          Metadata* ic_oop = ic->cached_metadata();
-          if (ic_oop != nullptr) {
-            f->do_metadata(ic_oop);
-          }
+        CompiledICHolder* h = ic->holder();
+        if (h->holder_metadata() != nullptr) {
+          f->do_metadata(h->holder_metadata());
+        }
+        if (h->holder_klass() != nullptr) {
+          f->do_metadata(h->holder_klass());
         }
       }
     }

@@ -106,10 +106,9 @@ class CompiledICHolder : public CHeapObj<mtCompiler> {
   bool is_loader_alive();
 
   // Holder cleanup
-  void trigger_cleanup();
-
-  bool has_cleanup_work();
-  void do_cleanup_work();
+  static void trigger_cleanup_work();
+  static bool has_cleanup_work();
+  static void do_cleanup_work();
 };
 
 class CompiledIC: public ResourceObj {

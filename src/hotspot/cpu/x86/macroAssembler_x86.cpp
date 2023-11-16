@@ -25,6 +25,7 @@
 #include "precompiled.hpp"
 #include "asm/assembler.hpp"
 #include "asm/assembler.inline.hpp"
+#include "code/compiledIC.hpp"
 #include "compiler/compiler_globals.hpp"
 #include "compiler/disassembler.hpp"
 #include "crc32c.h"
@@ -1339,7 +1340,7 @@ void MacroAssembler::call(AddressLiteral entry, Register rscratch) {
 
 void MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
-  movptr(rax, (intptr_t)(void*)new CompiledICHolder(nullptr, nullptr, entry, method_index, CompiledICState::_clean)); // TODO: don't emit during scratch_emit
+  movptr(rax, (intptr_t)(void*)new CompiledICHolder(nullptr, nullptr, entry, CompiledICState::_clean)); // TODO: don't emit during scratch_emit
   relocate(rh);
   call(Address(rax, CompiledICHolder::destination_offset()));
 }

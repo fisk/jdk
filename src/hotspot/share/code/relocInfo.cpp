@@ -641,12 +641,10 @@ Method* virtual_call_Relocation::method_value() {
   return (Method*)m;
 }
 
-bool virtual_call_Relocation::clear_inline_cache() {
-  // No stubs for ICs
-  // Clean IC
+void virtual_call_Relocation::clear_inline_cache() {
   ResourceMark rm;
   CompiledIC* icache = CompiledIC_at(this);
-  return icache->set_to_clean();
+  icache->set_to_clean();
 }
 
 
@@ -669,7 +667,7 @@ Method* opt_virtual_call_Relocation::method_value() {
   return (Method*)m;
 }
 
-bool opt_virtual_call_Relocation::clear_inline_cache() {
+void opt_virtual_call_Relocation::clear_inline_cache() {
   ResourceMark rm;
   CompiledDirectCall* callsite = CompiledDirectCall::at(this);
   callsite->set_to_clean();
@@ -709,7 +707,7 @@ void static_call_Relocation::unpack_data() {
   _method_index = unpack_1_int();
 }
 
-bool static_call_Relocation::clear_inline_cache() {
+void static_call_Relocation::clear_inline_cache() {
   ResourceMark rm;
   CompiledDirectCall* callsite = CompiledDirectCall::at(this);
   callsite->set_to_clean();
@@ -751,11 +749,10 @@ address trampoline_stub_Relocation::get_trampoline_for(address call, nmethod* co
   return nullptr;
 }
 
-bool static_stub_Relocation::clear_inline_cache() {
+void static_stub_Relocation::clear_inline_cache() {
   // Call stub is only used when calling the interpreted code.
   // It does not really need to be cleared, except that we want to clean out the methodoop.
   CompiledDirectCall::set_stub_to_clean(this);
-  return true;
 }
 
 

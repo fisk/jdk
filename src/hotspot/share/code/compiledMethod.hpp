@@ -364,7 +364,7 @@ public:
 
   // Inline cache support for class unloading and nmethod unloading
  private:
-  bool cleanup_inline_caches_impl(bool unloading_occurred, bool clean_all);
+  void cleanup_inline_caches_impl(bool unloading_occurred, bool clean_all);
 
   address continuation_for_implicit_exception(address pc, bool for_div0_check);
 
@@ -379,7 +379,6 @@ public:
   void run_nmethod_entry_barrier();
 
   // Verify and count cached icholder relocations.
-  int  verify_icholder_relocations();
   void verify_oop_relocations();
 
   bool has_evol_metadata();
@@ -406,7 +405,7 @@ public:
 
   virtual bool is_unloading() = 0;
 
-  bool unload_nmethod_caches(bool class_unloading_occurred);
+  void unload_nmethod_caches(bool class_unloading_occurred);
   virtual void do_unloading(bool unloading_occurred) = 0;
 
 private:

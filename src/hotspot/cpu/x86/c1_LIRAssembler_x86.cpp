@@ -341,7 +341,6 @@ int LIR_Assembler::check_icache() {
   const int ic_cmp_size = LP64_ONLY(10) NOT_LP64(9);
   int offset = __ offset();
   __ inline_cache_check(receiver, IC_Klass);
-  assert(__ offset() % CodeEntryAlignment == 0 || do_post_padding, "alignment must be correct");
   // force alignment after the cache check.
   __ align(CodeEntryAlignment);
   return offset;

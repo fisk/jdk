@@ -916,23 +916,6 @@ void CodeCache::verify_clean_inline_caches() {
 #endif
 }
 
-void CodeCache::verify_icholder_relocations() {
-#ifdef ASSERT
-  // make sure that we aren't leaking icholders
-  int count = 0;
-  FOR_ALL_HEAPS(heap) {
-    FOR_ALL_BLOBS(cb, *heap) {
-      CompiledMethod *nm = cb->as_compiled_method_or_null();
-      if (nm != nullptr) {
-        count += nm->verify_icholder_relocations();
-      }
-    }
-  }
-  assert(count + InlineCacheBuffer::pending_icholder_count() + CompiledICHolder::live_not_claimed_count() ==
-         CompiledICHolder::live_count(), "must agree");
-#endif
-}
-
 // Defer freeing of concurrently cleaned ExceptionCache entries until
 // after a global handshake operation.
 void CodeCache::release_exception_cache(ExceptionCache* entry) {

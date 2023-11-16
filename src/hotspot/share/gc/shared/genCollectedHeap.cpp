@@ -1003,8 +1003,6 @@ class GenGCPrologueClosure: public GenCollectedHeap::GenClosure {
 };
 
 void GenCollectedHeap::gc_prologue(bool full) {
-  assert(InlineCacheBuffer::is_empty(), "should have cleaned up ICBuffer");
-
   // Fill TLAB's and such
   ensure_parsability(true);   // retire TLABs
 

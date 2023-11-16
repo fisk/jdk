@@ -333,28 +333,6 @@ address CompiledMethod::oops_reloc_begin() const {
   return low_boundary;
 }
 
-int CompiledMethod::verify_icholder_relocations() {
-  ResourceMark rm;
-  int count = 0;
-
-  RelocIterator iter(this);
-  while(iter.next()) {
-    if (iter.type() == relocInfo::virtual_call_type) {
-      if (CompiledIC::is_icholder_call_site(iter.virtual_call_reloc(), this)) {
-        CompiledIC *ic = CompiledIC_at(&iter);
-        if (TraceCompiledIC) {
-          tty->print("noticed icholder " INTPTR_FORMAT " ", p2i(ic->cached_icholder()));
-          ic->print();
-        }
-        assert(ic->cached_icholder() != nullptr, "must be non-nullptr");
-        count++;
-      }
-    }
-  }
-
-  return count;
-}
-
 // Method that knows how to preserve outgoing arguments at call. This method must be
 // called with a frame corresponding to a Java invoke
 void CompiledMethod::preserve_callee_argument_oops(frame fr, const RegisterMap *reg_map, OopClosure* f) {
@@ -438,7 +416,7 @@ void CompiledMethod::clear_ic_callsites() {
   while(iter.next()) {
     if (iter.type() == relocInfo::virtual_call_type) {
       CompiledIC* ic = CompiledIC_at(&iter);
-      ic->set_to_clean(false);
+      ic->holder()->release();
     }
   }
 }
@@ -478,7 +456,7 @@ static void clean_if_nmethod_is_unloaded(CompiledIC *ic, CompiledMethod* from,
   if (!h->is_monomorphic()) {
     return;
   }
-  CodeBlob* cb = CodeCache::find_blob(h->entry());
+  CodeBlob* cb = CodeCache::find_blob(h->destination());
   if (!cb->is_compiled()) {
     return;
   }
@@ -495,7 +473,7 @@ static void clean_if_nmethod_is_unloaded(CompiledDirectCall *cdc, CompiledMethod
   }
   CompiledMethod* cm = CodeCache::find_blob(cdc->destination())->as_compiled_method();
   if (clean_all || !cm->is_in_use() || cm->is_unloading()) {
-    ic->set_to_clean();
+    cdc->set_to_clean();
   }
 }
 
@@ -506,7 +484,7 @@ static void clean_if_nmethod_is_unloaded(CompiledDirectCall *cdc, CompiledMethod
 // nmethods are unloaded.  Return postponed=true in the parallel case for
 // inline caches found that point to nmethods that are not yet visited during
 // the do_unloading walk.
-bool CompiledMethod::unload_nmethod_caches(bool unloading_occurred) {
+void CompiledMethod::unload_nmethod_caches(bool unloading_occurred) {
   ResourceMark rm;
 
   // Exception cache only needs to be called if unloading occurred
@@ -514,16 +492,13 @@ bool CompiledMethod::unload_nmethod_caches(bool unloading_occurred) {
     clean_exception_cache();
   }
 
-  if (!cleanup_inline_caches_impl(unloading_occurred, false)) {
-    return false;
-  }
+  cleanup_inline_caches_impl(unloading_occurred, false);
 
 #ifdef ASSERT
   // Check that the metadata embedded in the nmethod is alive
   CheckClass check_class;
   metadata_do(&check_class);
 #endif
-  return true;
 }
 
 void CompiledMethod::run_nmethod_entry_barrier() {
@@ -554,7 +529,7 @@ address* CompiledMethod::orig_pc_addr(const frame* fr) {
 }
 
 // Called to clean up after class unloading for live nmethods
-bool CompiledMethod::cleanup_inline_caches_impl(bool unloading_occurred, bool clean_all) {
+void CompiledMethod::cleanup_inline_caches_impl(bool unloading_occurred, bool clean_all) {
   assert(CompiledICLocker::is_safe(this), "mt unsafe call");
   ResourceMark rm;
 
@@ -576,9 +551,6 @@ bool CompiledMethod::cleanup_inline_caches_impl(bool unloading_occurred, bool cl
       break;
 
     case relocInfo::opt_virtual_call_type:
-      clean_if_nmethod_is_unloaded(CompiledDirectCall::at(&iter), this, clean_all);
-      break;
-
     case relocInfo::static_call_type:
       clean_if_nmethod_is_unloaded(CompiledDirectCall::at(iter.reloc()), this, clean_all);
       break;
@@ -631,8 +603,6 @@ bool CompiledMethod::cleanup_inline_caches_impl(bool unloading_occurred, bool cl
       break;
     }
   }
-
-  return true;
 }
 
 address CompiledMethod::continuation_for_implicit_exception(address pc, bool for_div0_check) {

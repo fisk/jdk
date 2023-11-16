@@ -95,7 +95,7 @@ bool CompiledICHolder::is_loader_alive() {
   return true;
 }
 
-void CompiledICHolder::trigger_cleanup() {
+void CompiledICHolder::trigger_cleanup_work() {
   assert(SafepointSynchronize::is_at_safepoint(), "Intended to trigger in safepoint cleanup");
   MonitorLocker ml(Service_lock, Mutex::_no_safepoint_check_flag);
   _purge_list = _unlink_list;
@@ -241,14 +241,14 @@ void CompiledIC::set_to_monomorphic(const methodHandle& callee_method, Klass* re
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
 
   // We speculate the receiver_klass is the only dynamic receiver_klass
-  nmethod* code = callee_method->code();
+  CompiledMethod* code = callee_method->code();
   address entry;
   if (code != nullptr && code->is_in_use() && !code->is_unloading()) {
     entry = code->entry_point();
   } else {
     entry = callee_method->get_c2i_entry();
   }
-  set_holder(new CompiledICHolder(callee_method, receiver_klass, entry, CompiledICState::_monomorphic));
+  set_holder(new CompiledICHolder(callee_method(), receiver_klass, entry, CompiledICState::_monomorphic));
 }
 
 // ----------------------------------------------------------------------------
@@ -264,13 +264,13 @@ void CompiledDirectCall::set(const methodHandle& callee_method) {
   CompiledMethod* code = callee_method->code();
 
   if (code != nullptr && code->is_in_use() && !code->is_unloading() &&
-      !ContinuationEntry::is_interpreted_call(ncall->instruction_address())) {
-    _call->set_destination_mt_safe(callee_method->verified_entry_point());
+      !ContinuationEntry::is_interpreted_call(instruction_address())) {
+    _call->set_destination_mt_safe(code->verified_entry_point());
   } else {
     // Patch call site to C2I adapter if code is deoptimized or unloaded.
     // We also need to patch the static call stub to set the rmethod register
     // to the callee_method so the c2i adapter knows how to build the frame
-    set_to_interpreted(callee, callee_method->get_c2i_entry());
+    set_to_interpreted(callee_method, callee_method->get_c2i_entry());
   }
 }
 
@@ -279,7 +279,7 @@ bool CompiledDirectCall::is_clean() const {
          destination() == SharedRuntime::get_resolve_opt_virtual_call_stub();
 }
 
-bool CompiledStaticCall::is_call_to_compiled() const {
+bool CompiledDirectCall::is_call_to_compiled() const {
   return !is_clean() && !is_call_to_interpreted();
 }
 

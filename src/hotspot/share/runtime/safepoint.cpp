@@ -27,6 +27,7 @@
 #include "classfile/stringTable.hpp"
 #include "classfile/symbolTable.hpp"
 #include "code/codeCache.hpp"
+#include "code/compiledIC.hpp"
 #include "code/nmethod.hpp"
 #include "code/pcDesc.hpp"
 #include "code/scopeDesc.hpp"
@@ -622,7 +623,7 @@ void SafepointSynchronize::do_cleanup_tasks() {
     cleanup.work(0);
   }
 
-  CompiledICHolder::trigger_cleanup();
+  CompiledICHolder::trigger_cleanup_work();
 
   if (log_is_enabled(Debug, monitorinflation)) {
     // The VMThread calls do_final_audit_and_print_stats() which calls

@@ -1328,8 +1328,7 @@ methodHandle SharedRuntime::resolve_helper(bool is_virtual, bool is_optimized, T
     assert(callee_method->method_holder()->is_initialized() ||
            callee_method->method_holder()->is_init_thread(current),
            "invalid class initialization state for invoke_static");
-    bool supports_clinit_checks = VM_Version::supports_fast_class_init_checks() && !callee->is_compiled_by_jvmci();
-    if (!supports_clinit_checks && callee_method->needs_clinit_barrier()) {
+    if (!VM_Version::supports_fast_class_init_checks() && callee_method->needs_clinit_barrier()) {
       // In order to keep class initialization check, do not patch call
       // site for static call when the class is not fully initialized.
       // Proper check is enforced by call site re-resolution on every invocation.
@@ -1802,6 +1801,7 @@ JRT_LEAF(void, SharedRuntime::fixup_callers_callsite(Method* method, address cal
     assert(NativeCall::is_call_before(return_pc), "Must get here through a call");
     ResourceMark mark;
 
+    NativeCall* call = nativeCall_before(return_pc);
     RelocIterator iter(caller, call->instruction_address(), call->next_instruction_address());
     iter.next();
     assert(iter.has_current(), "must have a reloc at java call site");
