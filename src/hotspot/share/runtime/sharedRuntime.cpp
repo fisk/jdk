@@ -1358,55 +1358,18 @@ methodHandle SharedRuntime::resolve_helper(bool is_virtual, bool is_optimized, T
   CompiledICLocker ml(caller_nm);
 
   if (is_virtual && !is_optimized) {
-    // Callsite has has inline cache; try transitioning it to monomorphic
+    // Callsite has has inline cache; transition it to monomorphic the first time it's called
     CompiledIC* inline_cache = CompiledIC_before(caller_nm, caller_frame.pc());
-    if (inline_cache->is_clean()) {
+    if (!inline_cache->is_megamorphic()) {
       inline_cache->set_to_monomorphic(callee_method);
     }
   } else {
-    // Callsite is statically bound, i.e. it's a direct call instruction
-    assert(NativeCall::is_call_before(caller_frame.pc()), "weird callsite");
-    NativeCall *ncall = nativeCall_before(pc);
-    patch_static_call(ncall, callee_method);
-    address entry = compute_static_entry(callee_method);
-    ncall->set_destination_mt_safe(entry);
+    // Callsite is a direct call - set it to the destination method
+    CompiledDirectCall* callsite = CompiledDirectCall::before(caller_frame.pc());
+    callsite->set(callee_method);
   }
 
   return callee_method;
-}
-
-static address find_static_call_stub_for(address instruction) {
-  // Find reloc. information containing this call-site
-  RelocIterator iter((nmethod*)nullptr, instruction);
-  while (iter.next()) {
-    if (iter.addr() == instruction) {
-      switch(iter.type()) {
-      case relocInfo::static_call_type:
-        return iter.static_call_reloc()->static_stub();
-        // We check here for opt_virtual_call_type, since we reuse the code
-        // from the CompiledIC implementation
-      case relocInfo::opt_virtual_call_type:
-        return iter.opt_virtual_call_reloc()->static_stub();
-      default:
-        ShouldNotReachHere();
-      }
-    }
-  }
-  return nullptr;
-}
-
-static address patch_static_call(NativeCall *ncall, Method* callee_method) {
-  CompiledMethod* code = callee_method->code();
-
-  if (code == nullptr || !code->is_in_use() || code->is_unloading() || ContinuationEntry::is_interpreted_call(ncall->instruction_address())) {
-    // Patch call site to C2I adapter if code is deoptimized or unloaded.
-    // We also need to patch the static call stub to set the rmethod register
-    // to the callee_method so the c2i adapter knows how to build the frame
-    address static_call_stub = find_static_call_stub_for(ncall->instruction_address());
-    return callee_method->get_c2i_entry();
-  } else {
-    return code->verified_entry();
-  }
 }
 
 // Inline caches exist only in compiled code

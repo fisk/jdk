@@ -26,27 +26,18 @@
 #include "code/codeBehaviours.hpp"
 #include "code/codeCache.hpp"
 #include "code/compiledIC.hpp"
-#include "code/icBuffer.hpp"
 #include "code/nmethod.hpp"
 #include "code/vtableStubs.hpp"
 #include "interpreter/interpreter.hpp"
-#include "interpreter/linkResolver.hpp"
-#include "memory/metadataFactory.hpp"
-#include "memory/oopFactory.hpp"
 #include "memory/resourceArea.hpp"
 #include "memory/universe.hpp"
 #include "oops/klass.inline.hpp"
 #include "oops/method.inline.hpp"
 #include "oops/oop.inline.hpp"
-#include "oops/symbol.hpp"
 #include "runtime/continuationEntry.hpp"
 #include "runtime/handles.inline.hpp"
-#include "runtime/icache.hpp"
-#include "runtime/safepoint.hpp"
 #include "runtime/sharedRuntime.hpp"
-#include "runtime/stubRoutines.hpp"
 #include "sanitizers/leak.hpp"
-#include "utilities/events.hpp"
 
 
 // Every time a compiled IC is changed or its type is being accessed,
@@ -103,13 +94,42 @@ bool CompiledICHolder::is_loader_alive() {
   return true;
 }
 
+void CompiledICHolder::trigger_holder_cleanup() {
+  assert(SafepointSynchronize::is_at_safepoint(), "Intended to trigger in safepoint cleanup");
+  MonitorLocker ml(Service_lock, Mutex::_no_safepoint_check_flag());
+  _purge_list = _unlink_list;
+  _unlink_list = nullptr;
+  ml.notify_all();
+}
+
+bool CompiledICHolder::has_cleanup_work() {
+  return _purge_list != nullptr;
+}
+
+// The service thread takes care of deleting released CompiledICHolders
+void CompiledICHolder::do_cleanup_work() {
+  CompiledICHolder* current = _purge_list;
+  _purge_list = nullptr;
+
+  ThreadBlockInVM tbivm(JavaThread::current());
+  while (current != nullptr) {
+    CompiledICHolder* next = current->next();
+    delete current;
+    current = next;
+  }
+}
+
+CompiledICHolder* CompiledIC::holder() const {
+  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
+  return (CompiledICHolder*)_call->get_data(_value);
+}
+
 void CompiledIC::set_holder(CompiledICHolder* holder) {
   assert(entry_point != nullptr, "must set legal entry point");
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
   assert (!is_optimized() || cache == nullptr, "an optimized virtual call does not have a cached metadata");
 
   if (holder != nullptr) {
-    // TODO remove in cleanup
     holder()->release();
   }
 
@@ -206,43 +226,17 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
                                   CompiledICState::_vtable);
   }
 
-  if (TraceICs) {
-    ResourceMark rm;
-    assert(call_info->selected_method() != nullptr, "Unexpected null selected method");
-    tty->print_cr ("IC@" INTPTR_FORMAT ": to megamorphic %s entry: " INTPTR_FORMAT,
-                   p2i(instruction_address()), call_info->selected_method()->print_value_string(), p2i(entry));
-  }
-
   set_holder(holder);
 
   assert(is_megamorphic(), "sanity check");
   return true;
 }
 
-
-// true if destination is megamorphic stub
-bool CompiledIC::is_megamorphic() const {
-  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  assert(!is_optimized(), "an optimized call cannot be megamorphic");
-
-  // Cannot rely on cached_value. It is either an interface or a method.
-  return holder()->is_megamorphic();
-}
-
 void CompiledIC::set_to_clean() {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  if (TraceInlineCacheClearing || TraceICs) {
-    tty->print_cr("IC@" INTPTR_FORMAT ": set to clean", p2i(instruction_address()));
-    print();
-  }
 
   address entry = SharedRuntime::get_resolve_virtual_call_stub();
   set_holder(new CompiledICHolder(nullptr, nullptr, entry, CompiledICState::_clean));
-}
-
-bool CompiledIC::is_clean() const {
-  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  return holder()->is_clean();
 }
 
 bool CompiledIC::set_to_monomorphic(Method* callee_method, Klass* receiver_klass) {
@@ -250,24 +244,41 @@ bool CompiledIC::set_to_monomorphic(Method* callee_method, Klass* receiver_klass
 
   // We speculate the receiver_klass is the only dynamic receiver_klass
   nmethod* code = callee_method->code();
-  if (!code->is_in_use || code->is_unloading()) {
-    code = nullptr;
+  address entry;
+  if (code != nullptr && code->is_in_use && !code->is_unloading()) {
+    entry = code->entry_point();
+  } else {
+    entry = callee_method->get_c2i_entry();
   }
-  address entry = code != nullptr ? code->entry_point() : callee_method->get_c2i_entry();
   set_holder(new CompiledICHolder(callee_method, receiver_klass, entry, CompiledICState::_monomorphic));
 }
 
 // ----------------------------------------------------------------------------
 
-void CompiledStaticCall::set_to_clean(bool in_use) {
+void CompiledDirectStaticCall::set_to_clean() {
   // in_use is unused but needed to match template function in CompiledMethod
   assert(CompiledICLocker::is_safe(instruction_address()), "mt unsafe call");
   // Reset call site
-  set_destination_mt_safe(resolve_call_stub());
+  _call->set_destination_mt_safe(resolve_call_stub());
+}
+
+void CompiledDirectCall::set(const methodHandle& callee_method) {
+  CompiledMethod* code = callee_method->code();
+
+  if (code != nullptr && code->is_in_use() && !code->is_unloading() &&
+      !ContinuationEntry::is_interpreted_call(ncall->instruction_address())) {
+    _call->set_destination_mt_safe(callee_method->verified_entry_point());
+  } else {
+    // Patch call site to C2I adapter if code is deoptimized or unloaded.
+    // We also need to patch the static call stub to set the rmethod register
+    // to the callee_method so the c2i adapter knows how to build the frame
+    set_to_interpreted(callee, callee_method->get_c2i_entry());
+  }
 }
 
 bool CompiledDirectStaticCall::is_clean() const {
-  return destination() == resolve_call_stub();
+  return destination() == SharedRuntime::get_resolve_static_call_stub() ||
+         destination() == SharedRuntime::get_resolve_opt_virtual_call_stub();
 }
 
 address CompiledDirectStaticCall::find_stub_for(address instruction) {

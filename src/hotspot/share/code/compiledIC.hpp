@@ -126,6 +126,12 @@ class CompiledICHolder : public CHeapObj<mtCompiler> {
   void release();
 
   bool is_loader_alive();
+
+  // Holder cleanup
+  void trigger_cleanup();
+
+  bool has_cleanup_work();
+  void do_cleanup_work();
 };
 
 class CompiledIC: public ResourceObj {
@@ -148,7 +154,7 @@ class CompiledIC: public ResourceObj {
   friend CompiledIC* CompiledIC_at(Relocation* call_site);
   friend CompiledIC* CompiledIC_at(RelocIterator* reloc_iter);
 
-  CompiledICHolder* holder() const {return (CompiledICHolder*)_call->get_data(_value);}
+  CompiledICHolder* holder() const;
 
   // State
   bool is_clean()       const { return holder()->is_clean(); }
@@ -165,7 +171,6 @@ class CompiledIC: public ResourceObj {
   // Returns true if successful and false otherwise. The call can fail if memory
   // allocation in the code cache fails, or ic stub refill is required.
   bool set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode, TRAPS);
-
 
   // Location
   address instruction_address() const { return _call->instruction_address(); }
@@ -205,7 +210,7 @@ inline CompiledIC* CompiledIC_at(RelocIterator* reloc_iter) {
 }
 
 //-----------------------------------------------------------------------------
-// The CompiledDirectStaticCall represents a call to a static method in the compiled
+// The CompiledDirectCall represents a call to a method in the compiled code
 //
 // Transition diagram of a static call site is somewhat simpler than for an inlined cache:
 //
@@ -221,7 +226,7 @@ inline CompiledIC* CompiledIC_at(RelocIterator* reloc_iter) {
 //
 //
 
-class CompiledDirectStaticCall : public ResourceObj {
+class CompiledDirectCall : public ResourceObj {
 private:
   friend class CompiledIC;
   friend class DirectNativeCallWrapper;
@@ -236,7 +241,7 @@ private:
 
   NativeCall* _call;
 
-  CompiledDirectStaticCall(NativeCall* call) : _call(call) {}
+  CompiledDirectCall(NativeCall* call) : _call(call) {}
 
  public:
   // Returns null if CodeBuffer::expand fails
@@ -245,19 +250,19 @@ private:
   static int to_trampoline_stub_size();
   static int reloc_to_interp_stub();
 
-  static inline CompiledDirectStaticCall* before(address return_addr) {
+  static inline CompiledDirectCall* before(address return_addr) {
     CompiledDirectStaticCall* st = new CompiledDirectStaticCall(nativeCall_before(return_addr));
     st->verify();
     return st;
   }
 
-  static inline CompiledDirectStaticCall* at(address native_call) {
+  static inline CompiledDirectCall* at(address native_call) {
     CompiledDirectStaticCall* st = new CompiledDirectStaticCall(nativeCall_at(native_call));
     st->verify();
     return st;
   }
 
-  static inline CompiledDirectStaticCall* at(Relocation* call_site) {
+  static inline CompiledDirectCall* at(Relocation* call_site) {
     return at(call_site->addr());
   }
 
@@ -268,7 +273,7 @@ private:
   // Clean static call (will force resolving on next use)
   void set_to_clean();
 
-  void set(Method* method);
+  void set(const methodHandle& callee_method);
   void set_to_interpreted(const methodHandle& callee, address entry);
 
   // State

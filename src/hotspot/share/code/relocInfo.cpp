@@ -669,18 +669,10 @@ Method* opt_virtual_call_Relocation::method_value() {
   return (Method*)m;
 }
 
-template<typename CompiledICorStaticCall>
-static bool set_to_clean_no_ic_refill(CompiledICorStaticCall* ic) {
-  guarantee(ic->set_to_clean(), "Should not need transition stubs");
-  return true;
-}
-
 bool opt_virtual_call_Relocation::clear_inline_cache() {
-  // No stubs for ICs
-  // Clean IC
   ResourceMark rm;
-  CompiledIC* icache = CompiledIC_at(this);
-  return set_to_clean_no_ic_refill(icache);
+  CompiledDirectCall* callsite = CompiledDirectCall::at(this);
+  callsite->set_to_clean();
 }
 
 address opt_virtual_call_Relocation::static_stub() {
@@ -718,9 +710,9 @@ void static_call_Relocation::unpack_data() {
 }
 
 bool static_call_Relocation::clear_inline_cache() {
-  // Safe call site info
-  CompiledStaticCall* handler = this->code()->compiledStaticCall_at(this);
-  return set_to_clean_no_ic_refill(handler);
+  ResourceMark rm;
+  CompiledDirectCall* callsite = CompiledDirectCall::at(this);
+  callsite->set_to_clean();
 }
 
 
@@ -762,7 +754,7 @@ address trampoline_stub_Relocation::get_trampoline_for(address call, nmethod* co
 bool static_stub_Relocation::clear_inline_cache() {
   // Call stub is only used when calling the interpreted code.
   // It does not really need to be cleared, except that we want to clean out the methodoop.
-  CompiledDirectStaticCall::set_stub_to_clean(this);
+  CompiledDirectCall::set_stub_to_clean(this);
   return true;
 }
 
