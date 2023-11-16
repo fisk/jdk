@@ -1816,7 +1816,7 @@ JRT_LEAF(void, SharedRuntime::fixup_callers_callsite(Method* method, address cal
     }
 
     CompiledDirectCall* callsite = CompiledDirectCall::before(return_pc);
-    methodHandle callee_method(THREAD, method);
+    methodHandle callee_method(JavaThread::current(), method);
     callsite->set(callee_method);
   }
 JRT_END

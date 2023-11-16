@@ -122,6 +122,9 @@ void CompiledICHolder::do_cleanup_work() {
   }
 }
 
+CompiledICHolder* volatile CompiledICHolder::_unlink_list;
+CompiledICHolder* CompiledICHolder::_purge_list;
+
 CompiledICHolder* CompiledIC::holder() const {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
   return (CompiledICHolder*)_value->data();
@@ -251,13 +254,36 @@ void CompiledIC::set_to_monomorphic(const methodHandle& callee_method, Klass* re
   set_holder(new CompiledICHolder(callee_method(), receiver_klass, entry, CompiledICState::_monomorphic));
 }
 
+#ifdef ASSERT
+void CompiledIC::print() {
+  // TODO: implement
+}
+void CompiledIC::verify() {
+  // TODO: implement
+}
+#endif
+
 // ----------------------------------------------------------------------------
 
 void CompiledDirectCall::set_to_clean() {
   // in_use is unused but needed to match template function in CompiledMethod
   assert(CompiledICLocker::is_safe(instruction_address()), "mt unsafe call");
   // Reset call site
-  _call->set_destination_mt_safe(resolve_call_stub());
+  RelocIterator iter((nmethod*)nullptr, instruction_address());
+  while (iter.next()) {
+    if (iter.addr() == instruction_address()) {
+      switch(iter.type()) {
+      case relocInfo::static_call_type:
+        _call->set_destination_mt_safe(SharedRuntime::get_resolve_static_call_stub());
+        break;
+      case relocInfo::opt_virtual_call_type:
+        _call->set_destination_mt_safe(SharedRuntime::get_resolve_opt_virtual_call_stub());
+        break;
+      default:
+        ShouldNotReachHere();
+      }
+    }
+  }
 }
 
 void CompiledDirectCall::set(const methodHandle& callee_method) {
@@ -277,6 +303,13 @@ void CompiledDirectCall::set(const methodHandle& callee_method) {
 bool CompiledDirectCall::is_clean() const {
   return destination() == SharedRuntime::get_resolve_static_call_stub() ||
          destination() == SharedRuntime::get_resolve_opt_virtual_call_stub();
+}
+
+bool CompiledDirectCall::is_call_to_interpreted() const {
+  // It is a call to interpreted, if it calls to a stub. Hence, the destination
+  // must be in the stub part of the nmethod that contains the call
+  CompiledMethod* cm = CodeCache::find_compiled(instruction_address());
+  return cm->stub_contains(destination());
 }
 
 bool CompiledDirectCall::is_call_to_compiled() const {
@@ -306,3 +339,12 @@ address CompiledDirectCall::find_stub_for(address instruction) {
 address CompiledDirectCall::find_stub() {
   return find_stub_for(instruction_address());
 }
+
+#ifdef ASSERT
+void CompiledDirectCall::print() {
+  // TODO: implement
+}
+void CompiledDirectCall::verify() {
+  // TODO: implement
+}
+#endif

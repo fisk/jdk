@@ -154,7 +154,6 @@ class CompiledIC: public ResourceObj {
 
   // Misc
   void print()             PRODUCT_RETURN;
-  void print_compiled_ic() PRODUCT_RETURN;
   void verify()            PRODUCT_RETURN;
 };
 
@@ -263,10 +262,6 @@ private:
   // Misc.
   void print()  PRODUCT_RETURN;
   void verify() PRODUCT_RETURN;
-
- protected:
-  virtual address resolve_call_stub() const;
-  virtual const char* name() const { return "CompiledDirectCall"; }
 };
 
 #endif // SHARE_CODE_COMPILEDIC_HPP

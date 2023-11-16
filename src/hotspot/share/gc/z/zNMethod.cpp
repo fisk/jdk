@@ -383,7 +383,7 @@ private:
   ZNMethodUnlinkClosure _cl;
 
 public:
-  ZNMethodUnlinkTask(bool unloading_occurred, ICRefillVerifier* verifier)
+  ZNMethodUnlinkTask(bool unloading_occurred)
     : ZTask("ZNMethodUnlinkTask"),
       _cl(unloading_occurred) {
     ZNMethodTable::nmethods_do_begin(false /* secondary */);
@@ -399,7 +399,7 @@ public:
 };
 
 void ZNMethod::unlink(ZWorkers* workers, bool unloading_occurred) {
-  ZNMethodUnlinkTask task(unloading_occurred, &verifier);
+  ZNMethodUnlinkTask task(unloading_occurred);
   workers->run(&task);
 }
 
