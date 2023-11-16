@@ -36,9 +36,9 @@
 #include "oops/oop.inline.hpp"
 #include "runtime/continuationEntry.hpp"
 #include "runtime/handles.inline.hpp"
+#include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "sanitizers/leak.hpp"
-#include "utilities/interfaceSupport.inline.hpp"
 
 
 // Every time a compiled IC is changed or its type is being accessed,
@@ -124,21 +124,19 @@ void CompiledICHolder::do_cleanup_work() {
 
 CompiledICHolder* CompiledIC::holder() const {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  return (CompiledICHolder*)_call->get_data(_value);
+  return (CompiledICHolder*)_value->data();
 }
 
-void CompiledIC::set_holder(CompiledICHolder* holder) {
-  assert(entry_point != nullptr, "must set legal entry point");
+void CompiledIC::set_holder(CompiledICHolder* value) {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  assert (!is_optimized() || cache == nullptr, "an optimized virtual call does not have a cached metadata");
 
-  if (holder != nullptr) {
+  if (holder() != nullptr) {
     holder()->release();
   }
 
-  _call->set_data(_value, holder);
+  _value->set_data((intptr_t)(void*)value);
   // LSan doesn't understand that the holder escapes into an instruction immediate
-  LSAN_IGNORE_OBJECT(holder);
+  LSAN_IGNORE_OBJECT(value);
 }
 
 //-----------------------------------------------------------------------------
@@ -148,14 +146,13 @@ void CompiledIC::initialize_from_iter(RelocIterator* iter) {
   assert(iter->addr() == _call->instruction_address(), "must find ic_call");
 
   virtual_call_Relocation* r = iter->virtual_call_reloc();
-  _value = _call->get_load_instruction(r);
+  _value = nativeMovConstReg_at(r->cached_value());
 }
 
 CompiledIC::CompiledIC(CompiledMethod* cm, NativeCall* call)
   : _method(cm),
     _call(call)
 {
-  _call = _method->call_wrapper_at((address) call);
   address ic_call = _call->instruction_address();
 
   assert(ic_call != nullptr, "ic_call address must be set");
@@ -174,8 +171,7 @@ CompiledIC::CompiledIC(CompiledMethod* cm, NativeCall* call)
 CompiledIC::CompiledIC(RelocIterator* iter)
   : _method(iter->code())
 {
-  _call = _method->call_wrapper_at(iter->addr());
-  address ic_call = _call->instruction_address();
+  address ic_call = iter->addr();
 
   CompiledMethod* nm = iter->code();
   assert(ic_call != nullptr, "ic_call address must be set");

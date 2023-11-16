@@ -1867,37 +1867,6 @@ void SharedRuntime::check_member_name_argument_is_last_argument(const methodHand
 }
 #endif
 
-bool SharedRuntime::should_fixup_call_destination(address destination, address entry_point, address caller_pc, Method* moop, CodeBlob* cb) {
-  if (destination != entry_point) {
-    CodeBlob* callee = CodeCache::find_blob(destination);
-    // callee == cb seems weird. It means calling interpreter thru stub.
-    if (callee != nullptr && (callee == cb || callee->is_adapter_blob())) {
-      // static call or optimized virtual
-      if (TraceCallFixup) {
-        tty->print("fixup callsite           at " INTPTR_FORMAT " to compiled code for", p2i(caller_pc));
-        moop->print_short_name(tty);
-        tty->print_cr(" to " INTPTR_FORMAT, p2i(entry_point));
-      }
-      return true;
-    } else {
-      if (TraceCallFixup) {
-        tty->print("failed to fixup callsite at " INTPTR_FORMAT " to compiled code for", p2i(caller_pc));
-        moop->print_short_name(tty);
-        tty->print_cr(" to " INTPTR_FORMAT, p2i(entry_point));
-      }
-      // assert is too strong could also be resolve destinations.
-      // assert(InlineCacheBuffer::contains(destination) || VtableStubs::contains(destination), "must be");
-    }
-  } else {
-    if (TraceCallFixup) {
-      tty->print("already patched callsite at " INTPTR_FORMAT " to compiled code for", p2i(caller_pc));
-      moop->print_short_name(tty);
-      tty->print_cr(" to " INTPTR_FORMAT, p2i(entry_point));
-    }
-  }
-  return false;
-}
-
 // ---------------------------------------------------------------------------
 // We are calling the interpreter via a c2i. Normally this would mean that
 // we were called by a compiled method. However we could have lost a race
@@ -1905,9 +1874,6 @@ bool SharedRuntime::should_fixup_call_destination(address destination, address e
 // interpreted. If the caller is compiled we attempt to patch the caller
 // so he no longer calls into the interpreter.
 JRT_LEAF(void, SharedRuntime::fixup_callers_callsite(Method* method, address caller_pc))
-  Method* moop(method);
-  // TODO: fix callers callsite
-
   AARCH64_PORT_ONLY(assert(pauth_ptr_is_raw(caller_pc), "should be raw"));
 
   // It's possible that deoptimization can occur at a call site which hasn't
@@ -1923,7 +1889,7 @@ JRT_LEAF(void, SharedRuntime::fixup_callers_callsite(Method* method, address cal
   // Result from nmethod::is_unloading is not stable across safepoints.
   NoSafepointVerifier nsv;
 
-  CompiledMethod* callee = moop->code();
+  CompiledMethod* callee = method->code();
   if (callee == nullptr) {
     return;
   }
@@ -1932,64 +1898,37 @@ JRT_LEAF(void, SharedRuntime::fixup_callers_callsite(Method* method, address cal
   MACOS_AARCH64_ONLY(ThreadWXEnable __wx(WXWrite, JavaThread::current()));
 
   CodeBlob* cb = CodeCache::find_blob(caller_pc);
-  if (cb == nullptr || !cb->is_compiled() || callee->is_unloading()) {
+  if (cb == nullptr || !cb->is_compiled() || !callee->is_in_use() || callee->is_unloading()) {
     return;
   }
 
   // The check above makes sure this is a nmethod.
-  CompiledMethod* nm = cb->as_compiled_method_or_null();
-  assert(nm, "must be");
+  CompiledMethod* caller = cb->as_compiled_method();
 
   // Get the return PC for the passed caller PC.
   address return_pc = caller_pc + frame::pc_return_offset;
 
-  // There is a benign race here. We could be attempting to patch to a compiled
-  // entry point at the same time the callee is being deoptimized. If that is
-  // the case then entry_point may in fact point to a c2i and we'd patch the
-  // call site with the same old data. clear_code will set code() to null
-  // at the end of it. If we happen to see that null then we can skip trying
-  // to patch. If we hit the window where the callee has a c2i in the
-  // from_compiled_entry and the null isn't present yet then we lose the race
-  // and patch the code with the same old data. Asi es la vida.
-
-  if (moop->code() == nullptr) return;
-
-  if (nm->is_in_use()) {
+  if (caller->is_in_use()) {
     // Expect to find a native call there (unless it was no-inline cache vtable dispatch)
-    CompiledICLocker ic_locker(nm);
-    if (NativeCall::is_call_before(return_pc)) {
-      ResourceMark mark;
-      NativeCallWrapper* call = nm->call_wrapper_before(return_pc);
-      //
-      // bug 6281185. We might get here after resolving a call site to a vanilla
-      // virtual call. Because the resolvee uses the verified entry it may then
-      // see compiled code and attempt to patch the site by calling us. This would
-      // then incorrectly convert the call site to optimized and its downhill from
-      // there. If you're lucky you'll get the assert in the bugid, if not you've
-      // just made a call site that could be megamorphic into a monomorphic site
-      // for the rest of its life! Just another racing bug in the life of
-      // fixup_callers_callsite ...
-      //
-      RelocIterator iter(nm, call->instruction_address(), call->next_instruction_address());
-      iter.next();
-      assert(iter.has_current(), "must have a reloc at java call site");
-      relocInfo::relocType typ = iter.reloc()->type();
-      if (typ != relocInfo::static_call_type &&
-           typ != relocInfo::opt_virtual_call_type &&
-           typ != relocInfo::static_stub_type) {
-        return;
-      }
-      if (nm->method()->is_continuation_enter_intrinsic()) {
-        if (ContinuationEntry::is_interpreted_call(call->instruction_address())) {
-          return;
-        }
-      }
-      address destination = call->destination();
-      address entry_point = callee->verified_entry_point();
-      if (should_fixup_call_destination(destination, entry_point, caller_pc, moop, cb)) {
-        call->set_destination_mt_safe(entry_point);
-      }
+    CompiledICLocker ic_locker(caller);
+    assert(NativeCall::is_call_before(return_pc), "Must get here through a call");
+    ResourceMark mark;
+
+    RelocIterator iter(caller, call->instruction_address(), call->next_instruction_address());
+    iter.next();
+    assert(iter.has_current(), "must have a reloc at java call site");
+    relocInfo::relocType type = iter.reloc()->type();
+    if (type != relocInfo::static_call_type &&
+        type != relocInfo::opt_virtual_call_type) {
+      return;
     }
+    if (caller->method()->is_continuation_enter_intrinsic() &&
+        ContinuationEntry::is_interpreted_call(call->instruction_address())) {
+      return;
+    }
+
+    CompiledDirectCall* callsite = CompiledDirectCall::before(return_pc);
+    callsite->set(method);
   }
 JRT_END
 

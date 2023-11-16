@@ -114,9 +114,9 @@ class CompiledICHolder : public CHeapObj<mtCompiler> {
 
 class CompiledIC: public ResourceObj {
  private:
-  NativeInstruction* _value;    // patchable value cell for this IC
-  NativeCall* _call;
   CompiledMethod* _method;
+  NativeCall* _call;
+  NativeMovConstReg* _value;    // patchable value cell for this IC
 
   CompiledIC(CompiledMethod* cm, NativeCall* ic_call);
   CompiledIC(RelocIterator* iter);
