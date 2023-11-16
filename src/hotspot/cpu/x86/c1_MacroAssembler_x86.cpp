@@ -25,6 +25,7 @@
 #include "precompiled.hpp"
 #include "c1/c1_MacroAssembler.hpp"
 #include "c1/c1_Runtime1.hpp"
+#include "code/compiledIC.hpp"
 #include "compiler/compilerDefinitions.inline.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/barrierSetAssembler.hpp"
@@ -304,18 +305,12 @@ void C1_MacroAssembler::inline_cache_check(Register receiver, Register iCache) {
   assert(!MacroAssembler::needs_explicit_null_check(oopDesc::klass_offset_in_bytes()), "must add explicit null check");
   int start_offset = offset();
 
-  if (UseCompressedClassPointers) {
-    load_klass(rscratch1, receiver, rscratch2);
-    cmpptr(rscratch1, iCache);
-  } else {
-    cmpptr(iCache, Address(receiver, oopDesc::klass_offset_in_bytes()));
-  }
+  load_klass(rscratch1, receiver, rscratch2);
+  cmpptr(rscratch1, Address(iCache, CompiledICHolder::holder_klass_offset()));
   // if icache check fails, then jump to runtime routine
   // Note: RECEIVER must still contain the receiver!
   jump_cc(Assembler::notEqual,
           RuntimeAddress(SharedRuntime::get_ic_miss_stub()));
-  const int ic_cmp_size = LP64_ONLY(10) NOT_LP64(9);
-  assert(UseCompressedClassPointers || offset() - start_offset == ic_cmp_size, "check alignment in emit_method_entry");
 }
 
 

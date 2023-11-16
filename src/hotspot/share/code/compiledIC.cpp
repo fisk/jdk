@@ -188,8 +188,7 @@ CompiledIC::CompiledIC(RelocIterator* iter)
 // stubs and retry.
 bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode, TRAPS) {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  assert(!is_optimized(), "cannot set an optimized virtual call to megamorphic");
-  assert(is_call_to_compiled() || is_call_to_interpreted(), "going directly to megamorphic?");
+  assert(is_monomorphic(), "going directly to megamorphic?");
 
   address entry;
   CompiledICHolder* holder;
@@ -238,13 +237,13 @@ void CompiledIC::set_to_clean() {
   set_holder(new CompiledICHolder(nullptr, nullptr, entry, CompiledICState::_clean));
 }
 
-bool CompiledIC::set_to_monomorphic(Method* callee_method, Klass* receiver_klass) {
+void CompiledIC::set_to_monomorphic(const methodHandle& callee_method, Klass* receiver_klass) {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
 
   // We speculate the receiver_klass is the only dynamic receiver_klass
   nmethod* code = callee_method->code();
   address entry;
-  if (code != nullptr && code->is_in_use && !code->is_unloading()) {
+  if (code != nullptr && code->is_in_use() && !code->is_unloading()) {
     entry = code->entry_point();
   } else {
     entry = callee_method->get_c2i_entry();
@@ -281,8 +280,7 @@ bool CompiledDirectCall::is_clean() const {
 }
 
 bool CompiledStaticCall::is_call_to_compiled() const {
-  // TODO: This check is incorrect
-  return CodeCache::contains(destination());
+  return !is_clean() && !is_call_to_interpreted();
 }
 
 address CompiledDirectCall::find_stub_for(address instruction) {

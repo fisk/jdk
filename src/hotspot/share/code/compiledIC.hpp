@@ -144,7 +144,7 @@ class CompiledIC: public ResourceObj {
   // MT-safe patching of inline caches. Note: Only safe to call is_xxx when holding the CompiledICLocker
   // so you are guaranteed that no patching takes place. The same goes for verify.
   void set_to_clean();
-  void set_to_monomorphic(Method* callee_method, Klass* receiver_klass);
+  void set_to_monomorphic(const methodHandle& callee_method, Klass* receiver_klass);
 
   // Returns true if successful and false otherwise. The call can fail if memory
   // allocation in the code cache fails, or ic stub refill is required.
@@ -189,8 +189,6 @@ inline CompiledIC* CompiledIC_at(RelocIterator* reloc_iter) {
 
 //-----------------------------------------------------------------------------
 // The CompiledDirectCall represents a call to a method in the compiled code
-//
-// Transition diagram of a static call site is somewhat simpler than for an inlined cache:
 //
 //
 //           -----<----- Clean ----->-----
