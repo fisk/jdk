@@ -1277,45 +1277,6 @@ methodHandle SharedRuntime::find_callee_method(TRAPS) {
 
 // Resolves a call.
 methodHandle SharedRuntime::resolve_helper(bool is_virtual, bool is_optimized, TRAPS) {
-  methodHandle callee_method;
-  callee_method = resolve_sub_helper(is_virtual, is_optimized, THREAD);
-  if (JvmtiExport::can_hotswap_or_post_breakpoint()) {
-    int retry_count = 0;
-    while (!HAS_PENDING_EXCEPTION && callee_method->is_old() &&
-           callee_method->method_holder() != vmClasses::Object_klass()) {
-      // If has a pending exception then there is no need to re-try to
-      // resolve this method.
-      // If the method has been redefined, we need to try again.
-      // Hack: we have no way to update the vtables of arrays, so don't
-      // require that java.lang.Object has been updated.
-
-      // It is very unlikely that method is redefined more than 100 times
-      // in the middle of resolve. If it is looping here more than 100 times
-      // means then there could be a bug here.
-      guarantee((retry_count++ < 100),
-                "Could not resolve to latest version of redefined method");
-      // method is redefined in the middle of resolve so re-try.
-      callee_method = resolve_sub_helper(is_virtual, is_optimized, THREAD);
-    }
-  }
-  return callee_method;
-}
-
-static address compute_static_entry(NativeCall *ncall, Method* callee_method) {
-  // TODO: Static call stub
-  CompiledMethod* code = callee_method->code();
-
-  if (code == nullptr || !code->is_in_use() || ContinuationEntry::is_interpreted_call(ncall->instruction_address())) {
-    // Patch call site to C2I adapter if code is deoptimized or unloaded.
-    return callee_method->get_c2i_entry();
-  } else {
-    return code->verified_entry();
-  }
-}
-
-// Resolves a call.  The compilers generate code for calls that go here
-// and are patched with the real destination of the call.
-methodHandle SharedRuntime::resolve_sub_helper(bool is_virtual, bool is_optimized, TRAPS) {
   JavaThread* current = THREAD;
   ResourceMark rm(current);
   RegisterMap cbl_map(current,
@@ -1406,6 +1367,7 @@ methodHandle SharedRuntime::resolve_sub_helper(bool is_virtual, bool is_optimize
     // Callsite is statically bound, i.e. it's a direct call instruction
     assert(NativeCall::is_call_before(caller_frame.pc()), "weird callsite");
     NativeCall *ncall = nativeCall_before(pc);
+    patch_static_call(ncall, callee_method);
     address entry = compute_static_entry(callee_method);
     ncall->set_destination_mt_safe(entry);
   }
@@ -1413,6 +1375,39 @@ methodHandle SharedRuntime::resolve_sub_helper(bool is_virtual, bool is_optimize
   return callee_method;
 }
 
+static address find_static_call_stub_for(address instruction) {
+  // Find reloc. information containing this call-site
+  RelocIterator iter((nmethod*)nullptr, instruction);
+  while (iter.next()) {
+    if (iter.addr() == instruction) {
+      switch(iter.type()) {
+      case relocInfo::static_call_type:
+        return iter.static_call_reloc()->static_stub();
+        // We check here for opt_virtual_call_type, since we reuse the code
+        // from the CompiledIC implementation
+      case relocInfo::opt_virtual_call_type:
+        return iter.opt_virtual_call_reloc()->static_stub();
+      default:
+        ShouldNotReachHere();
+      }
+    }
+  }
+  return nullptr;
+}
+
+static address patch_static_call(NativeCall *ncall, Method* callee_method) {
+  CompiledMethod* code = callee_method->code();
+
+  if (code == nullptr || !code->is_in_use() || code->is_unloading() || ContinuationEntry::is_interpreted_call(ncall->instruction_address())) {
+    // Patch call site to C2I adapter if code is deoptimized or unloaded.
+    // We also need to patch the static call stub to set the rmethod register
+    // to the callee_method so the c2i adapter knows how to build the frame
+    address static_call_stub = find_static_call_stub_for(ncall->instruction_address());
+    return callee_method->get_c2i_entry();
+  } else {
+    return code->verified_entry();
+  }
+}
 
 // Inline caches exist only in compiled code
 JRT_BLOCK_ENTRY(address, SharedRuntime::handle_wrong_method_ic_miss(JavaThread* current))
@@ -1950,6 +1945,7 @@ bool SharedRuntime::should_fixup_call_destination(address destination, address e
 // so he no longer calls into the interpreter.
 JRT_LEAF(void, SharedRuntime::fixup_callers_callsite(Method* method, address caller_pc))
   Method* moop(method);
+  // TODO: fix callers callsite
 
   AARCH64_PORT_ONLY(assert(pauth_ptr_is_raw(caller_pc), "should be raw"));
 

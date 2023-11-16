@@ -116,9 +116,9 @@ class CompiledICHolder : public CHeapObj<mtCompiler> {
   static ByteSize holder_klass_offset()    { return byte_offset_of(CompiledICHolder, _holder_klass); }
   static ByteSize destination_offset()     { return byte_offset_of(CompiledICHolder, _destination); }
 
-  bool is_clean() { return _state == CompiledICState::_clean; }
-  bool is_monomorphic() { return _state == CompiledICState::_monomorphic; }
-  bool is_megamorphic() { return _state == CompiledICState::_itable || _state == CompiledICState::_vtable; }
+  bool is_clean()       const { return _state == CompiledICState::_clean; }
+  bool is_monomorphic() const { return _state == CompiledICState::_monomorphic; }
+  bool is_megamorphic() const { return _state == CompiledICState::_itable || _state == CompiledICState::_vtable; }
 
   CompiledICHolder* next()     { return _next; }
   void set_next(CompiledICHolder* n) { _next = n; }
@@ -131,6 +131,7 @@ class CompiledICHolder : public CHeapObj<mtCompiler> {
 class CompiledIC: public ResourceObj {
  private:
   NativeInstruction* _value;    // patchable value cell for this IC
+  NativeCall* _call;
   CompiledMethod* _method;
 
   CompiledIC(CompiledMethod* cm, NativeCall* ic_call);
@@ -138,11 +139,7 @@ class CompiledIC: public ResourceObj {
 
   void initialize_from_iter(RelocIterator* iter);
 
-  void set_ic_holder(CompiledICHolder* value);
-
-  // Reads the location of the transition stub. This will fail with an assertion, if no transition stub is
-  // associated with the inline cache.
-  address stub_address() const;
+  void set_holder(CompiledICHolder* value);
 
  public:
   // conversion (machine PC to CompiledIC*)
@@ -151,31 +148,24 @@ class CompiledIC: public ResourceObj {
   friend CompiledIC* CompiledIC_at(Relocation* call_site);
   friend CompiledIC* CompiledIC_at(RelocIterator* reloc_iter);
 
-  CompiledICHolder* holder() const {
-    return (CompiledICHolder*)_call->get_data(_value);
-  }
+  CompiledICHolder* holder() const {return (CompiledICHolder*)_call->get_data(_value);}
 
   // State
-  bool is_clean() const;
-  bool is_megamorphic() const;
-  bool is_call_to_compiled() const;
-  bool is_call_to_interpreted() const;
+  bool is_clean()       const { return holder()->is_clean(); }
+  bool is_monomorphic() const { return holder()->is_monomorphic(); }
+  bool is_megamorphic() const { return holder()->is_megamorphic(); }
 
   address end_of_call() const { return  _call->return_address(); }
 
   // MT-safe patching of inline caches. Note: Only safe to call is_xxx when holding the CompiledICLocker
   // so you are guaranteed that no patching takes place. The same goes for verify.
   void set_to_clean();
-  void set_to_monomorphic(CompiledICInfo& info);
-  void clear_ic_stub();
+  void set_to_monomorphic(Method* callee_method, Klass* receiver_klass);
 
   // Returns true if successful and false otherwise. The call can fail if memory
   // allocation in the code cache fails, or ic stub refill is required.
   bool set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode, TRAPS);
 
-  static void compute_monomorphic_entry(const methodHandle& method, Klass* receiver_klass,
-                                        bool is_optimized, bool static_bound, bool caller_is_nmethod,
-                                        CompiledICInfo& info, TRAPS);
 
   // Location
   address instruction_address() const { return _call->instruction_address(); }
@@ -215,7 +205,7 @@ inline CompiledIC* CompiledIC_at(RelocIterator* reloc_iter) {
 }
 
 //-----------------------------------------------------------------------------
-// The CompiledStaticCall represents a call to a static method in the compiled
+// The CompiledDirectStaticCall represents a call to a static method in the compiled
 //
 // Transition diagram of a static call site is somewhat simpler than for an inlined cache:
 //
@@ -231,63 +221,7 @@ inline CompiledIC* CompiledIC_at(RelocIterator* reloc_iter) {
 //
 //
 
-class StaticCallInfo {
- private:
-  address      _entry;          // Entrypoint
-  methodHandle _callee;         // Callee (used when calling interpreter)
-  bool         _to_interpreter; // call to interpreted method (otherwise compiled)
-
-  friend class CompiledStaticCall;
-  friend class CompiledDirectStaticCall;
-  friend class CompiledPltStaticCall;
- public:
-  address      entry() const    { return _entry;  }
-  methodHandle callee() const   { return _callee; }
-};
-
-class CompiledStaticCall : public ResourceObj {
- public:
-  // Code
-
-  // Returns null if CodeBuffer::expand fails
-  static address emit_to_interp_stub(CodeBuffer &cbuf, address mark = nullptr);
-  static int to_interp_stub_size();
-  static int to_trampoline_stub_size();
-  static int reloc_to_interp_stub();
-
-  // Compute entry point given a method
-  static void compute_entry(const methodHandle& m, bool caller_is_nmethod, StaticCallInfo& info);
-  void compute_entry_for_continuation_entry(const methodHandle& m, StaticCallInfo& info);
-
-public:
-  // Clean static call (will force resolving on next use)
-  virtual address destination() const = 0;
-
-  // Clean static call (will force resolving on next use)
-  bool set_to_clean(bool in_use = true);
-
-  // Set state. The entry must be the same, as computed by compute_entry.
-  // Computation and setting is split up, since the actions are separate during
-  // a OptoRuntime::resolve_xxx.
-  void set(const StaticCallInfo& info);
-
-  // State
-  bool is_clean() const;
-  bool is_call_to_compiled() const;
-  virtual bool is_call_to_interpreted() const = 0;
-
-  virtual address instruction_address() const = 0;
-  virtual address end_of_call() const = 0;
-protected:
-  virtual address resolve_call_stub() const = 0;
-  virtual void set_destination_mt_safe(address dest) = 0;
-  virtual void set_to_interpreted(const methodHandle& callee, address entry) = 0;
-  virtual const char* name() const = 0;
-
-  void set_to_compiled(address entry);
-};
-
-class CompiledDirectStaticCall : public CompiledStaticCall {
+class CompiledDirectStaticCall : public ResourceObj {
 private:
   friend class CompiledIC;
   friend class DirectNativeCallWrapper;
@@ -305,6 +239,12 @@ private:
   CompiledDirectStaticCall(NativeCall* call) : _call(call) {}
 
  public:
+  // Returns null if CodeBuffer::expand fails
+  static address emit_to_interp_stub(CodeBuffer &cbuf, address mark = nullptr);
+  static int to_interp_stub_size();
+  static int to_trampoline_stub_size();
+  static int reloc_to_interp_stub();
+
   static inline CompiledDirectStaticCall* before(address return_addr) {
     CompiledDirectStaticCall* st = new CompiledDirectStaticCall(nativeCall_before(return_addr));
     st->verify();
@@ -325,8 +265,17 @@ private:
   address destination() const { return _call->destination(); }
   address end_of_call() const { return _call->return_address(); }
 
+  // Clean static call (will force resolving on next use)
+  void set_to_clean();
+
+  void set(Method* method);
+  void set_to_interpreted(const methodHandle& callee, address entry);
+
   // State
-  virtual bool is_call_to_interpreted() const;
+  bool is_clean() const;
+
+  // State
+  bool is_call_to_interpreted() const;
 
   // Stub support
   static address find_stub_for(address instruction);

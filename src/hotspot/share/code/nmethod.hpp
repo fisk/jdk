@@ -701,8 +701,6 @@ public:
 
   virtual void metadata_do(MetadataClosure* f);
 
-  NativeCallWrapper* call_wrapper_at(address call) const;
-  NativeCallWrapper* call_wrapper_before(address return_pc) const;
   address call_instruction_address(address pc) const;
 
   virtual CompiledStaticCall* compiledStaticCall_at(Relocation* call_site) const;

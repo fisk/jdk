@@ -389,8 +389,6 @@ public:
   // corresponds to the given method as well.
   virtual bool is_dependent_on_method(Method* dependee) = 0;
 
-  virtual NativeCallWrapper* call_wrapper_at(address call) const = 0;
-  virtual NativeCallWrapper* call_wrapper_before(address return_pc) const = 0;
   virtual address call_instruction_address(address pc) const = 0;
 
   virtual CompiledStaticCall* compiledStaticCall_at(Relocation* call_site) const = 0;
