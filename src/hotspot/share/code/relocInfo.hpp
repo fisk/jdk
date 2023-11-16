@@ -1102,7 +1102,7 @@ class barrier_Relocation : public Relocation {
 };
 
 
-class virtual_call_Relocation : public CallRelocation {
+class virtual_call_Relocation : public Relocation {
 
  public:
   // "cached_value" points to the first associated set-oop.
@@ -1119,14 +1119,14 @@ class virtual_call_Relocation : public CallRelocation {
   jint    _method_index; // resolved method for a Java call
 
   virtual_call_Relocation(address cached_value, int method_index)
-    : CallRelocation(relocInfo::virtual_call_type),
+    : Relocation(relocInfo::virtual_call_type),
       _cached_value(cached_value),
       _method_index(method_index) {
     assert(cached_value != nullptr, "first oop address must be specified");
   }
 
   friend class RelocationHolder;
-  virtual_call_Relocation() : CallRelocation(relocInfo::virtual_call_type) { }
+  virtual_call_Relocation() : Relocation(relocInfo::virtual_call_type) { }
 
  public:
   address cached_value();

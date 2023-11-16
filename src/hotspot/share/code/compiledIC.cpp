@@ -288,9 +288,11 @@ void CompiledDirectCall::set_to_clean() {
 
 void CompiledDirectCall::set(const methodHandle& callee_method) {
   CompiledMethod* code = callee_method->code();
+  CompiledMethod* caller = CodeCache::find_blob(instruction_address())->as_compiled_method();
 
   if (code != nullptr && code->is_in_use() && !code->is_unloading() &&
-      !ContinuationEntry::is_interpreted_call(instruction_address())) {
+      (!caller->method()->is_continuation_enter_intrinsic() ||
+       !ContinuationEntry::is_interpreted_call(instruction_address()))) {
     _call->set_destination_mt_safe(code->verified_entry_point());
   } else {
     // Patch call site to C2I adapter if code is deoptimized or unloaded.

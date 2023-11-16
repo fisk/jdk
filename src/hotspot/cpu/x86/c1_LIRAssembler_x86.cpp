@@ -2843,7 +2843,7 @@ void LIR_Assembler::align_call(LIR_Code code) {
     offset += NativeCall::displacement_offset;
     break;
   case lir_icvirtual_call:
-    offset += NativeCall::displacement_offset + NativeMovConstReg::instruction_size;
+    offset += 1;
     break;
   default: ShouldNotReachHere();
   }
@@ -2863,8 +2863,6 @@ void LIR_Assembler::call(LIR_OpJavaCall* op, relocInfo::relocType rtype) {
 void LIR_Assembler::ic_call(LIR_OpJavaCall* op) {
   __ ic_call(op->addr());
   add_call_info(code_offset(), op->info());
-  assert((__ offset() - NativeCall::instruction_size + NativeCall::displacement_offset) % BytesPerWord == 0,
-         "must be aligned");
   __ post_call_nop();
 }
 
