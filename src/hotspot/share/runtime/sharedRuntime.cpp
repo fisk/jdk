@@ -29,7 +29,6 @@
 #include "classfile/vmSymbols.hpp"
 #include "code/codeCache.hpp"
 #include "code/compiledIC.hpp"
-#include "code/icBuffer.hpp"
 #include "code/compiledMethod.inline.hpp"
 #include "code/scopeDesc.hpp"
 #include "code/vtableStubs.hpp"

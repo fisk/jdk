@@ -26,7 +26,6 @@
 #include "precompiled.hpp"
 #include "asm/macroAssembler.inline.hpp"
 #include "code/compiledIC.hpp"
-#include "code/icBuffer.hpp"
 #include "code/nmethod.hpp"
 #include "memory/resourceArea.hpp"
 #include "runtime/mutexLocker.hpp"

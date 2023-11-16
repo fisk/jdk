@@ -28,7 +28,6 @@
 #include "code/exceptionHandlerTable.hpp"
 #include "code/scopeDesc.hpp"
 #include "code/codeCache.hpp"
-#include "code/icBuffer.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/barrierSetNMethod.hpp"
 #include "gc/shared/gcBehaviours.hpp"

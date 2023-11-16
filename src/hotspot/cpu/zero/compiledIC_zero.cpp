@@ -25,7 +25,6 @@
 #include "precompiled.hpp"
 #include "code/codeCache.hpp"
 #include "code/compiledIC.hpp"
-#include "code/icBuffer.hpp"
 #include "code/nmethod.hpp"
 #include "code/vtableStubs.hpp"
 #include "interpreter/interpreter.hpp"

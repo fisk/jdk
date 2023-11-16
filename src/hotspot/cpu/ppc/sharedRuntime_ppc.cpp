@@ -27,7 +27,6 @@
 #include "asm/macroAssembler.inline.hpp"
 #include "code/debugInfoRec.hpp"
 #include "code/compiledIC.hpp"
-#include "code/icBuffer.hpp"
 #include "code/vtableStubs.hpp"
 #include "frame_ppc.hpp"
 #include "compiler/oopMap.hpp"

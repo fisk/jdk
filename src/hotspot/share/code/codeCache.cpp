@@ -29,7 +29,6 @@
 #include "code/compiledIC.hpp"
 #include "code/dependencies.hpp"
 #include "code/dependencyContext.hpp"
-#include "code/icBuffer.hpp"
 #include "code/nmethod.hpp"
 #include "code/pcDesc.hpp"
 #include "compiler/compilationPolicy.hpp"

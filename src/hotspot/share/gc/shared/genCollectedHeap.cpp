@@ -28,7 +28,6 @@
 #include "classfile/symbolTable.hpp"
 #include "classfile/vmSymbols.hpp"
 #include "code/codeCache.hpp"
-#include "code/icBuffer.hpp"
 #include "compiler/oopMap.hpp"
 #include "gc/serial/cardTableRS.hpp"
 #include "gc/serial/defNewGeneration.hpp"

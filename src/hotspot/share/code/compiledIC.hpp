@@ -27,37 +27,15 @@
 
 #include "code/nativeInst.hpp"
 #include "interpreter/linkResolver.hpp"
-#include "oops/compiledICHolder.hpp"
 #include "runtime/safepointVerifiers.hpp"
 
 //-----------------------------------------------------------------------------
 // The CompiledIC represents a compiled inline cache.
 //
-// In order to make patching of the inline cache MT-safe, we only allow the following
-// transitions (when not at a safepoint):
-//
-//
-//         [1] --<--  Clean -->---  [1]
-//            /       (null)      \
-//           /                     \      /-<-\
-//          /          [2]          \    /     \
-//      Interpreted  ---------> Monomorphic     | [3]
-//  (CompiledICHolder*)            (Klass*)     |
-//          \                        /   \     /
-//       [4] \                      / [4] \->-/
-//            \->-  Megamorphic -<-/
-//              (CompiledICHolder*)
-//
-// The text in parentheses () refers to the value of the inline cache receiver (mov instruction)
-//
-// The numbers in square brackets refer to the kind of transition:
-// [1]: Initial fixup. Receiver it found from debug information
-// [2]: Compilation of a method
-// [3]: Recompilation of a method (note: only entry is changed. The Klass* must stay the same)
-// [4]: Inline cache miss. We go directly to megamorphic call.
-//
-// The class automatically inserts transition stubs (using the InlineCacheBuffer) when an MT-unsafe
-// transition is made to a stub.
+// It's safe to transition from any state to any state. Typically an inline cache starts
+// in the clean state, meaning it will resolve the call when called. Then it typically
+// transitions to monomorphic, assuming the first dynamic receiver will be the only one
+// observed. If that speculation fails, we transition to megamorphic.
 //
 class CompiledIC;
 class CompiledICProtectionBehaviour;

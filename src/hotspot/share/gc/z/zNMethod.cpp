@@ -25,7 +25,6 @@
 #include "code/codeCache.hpp"
 #include "code/relocInfo.hpp"
 #include "code/nmethod.hpp"
-#include "code/icBuffer.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/barrierSetNMethod.hpp"
 #include "gc/shared/suspendibleThreadSet.hpp"

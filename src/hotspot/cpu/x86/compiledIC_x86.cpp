@@ -26,7 +26,6 @@
 #include "asm/macroAssembler.inline.hpp"
 #include "code/codeCache.hpp"
 #include "code/compiledIC.hpp"
-#include "code/icBuffer.hpp"
 #include "code/nmethod.hpp"
 #include "memory/resourceArea.hpp"
 #include "runtime/mutexLocker.hpp"
@@ -80,7 +79,7 @@ int CompiledStaticCall::reloc_to_interp_stub() {
   return 4; // 3 in emit_to_interp_stub + 1 in emit_call
 }
 
-void CompiledDirectStaticCall::set_to_interpreted(const methodHandle& callee, address entry) {
+void CompiledStaticCall::set_to_interpreted(const methodHandle& callee, address entry) {
   address stub = find_stub();
   guarantee(stub != nullptr, "stub not found");
 
@@ -104,7 +103,7 @@ void CompiledDirectStaticCall::set_to_interpreted(const methodHandle& callee, ad
   set_destination_mt_safe(stub);
 }
 
-void CompiledDirectStaticCall::set_stub_to_clean(static_stub_Relocation* static_stub) {
+void CompiledStaticCall::set_stub_to_clean(static_stub_Relocation* static_stub) {
   assert(CompiledICLocker::is_safe(static_stub->addr()), "mt unsafe call");
   // Reset stub.
   address stub = static_stub->addr();

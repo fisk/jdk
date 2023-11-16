@@ -255,7 +255,7 @@ bool CompiledIC::set_to_monomorphic(Method* callee_method, Klass* receiver_klass
 
 // ----------------------------------------------------------------------------
 
-void CompiledDirectStaticCall::set_to_clean() {
+void CompiledDirectCall::set_to_clean() {
   // in_use is unused but needed to match template function in CompiledMethod
   assert(CompiledICLocker::is_safe(instruction_address()), "mt unsafe call");
   // Reset call site
@@ -276,12 +276,12 @@ void CompiledDirectCall::set(const methodHandle& callee_method) {
   }
 }
 
-bool CompiledDirectStaticCall::is_clean() const {
+bool CompiledDirectCall::is_clean() const {
   return destination() == SharedRuntime::get_resolve_static_call_stub() ||
          destination() == SharedRuntime::get_resolve_opt_virtual_call_stub();
 }
 
-address CompiledDirectStaticCall::find_stub_for(address instruction) {
+address CompiledDirectCall::find_stub_for(address instruction) {
   // Find reloc. information containing this call-site
   RelocIterator iter((nmethod*)nullptr, instruction);
   while (iter.next()) {
@@ -301,6 +301,6 @@ address CompiledDirectStaticCall::find_stub_for(address instruction) {
   return nullptr;
 }
 
-address CompiledDirectStaticCall::find_stub() {
+address CompiledDirectCall::find_stub() {
   return find_stub_for(instruction_address());
 }

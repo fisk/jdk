@@ -25,7 +25,6 @@
 #include "precompiled.hpp"
 #include "code/codeBlob.hpp"
 #include "code/codeCache.hpp"
-#include "code/icBuffer.hpp"
 #include "code/relocInfo.hpp"
 #include "code/vtableStubs.hpp"
 #include "compiler/disassembler.hpp"
