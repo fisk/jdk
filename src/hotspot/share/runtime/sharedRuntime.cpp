@@ -1358,7 +1358,7 @@ methodHandle SharedRuntime::resolve_helper(bool is_virtual, bool is_optimized, T
     // Callsite has has inline cache; transition it to monomorphic the first time it's called
     CompiledIC* inline_cache = CompiledIC_before(caller_nm, caller_frame.pc());
     if (!inline_cache->is_megamorphic()) {
-      inline_cache->set_to_monomorphic(callee_method);
+      inline_cache->set_to_monomorphic(callee_method, receiver->klass());
     }
   } else {
     // Callsite is a direct call - set it to the destination method
@@ -1612,7 +1612,7 @@ methodHandle SharedRuntime::handle_ic_miss_helper(TRAPS) {
     inline_cache->set_to_monomorphic(callee_method, receiver()->klass());
   } else {
     // Otherwise it should be megamorphic
-    inline_cache->set_to_megamorphic(&call_info, bc, CHECK);
+    inline_cache->set_to_megamorphic(&call_info, bc, THREAD);
   }
 
   return callee_method;
@@ -1816,7 +1816,8 @@ JRT_LEAF(void, SharedRuntime::fixup_callers_callsite(Method* method, address cal
     }
 
     CompiledDirectCall* callsite = CompiledDirectCall::before(return_pc);
-    callsite->set(method);
+    methodHandle callee_method(THREAD, method);
+    callsite->set(callee_method);
   }
 JRT_END
 

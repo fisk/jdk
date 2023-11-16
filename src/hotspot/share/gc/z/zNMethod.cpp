@@ -339,10 +339,6 @@ public:
     : _unloading_occurred(unloading_occurred) {}
 
   virtual void do_nmethod(nmethod* nm) {
-    if (failed()) {
-      return;
-    }
-
     if (nm->is_unloading()) {
       // Unlink from the ZNMethodTable
       ZNMethod::unregister_nmethod(nm);
@@ -379,10 +375,6 @@ public:
 
     // Clear compiled ICs and exception caches
     nm->unload_nmethod_caches(_unloading_occurred);
-  }
-
-  bool failed() const {
-    return Atomic::load(&_failed);
   }
 };
 

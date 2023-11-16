@@ -520,8 +520,7 @@ void CompiledMethod::run_nmethod_entry_barrier() {
 void CompiledMethod::cleanup_inline_caches_whitebox() {
   assert_locked_or_safepoint(CodeCache_lock);
   CompiledICLocker ic_locker(this);
-  guarantee(cleanup_inline_caches_impl(false /* unloading_occurred */, true /* clean_all */),
-            "Inline cache cleaning in a safepoint can't fail");
+  cleanup_inline_caches_impl(false /* unloading_occurred */, true /* clean_all */);
 }
 
 address* CompiledMethod::orig_pc_addr(const frame* fr) {
