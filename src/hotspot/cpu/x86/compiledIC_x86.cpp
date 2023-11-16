@@ -34,7 +34,7 @@
 // ----------------------------------------------------------------------------
 
 #define __ _masm.
-address CompiledStaticCall::emit_to_interp_stub(CodeBuffer &cbuf, address mark) {
+address CompiledDirectCall::emit_to_interp_stub(CodeBuffer &cbuf, address mark) {
   // Stub is fixed up when the corresponding call is converted from
   // calling compiled code to calling interpreted code.
   // movq rbx, 0
@@ -64,28 +64,28 @@ address CompiledStaticCall::emit_to_interp_stub(CodeBuffer &cbuf, address mark) 
 }
 #undef __
 
-int CompiledStaticCall::to_interp_stub_size() {
+int CompiledDirectCall::to_interp_stub_size() {
   return NOT_LP64(10)    // movl; jmp
          LP64_ONLY(15);  // movq (1+1+8); jmp (1+4)
 }
 
-int CompiledStaticCall::to_trampoline_stub_size() {
+int CompiledDirectCall::to_trampoline_stub_size() {
   // x86 doesn't use trampolines.
   return 0;
 }
 
 // Relocation entries for call stub, compiled java to interpreter.
-int CompiledStaticCall::reloc_to_interp_stub() {
+int CompiledDirectCall::reloc_to_interp_stub() {
   return 4; // 3 in emit_to_interp_stub + 1 in emit_call
 }
 
-void CompiledStaticCall::set_to_interpreted(const methodHandle& callee, address entry) {
+void CompiledDirectCall::set_to_interpreted(const methodHandle& callee, address entry) {
   address stub = find_stub();
   guarantee(stub != nullptr, "stub not found");
 
   if (TraceICs) {
     ResourceMark rm;
-    tty->print_cr("CompiledDirectStaticCall@" INTPTR_FORMAT ": set_to_interpreted %s",
+    tty->print_cr("CompiledDirectCall@" INTPTR_FORMAT ": set_to_interpreted %s",
                   p2i(instruction_address()),
                   callee->name_and_sig_as_C_string());
   }
@@ -103,7 +103,7 @@ void CompiledStaticCall::set_to_interpreted(const methodHandle& callee, address 
   set_destination_mt_safe(stub);
 }
 
-void CompiledStaticCall::set_stub_to_clean(static_stub_Relocation* static_stub) {
+void CompiledDirectCall::set_stub_to_clean(static_stub_Relocation* static_stub) {
   assert(CompiledICLocker::is_safe(static_stub->addr()), "mt unsafe call");
   // Reset stub.
   address stub = static_stub->addr();
@@ -120,7 +120,7 @@ void CompiledStaticCall::set_stub_to_clean(static_stub_Relocation* static_stub) 
 // Non-product mode code
 #ifndef PRODUCT
 
-void CompiledDirectStaticCall::verify() {
+void CompiledDirectCall::verify() {
   // Verify call.
   _call->verify();
   _call->verify_alignment();

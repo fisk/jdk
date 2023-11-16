@@ -965,7 +965,7 @@ int MacroAssembler::max_trampoline_stub_size() {
 }
 
 void MacroAssembler::emit_static_call_stub() {
-  // CompiledDirectStaticCall::set_to_interpreted knows the
+  // CompiledDirectCall::set_to_interpreted knows the
   // exact layout of this stub.
 
   isb();

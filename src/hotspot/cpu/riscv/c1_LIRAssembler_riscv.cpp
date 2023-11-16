@@ -1399,7 +1399,7 @@ void LIR_Assembler::emit_static_call_stub() {
   __ relocate(static_stub_Relocation::spec(call_pc));
   __ emit_static_call_stub();
 
-  assert(__ offset() - start + CompiledStaticCall::to_trampoline_stub_size()
+  assert(__ offset() - start + CompiledDirectCall::to_trampoline_stub_size()
          <= call_stub_size(), "stub too big");
   __ end_a_stub();
 }

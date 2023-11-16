@@ -41,7 +41,6 @@
 #include "logging/log.hpp"
 #include "memory/resourceArea.hpp"
 #include "memory/universe.hpp"
-#include "oops/compiledICHolder.hpp"
 #include "oops/klass.inline.hpp"
 #include "oops/method.inline.hpp"
 #include "prims/methodHandles.hpp"
@@ -1446,7 +1445,7 @@ static void gen_continuation_enter(MacroAssembler* masm,
     __ align(BytesPerWord, __ offset() + NativeCall::displacement_offset);
     // Emit stub for static call
     CodeBuffer* cbuf = masm->code_section()->outer();
-    address stub = CompiledStaticCall::emit_to_interp_stub(*cbuf, __ pc());
+    address stub = CompiledDirectCall::emit_to_interp_stub(*cbuf, __ pc());
     if (stub == nullptr) {
       fatal("CodeCache is full at gen_continuation_enter");
     }
@@ -1483,7 +1482,7 @@ static void gen_continuation_enter(MacroAssembler* masm,
 
   // Emit stub for static call
   CodeBuffer* cbuf = masm->code_section()->outer();
-  address stub = CompiledStaticCall::emit_to_interp_stub(*cbuf, __ pc());
+  address stub = CompiledDirectCall::emit_to_interp_stub(*cbuf, __ pc());
   if (stub == nullptr) {
     fatal("CodeCache is full at gen_continuation_enter");
   }

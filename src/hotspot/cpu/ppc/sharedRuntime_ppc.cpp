@@ -34,7 +34,6 @@
 #include "interpreter/interpreter.hpp"
 #include "interpreter/interp_masm.hpp"
 #include "memory/resourceArea.hpp"
-#include "oops/compiledICHolder.hpp"
 #include "oops/klass.inline.hpp"
 #include "prims/methodHandles.hpp"
 #include "runtime/continuation.hpp"
@@ -1845,7 +1844,7 @@ static void gen_continuation_enter(MacroAssembler* masm,
 
     // static stub for the call above
     CodeBuffer* cbuf = masm->code_section()->outer();
-    stub = CompiledStaticCall::emit_to_interp_stub(*cbuf, c2i_call_pc);
+    stub = CompiledDirectCall::emit_to_interp_stub(*cbuf, c2i_call_pc);
     guarantee(stub != nullptr, "no space for static stub");
   }
 
@@ -1938,7 +1937,7 @@ static void gen_continuation_enter(MacroAssembler* masm,
 
   // static stub for the call above
   CodeBuffer* cbuf = masm->code_section()->outer();
-  stub = CompiledStaticCall::emit_to_interp_stub(*cbuf, call_pc);
+  stub = CompiledDirectCall::emit_to_interp_stub(*cbuf, call_pc);
   guarantee(stub != nullptr, "no space for static stub");
 }
 

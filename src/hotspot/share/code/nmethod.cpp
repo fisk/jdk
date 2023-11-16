@@ -1193,7 +1193,7 @@ void nmethod::make_deoptimized() {
         break;
       }
       case relocInfo::static_call_type: {
-        CompiledStaticCall *csc = compiledStaticCall_at(iter.reloc());
+        CompiledDirectCall *csc = CompiledDirectCall::at(iter.reloc());
         address pc = csc->end_of_call();
         NativePostCallNop* nop = nativePostCallNop_at(pc);
         //tty->print_cr(" - static pc %p", pc);
@@ -1235,7 +1235,7 @@ void nmethod::verify_clean_inline_caches() {
         break;
       }
       case relocInfo::static_call_type: {
-        CompiledStaticCall *csc = compiledStaticCall_at(iter.reloc());
+        CompiledDirectCall *csc = CompiledDirectCall::at(iter.reloc());
         CodeBlob *cb = CodeCache::find_blob(csc->destination());
         assert(cb != nullptr, "destination not in CodeBlob?");
         nmethod* nm = cb->as_nmethod_or_null();
@@ -3268,7 +3268,7 @@ void nmethod::print_calls(outputStream* st) {
     }
     case relocInfo::static_call_type:
       st->print_cr("Static call at " INTPTR_FORMAT, p2i(iter.reloc()->addr()));
-      CompiledDirectStaticCall::at(iter.reloc())->print();
+      CompiledDirectCall::at(iter.reloc())->print();
       break;
     default:
       break;

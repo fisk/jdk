@@ -35,7 +35,6 @@
 #include "logging/log.hpp"
 #include "logging/logTag.hpp"
 #include "memory/resourceArea.hpp"
-#include "oops/compiledICHolder.inline.hpp"
 #include "oops/klass.inline.hpp"
 #include "oops/methodData.hpp"
 #include "oops/method.inline.hpp"
@@ -526,7 +525,7 @@ static bool clean_if_nmethod_is_unloaded(CompiledIC *ic, CompiledMethod* from,
   return clean_if_nmethod_is_unloaded(ic, ic->ic_destination(), from, clean_all);
 }
 
-static bool clean_if_nmethod_is_unloaded(CompiledStaticCall *csc, CompiledMethod* from,
+static bool clean_if_nmethod_is_unloaded(CompiledDirectCall *csc, CompiledMethod* from,
                                          bool clean_all) {
   return clean_if_nmethod_is_unloaded(csc, csc->destination(), from, clean_all);
 }

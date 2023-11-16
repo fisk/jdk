@@ -229,13 +229,13 @@ private:
   static int reloc_to_interp_stub();
 
   static inline CompiledDirectCall* before(address return_addr) {
-    CompiledDirectStaticCall* st = new CompiledDirectStaticCall(nativeCall_before(return_addr));
+    CompiledDirectCall* st = new CompiledDirectCall(nativeCall_before(return_addr));
     st->verify();
     return st;
   }
 
   static inline CompiledDirectCall* at(address native_call) {
-    CompiledDirectStaticCall* st = new CompiledDirectStaticCall(nativeCall_at(native_call));
+    CompiledDirectCall* st = new CompiledDirectCall(nativeCall_at(native_call));
     st->verify();
     return st;
   }
@@ -252,13 +252,11 @@ private:
   void set_to_clean();
 
   void set(const methodHandle& callee_method);
-  void set_to_interpreted(const methodHandle& callee, address entry);
 
   // State
   bool is_clean() const;
-
-  // State
   bool is_call_to_interpreted() const;
+  bool is_call_to_compiled() const;
 
   // Stub support
   static address find_stub_for(address instruction);
@@ -271,7 +269,7 @@ private:
 
  protected:
   virtual address resolve_call_stub() const;
-  virtual const char* name() const { return "CompiledDirectStaticCall"; }
+  virtual const char* name() const { return "CompiledDirectCall"; }
 };
 
 #endif // SHARE_CODE_COMPILEDIC_HPP

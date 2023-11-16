@@ -46,7 +46,6 @@
 #include "memory/resourceArea.hpp"
 #include "memory/universe.hpp"
 #include "metaprogramming/primitiveConversions.hpp"
-#include "oops/compiledICHolder.inline.hpp"
 #include "oops/klass.hpp"
 #include "oops/method.inline.hpp"
 #include "oops/objArrayKlass.hpp"
@@ -1703,7 +1702,7 @@ methodHandle SharedRuntime::handle_ic_miss_helper(TRAPS) {
 static bool clear_ic_at_addr(CompiledMethod* caller_nm, address call_addr, bool is_static_call) {
   CompiledICLocker ml(caller_nm);
   if (is_static_call) {
-    CompiledStaticCall* ssc = caller_nm->compiledStaticCall_at(call_addr);
+    CompiledDirectCall* ssc = caller_nm->compiledStaticCall_at(call_addr);
     if (!ssc->is_clean()) {
       return ssc->set_to_clean();
     }

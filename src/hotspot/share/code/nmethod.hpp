@@ -703,10 +703,6 @@ public:
 
   address call_instruction_address(address pc) const;
 
-  virtual CompiledStaticCall* compiledStaticCall_at(Relocation* call_site) const;
-  virtual CompiledStaticCall* compiledStaticCall_at(address addr) const;
-  virtual CompiledStaticCall* compiledStaticCall_before(address addr) const;
-
   virtual void  make_deoptimized();
   void finalize_relocations();
 };

@@ -2146,7 +2146,7 @@ encode %{
     assert(__ inst_mark() != NULL, "emit_call_reloc must set_inst_mark()");
 
     if (_method) { // Emit stub for static call.
-      address stub = CompiledStaticCall::emit_to_interp_stub(cbuf);
+      address stub = CompiledDirectCall::emit_to_interp_stub(cbuf);
       if (stub == NULL) {
         ciEnv::current()->record_failure("CodeCache is full");
         return;

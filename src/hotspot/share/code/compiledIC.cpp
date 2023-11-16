@@ -38,6 +38,7 @@
 #include "runtime/handles.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "sanitizers/leak.hpp"
+#include "utilities/interfaceSupport.inline.hpp"
 
 
 // Every time a compiled IC is changed or its type is being accessed,
@@ -94,12 +95,14 @@ bool CompiledICHolder::is_loader_alive() {
   return true;
 }
 
-void CompiledICHolder::trigger_holder_cleanup() {
+void CompiledICHolder::trigger_cleanup() {
   assert(SafepointSynchronize::is_at_safepoint(), "Intended to trigger in safepoint cleanup");
-  MonitorLocker ml(Service_lock, Mutex::_no_safepoint_check_flag());
+  MonitorLocker ml(Service_lock, Mutex::_no_safepoint_check_flag);
   _purge_list = _unlink_list;
   _unlink_list = nullptr;
-  ml.notify_all();
+  if (_purge_list != nullptr) {
+    ml.notify_all();
+  }
 }
 
 bool CompiledICHolder::has_cleanup_work() {
@@ -279,6 +282,11 @@ void CompiledDirectCall::set(const methodHandle& callee_method) {
 bool CompiledDirectCall::is_clean() const {
   return destination() == SharedRuntime::get_resolve_static_call_stub() ||
          destination() == SharedRuntime::get_resolve_opt_virtual_call_stub();
+}
+
+bool CompiledStaticCall::is_call_to_compiled() const {
+  // TODO: This check is incorrect
+  return CodeCache::contains(destination());
 }
 
 address CompiledDirectCall::find_stub_for(address instruction) {

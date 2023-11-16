@@ -2191,7 +2191,7 @@ encode %{
         cbuf.shared_stub_to_interp_for(_method, cbuf.insts()->mark_off());
       } else {
         // Emit stubs for static call.
-        address stub = CompiledStaticCall::emit_to_interp_stub(cbuf, mark);
+        address stub = CompiledDirectCall::emit_to_interp_stub(cbuf, mark);
         if (stub == NULL) {
           ciEnv::current()->record_failure("CodeCache is full");
           return;

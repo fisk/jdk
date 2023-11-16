@@ -2373,7 +2373,7 @@ encode %{
         cbuf.shared_stub_to_interp_for(_method, call - cbuf.insts_begin());
       } else {
         // Emit stub for static call
-        address stub = CompiledStaticCall::emit_to_interp_stub(cbuf, call);
+        address stub = CompiledDirectCall::emit_to_interp_stub(cbuf, call);
         if (stub == NULL) {
           ciEnv::current()->record_failure("CodeCache is full");
           return;

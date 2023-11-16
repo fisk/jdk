@@ -391,10 +391,6 @@ public:
 
   virtual address call_instruction_address(address pc) const = 0;
 
-  virtual CompiledStaticCall* compiledStaticCall_at(Relocation* call_site) const = 0;
-  virtual CompiledStaticCall* compiledStaticCall_at(address addr) const = 0;
-  virtual CompiledStaticCall* compiledStaticCall_before(address addr) const = 0;
-
   Method* attached_method(address call_pc);
   Method* attached_method_before_pc(address pc);
 
