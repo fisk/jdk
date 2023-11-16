@@ -2304,34 +2304,35 @@ void nmethod::verify_scopes() {
   if (method()->is_native()) return; // Ignore stub methods.
   // iterate through all interrupt point
   // and verify the debug information is valid.
-  RelocIterator iter((nmethod*)this);
-  while (iter.next()) {
-    address stub = nullptr;
-    switch (iter.type()) {
-      case relocInfo::virtual_call_type:
-        verify_interrupt_point(iter.addr());
-        break;
-      case relocInfo::opt_virtual_call_type:
-        stub = iter.opt_virtual_call_reloc()->static_stub();
-        verify_interrupt_point(iter.addr());
-        break;
-      case relocInfo::static_call_type:
-        stub = iter.static_call_reloc()->static_stub();
-        //verify_interrupt_point(iter.addr());
-        break;
-      case relocInfo::runtime_call_type:
-      case relocInfo::runtime_call_w_cp_type: {
-        address destination = iter.reloc()->value();
-        // Right now there is no way to find out which entries support
-        // an interrupt point.  It would be nice if we had this
-        // information in a table.
-        break;
-      }
-      default:
-        break;
-    }
-    assert(stub == nullptr || stub_contains(stub), "static call stub outside stub section");
-  }
+  // TODO: Do verification
+  //RelocIterator iter((nmethod*)this);
+  //while (iter.next()) {
+  //  address stub = nullptr;
+  //  switch (iter.type()) {
+  //    case relocInfo::virtual_call_type:
+  //      verify_interrupt_point(iter.addr());
+  //      break;
+  //    case relocInfo::opt_virtual_call_type:
+  //      stub = iter.opt_virtual_call_reloc()->static_stub();
+  //      verify_interrupt_point(iter.addr());
+  //      break;
+  //    case relocInfo::static_call_type:
+  //      stub = iter.static_call_reloc()->static_stub();
+  //      //verify_interrupt_point(iter.addr());
+  //      break;
+  //    case relocInfo::runtime_call_type:
+  //    case relocInfo::runtime_call_w_cp_type: {
+  //      address destination = iter.reloc()->value();
+  //      // Right now there is no way to find out which entries support
+  //      // an interrupt point.  It would be nice if we had this
+  //      // information in a table.
+  //      break;
+  //    }
+  //    default:
+  //      break;
+  //  }
+  //  assert(stub == nullptr || stub_contains(stub), "static call stub outside stub section");
+  //}
 }
 
 

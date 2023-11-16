@@ -114,10 +114,10 @@ class CompiledICHolder : public CHeapObj<mtCompiler> {
 class CompiledIC: public ResourceObj {
  private:
   CompiledMethod* _method;
-  NativeCall* _call;
+  address _call_instruction;
   NativeMovConstReg* _value;    // patchable value cell for this IC
 
-  CompiledIC(CompiledMethod* cm, NativeCall* ic_call);
+  CompiledIC(CompiledMethod* cm, address call_instruction);
   CompiledIC(RelocIterator* iter);
 
   void initialize_from_iter(RelocIterator* iter);
@@ -138,7 +138,7 @@ class CompiledIC: public ResourceObj {
   bool is_monomorphic() const { return holder()->is_monomorphic(); }
   bool is_megamorphic() const { return holder()->is_megamorphic(); }
 
-  address end_of_call() const { return  _call->return_address(); }
+  address end_of_call() const { return  _call_instruction + 6; } // TODO: Better constant for 6
 
   // MT-safe patching of inline caches. Note: Only safe to call is_xxx when holding the CompiledICLocker
   // so you are guaranteed that no patching takes place. The same goes for verify.
@@ -150,7 +150,7 @@ class CompiledIC: public ResourceObj {
   bool set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode, TRAPS);
 
   // Location
-  address instruction_address() const { return _call->instruction_address(); }
+  address instruction_address() const { return _call_instruction; }
 
   // Misc
   void print()             PRODUCT_RETURN;
@@ -158,28 +158,26 @@ class CompiledIC: public ResourceObj {
 };
 
 inline CompiledIC* CompiledIC_before(CompiledMethod* nm, address return_addr) {
-  CompiledIC* c_ic = new CompiledIC(nm, nativeCall_before(return_addr));
+  CompiledIC* c_ic = new CompiledIC(nm, return_addr - 6); // TODO: Better constant for 6
   c_ic->verify();
   return c_ic;
 }
 
 inline CompiledIC* CompiledIC_at(CompiledMethod* nm, address call_site) {
-  CompiledIC* c_ic = new CompiledIC(nm, nativeCall_at(call_site));
+  CompiledIC* c_ic = new CompiledIC(nm, call_site);
   c_ic->verify();
   return c_ic;
 }
 
 inline CompiledIC* CompiledIC_at(Relocation* call_site) {
-  assert(call_site->type() == relocInfo::virtual_call_type ||
-         call_site->type() == relocInfo::opt_virtual_call_type, "wrong reloc. info");
-  CompiledIC* c_ic = new CompiledIC(call_site->code(), nativeCall_at(call_site->addr()));
+  assert(call_site->type() == relocInfo::virtual_call_type, "wrong reloc. info");
+  CompiledIC* c_ic = new CompiledIC(call_site->code(), call_site->addr());
   c_ic->verify();
   return c_ic;
 }
 
 inline CompiledIC* CompiledIC_at(RelocIterator* reloc_iter) {
-  assert(reloc_iter->type() == relocInfo::virtual_call_type ||
-      reloc_iter->type() == relocInfo::opt_virtual_call_type, "wrong reloc. info");
+  assert(reloc_iter->type() == relocInfo::virtual_call_type, "wrong reloc. info");
   CompiledIC* c_ic = new CompiledIC(reloc_iter);
   c_ic->verify();
   return c_ic;

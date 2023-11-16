@@ -909,12 +909,13 @@ void RelocIterator::print_current() {
       break;
     }
   case relocInfo::virtual_call_type:
-    {
-      virtual_call_Relocation* r = (virtual_call_Relocation*) reloc();
-      tty->print(" | [destination=" INTPTR_FORMAT " cached_value=" INTPTR_FORMAT " metadata=" INTPTR_FORMAT "]",
-                 p2i(r->destination()), p2i(r->cached_value()), p2i(r->method_value()));
-      break;
-    }
+    // TODO: Fix printing
+    //{
+    //  virtual_call_Relocation* r = (virtual_call_Relocation*) reloc();
+    //  tty->print(" | [destination=" INTPTR_FORMAT " cached_value=" INTPTR_FORMAT " metadata=" INTPTR_FORMAT "]",
+    //             p2i(r->destination()), p2i(r->cached_value()), p2i(r->method_value()));
+    //  break;
+    //}
   case relocInfo::static_stub_type:
     {
       static_stub_Relocation* r = (static_stub_Relocation*) reloc();

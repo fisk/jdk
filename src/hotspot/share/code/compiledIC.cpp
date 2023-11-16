@@ -146,40 +146,35 @@ void CompiledIC::set_holder(CompiledICHolder* value) {
 // High-level access to an inline cache. Guaranteed to be MT-safe.
 
 void CompiledIC::initialize_from_iter(RelocIterator* iter) {
-  assert(iter->addr() == _call->instruction_address(), "must find ic_call");
+  assert(iter->addr() == _call_instruction, "must find ic_call");
 
   virtual_call_Relocation* r = iter->virtual_call_reloc();
   _value = nativeMovConstReg_at(r->cached_value());
 }
 
-CompiledIC::CompiledIC(CompiledMethod* cm, NativeCall* call)
+CompiledIC::CompiledIC(CompiledMethod* cm, address call_instruction)
   : _method(cm),
-    _call(call)
+    _call_instruction(call_instruction)
 {
-  address ic_call = _call->instruction_address();
-
-  assert(ic_call != nullptr, "ic_call address must be set");
   assert(cm != nullptr, "must pass compiled method");
-  assert(cm->contains(ic_call), "must be in compiled method");
+  assert(cm->contains(_call_instruction), "must be in compiled method");
 
-  // Search for the ic_call at the given address.
-  RelocIterator iter(cm, ic_call, ic_call+1);
+  // Search for the _call_instruction at the given address.
+  RelocIterator iter(cm, _call_instruction, _call_instruction+1);
   bool ret = iter.next();
   assert(ret == true, "relocInfo must exist at this address");
-  assert(iter.addr() == ic_call, "must find ic_call");
+  assert(iter.addr() == _call_instruction, "must find _call_instruction");
 
   initialize_from_iter(&iter);
 }
 
 CompiledIC::CompiledIC(RelocIterator* iter)
-  : _method(iter->code())
+  : _method(iter->code()),
+    _call_instruction(iter->addr())
 {
-  address ic_call = iter->addr();
-
   CompiledMethod* nm = iter->code();
-  assert(ic_call != nullptr, "ic_call address must be set");
   assert(nm != nullptr, "must pass compiled method");
-  assert(nm->contains(ic_call), "must be in compiled method");
+  assert(nm->contains(_call_instruction), "must be in compiled method");
 
   initialize_from_iter(iter);
 }
