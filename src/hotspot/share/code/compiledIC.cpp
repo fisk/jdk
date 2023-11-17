@@ -102,6 +102,11 @@ void CompiledICHolder::set_to_vtable(address destination) {
 }
 
 void CompiledICHolder::clean() {
+  // GC cleaning doesn't need to change the state of the inline cache,
+  // only nuke stale speculated metadata if it gets unloaded. If the
+  // inline cache is monomorphic, the verified entries will miss, and
+  // subsequent miss handlers will upgrade the callsite to megamorphic,
+  // which makes sense as it obviously is megamorphic then.
   if (_speculated_klass != nullptr && !_speculated_klass->is_loader_alive()) {
     Atomic::store(&_speculated_method, (Method*)nullptr);
     Atomic::store(&_speculated_klass, (Klass*)nullptr);
@@ -116,40 +121,52 @@ CompiledICHolder* CompiledIC::holder() const {
 //-----------------------------------------------------------------------------
 // High-level access to an inline cache. Guaranteed to be MT-safe.
 
-void CompiledIC::initialize_from_iter(RelocIterator* iter) {
-  assert(iter->addr() == _call_instruction, "must find ic_call");
+CompiledICHolder* holder_from_reloc_iter(RelocIterator* iter) {
+  assert(iter->type() == relocInfo::virtual_call_type, "wrong reloc. info");
 
   virtual_call_Relocation* r = iter->virtual_call_reloc();
-  _value = nativeMovConstReg_at(r->cached_value());
+  NativeMovConstReg* value = nativeMovConstReg_at(r->cached_value());
 
-  _holder = (CompiledICHolder*)_value->data();
-}
-
-CompiledIC::CompiledIC(CompiledMethod* cm, address call_instruction)
-  : _method(cm),
-    _call_instruction(call_instruction)
-{
-  assert(cm != nullptr, "must pass compiled method");
-  assert(cm->contains(_call_instruction), "must be in compiled method");
-
-  // Search for the _call_instruction at the given address.
-  RelocIterator iter(cm, _call_instruction, _call_instruction+1);
-  bool ret = iter.next();
-  assert(ret == true, "relocInfo must exist at this address");
-  assert(iter.addr() == _call_instruction, "must find _call_instruction");
-
-  initialize_from_iter(&iter);
+  return (CompiledICHolder*)value->data();
 }
 
 CompiledIC::CompiledIC(RelocIterator* iter)
   : _method(iter->code()),
+    _holder(holder_from_reloc_iter(iter)),
     _call_instruction(iter->addr())
 {
-  CompiledMethod* nm = iter->code();
-  assert(nm != nullptr, "must pass compiled method");
-  assert(nm->contains(_call_instruction), "must be in compiled method");
+  assert(_method != nullptr, "must pass compiled method");
+  assert(_method->contains(iter->addr()), "must be in compiled method");
+}
 
-  initialize_from_iter(iter);
+CompiledIC* CompiledIC_before(CompiledMethod* nm, address return_addr) {
+  address call_site = return_addr - 3; // TODO: Better constant for 3
+  RelocIterator iter(nm, call_site, call_site + 1);
+  CompiledIC* c_ic = new CompiledIC(&iter);
+  c_ic->verify();
+  return c_ic;
+}
+
+CompiledIC* CompiledIC_at(CompiledMethod* nm, address call_site) {
+  RelocIterator iter(nm, call_site, call_site + 1);
+  CompiledIC* c_ic = new CompiledIC(&iter);
+  c_ic->verify();
+  return c_ic;
+}
+
+CompiledIC* CompiledIC_at(Relocation* call_reloc) {
+  address call_site = call_reloc->addr();
+  CompiledMethod* cm = CodeCache::find_blob(call_reloc->addr())->as_compiled_method();
+  RelocIterator iter(cm, call_site, call_site + 1);
+  CompiledIC* c_ic = new CompiledIC(&iter);
+  c_ic->verify();
+  return c_ic;
+}
+
+CompiledIC* CompiledIC_at(RelocIterator* reloc_iter) {
+  CompiledIC* c_ic = new CompiledIC(reloc_iter);
+  c_ic->verify();
+  return c_ic;
 }
 
 // This function may fail for two reasons: either due to running out of vtable
@@ -157,7 +174,7 @@ CompiledIC::CompiledIC(RelocIterator* iter)
 // transitional state. The needs_ic_stub_refill value will be set if the failure
 // was due to running out of IC stubs, in which case the caller will refill IC
 // stubs and retry.
-bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode, TRAPS) {
+bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode) {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
   assert(is_monomorphic(), "going directly to megamorphic?");
 

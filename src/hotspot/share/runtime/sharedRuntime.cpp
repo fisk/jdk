@@ -1608,11 +1608,12 @@ methodHandle SharedRuntime::handle_ic_miss_helper(TRAPS) {
          "Shouldn't have a dynamic callsite for statically bound methods");
 
   if (h->is_clean() || (h->is_monomorphic() && receiver()->klass() == h->speculated_klass())) {
-    // Should be monomorphic if the CompiledIC is clean or is monomorphic and matched the speculated class
+    // Should be monomorphic if the CompiledIC is clean or is monomorphic and matched the speculated class.
+    // We allow calling set_to_monomorphic multiple times to switch between interpreted and compiled code.
     inline_cache->set_to_monomorphic(callee_method, receiver()->klass());
   } else {
     // Otherwise it should be megamorphic
-    inline_cache->set_to_megamorphic(&call_info, bc, THREAD);
+    inline_cache->set_to_megamorphic(&call_info, bc);
   }
 
   return callee_method;

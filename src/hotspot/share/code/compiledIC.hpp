@@ -116,12 +116,8 @@ class CompiledIC: public ResourceObj {
   CompiledMethod* _method;
   CompiledICHolder* _holder;
   address _call_instruction;
-  NativeMovConstReg* _value;    // patchable value cell for this IC
 
-  CompiledIC(CompiledMethod* cm, address call_instruction);
   CompiledIC(RelocIterator* iter);
-
-  void initialize_from_iter(RelocIterator* iter);
 
  public:
   // conversion (machine PC to CompiledIC*)
@@ -145,7 +141,7 @@ class CompiledIC: public ResourceObj {
 
   // Returns true if successful and false otherwise. The call can fail if memory
   // allocation in the code cache fails, or ic stub refill is required.
-  bool set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode, TRAPS);
+  bool set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecode);
 
   // Location
   address instruction_address() const { return _call_instruction; }
@@ -155,31 +151,10 @@ class CompiledIC: public ResourceObj {
   void verify()            PRODUCT_RETURN;
 };
 
-inline CompiledIC* CompiledIC_before(CompiledMethod* nm, address return_addr) {
-  CompiledIC* c_ic = new CompiledIC(nm, return_addr - 3); // TODO: Better constant for 3
-  c_ic->verify();
-  return c_ic;
-}
-
-inline CompiledIC* CompiledIC_at(CompiledMethod* nm, address call_site) {
-  CompiledIC* c_ic = new CompiledIC(nm, call_site);
-  c_ic->verify();
-  return c_ic;
-}
-
-inline CompiledIC* CompiledIC_at(Relocation* call_site) {
-  assert(call_site->type() == relocInfo::virtual_call_type, "wrong reloc. info");
-  CompiledIC* c_ic = new CompiledIC(call_site->code(), call_site->addr());
-  c_ic->verify();
-  return c_ic;
-}
-
-inline CompiledIC* CompiledIC_at(RelocIterator* reloc_iter) {
-  assert(reloc_iter->type() == relocInfo::virtual_call_type, "wrong reloc. info");
-  CompiledIC* c_ic = new CompiledIC(reloc_iter);
-  c_ic->verify();
-  return c_ic;
-}
+CompiledIC* CompiledIC_before(CompiledMethod* nm, address return_addr);
+CompiledIC* CompiledIC_at(CompiledMethod* nm, address call_site);
+CompiledIC* CompiledIC_at(Relocation* call_site);
+CompiledIC* CompiledIC_at(RelocIterator* reloc_iter);
 
 //-----------------------------------------------------------------------------
 // The CompiledDirectCall represents a call to a method in the compiled code
