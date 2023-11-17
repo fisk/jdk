@@ -514,7 +514,7 @@ int CallStaticJavaDirectNode::compute_padding(int current_offset) const
 int CallDynamicJavaDirectNode::compute_padding(int current_offset) const
 {
   current_offset += clear_avx_size(); // skip vzeroupper
-  current_offset += 11; // skip movq instruction + call opcode byte
+  current_offset += 1; // skip movq instruction opcode byte
   return align_up(current_offset, alignment_required()) - current_offset;
 }
 
@@ -2179,6 +2179,7 @@ encode %{
       int method_index = resolved_method_index(cbuf);
       RelocationHolder rspec = _optimized_virtual ? opt_virtual_call_Relocation::spec(method_index)
                                                   : static_call_Relocation::spec(method_index);
+      assert(__ offset() % 4 == 0, "misaligned static call");
       emit_d32_reloc(cbuf, (int) ($meth$$method - ((intptr_t) cbuf.insts_end()) - 4),
                      rspec, RELOC_DISP32);
       address mark = cbuf.insts_mark();
@@ -13509,7 +13510,7 @@ instruct CallDynamicJavaDirect(method meth)
             "call,dynamic " %}
   ins_encode(clear_avx, Java_Dynamic_Call(meth), call_epilog);
   ins_pipe(pipe_slow);
-  ins_alignment(4);
+  ins_alignment(8);
 %}
 
 // Call Runtime Instruction
