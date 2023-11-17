@@ -1419,7 +1419,6 @@ void nmethod::unlink() {
   // the Method, because it is only concurrently unlinked by
   // the entry barrier, which acquires the per nmethod lock.
   unlink_from_method();
-  clear_ic_callsites();
 
   if (is_osr_method()) {
     invalidate_osr_method();
@@ -1461,6 +1460,8 @@ void nmethod::flush() {
     delete ec;
     ec = next;
   }
+
+  purge_ic_callsites();
 
   Universe::heap()->unregister_nmethod(this);
   CodeCache::unregister_old_nmethod(this);
@@ -1602,11 +1603,17 @@ void nmethod::metadata_do(MetadataClosure* f) {
         ResourceMark rm;
         CompiledIC *ic = CompiledIC_at(&iter);
         CompiledICHolder* h = ic->holder();
-        if (h->holder_metadata() != nullptr) {
-          f->do_metadata(h->holder_metadata());
+        if (h->speculated_method() != nullptr) {
+          f->do_metadata(h->speculated_method());
         }
-        if (h->holder_klass() != nullptr) {
-          f->do_metadata(h->holder_klass());
+        if (h->speculated_klass() != nullptr) {
+          f->do_metadata(h->speculated_klass());
+        }
+        if (h->itable_refc_klass() != nullptr) {
+          f->do_metadata(h->itable_refc_klass());
+        }
+        if (h->itable_defc_klass() != nullptr) {
+          f->do_metadata(h->itable_defc_klass());
         }
       }
     }

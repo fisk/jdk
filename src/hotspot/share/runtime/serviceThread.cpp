@@ -30,7 +30,6 @@
 #include "classfile/symbolTable.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "classfile/vmClasses.hpp"
-#include "code/compiledIC.hpp"
 #include "gc/shared/oopStorage.hpp"
 #include "gc/shared/oopStorageSet.hpp"
 #include "memory/universe.hpp"
@@ -96,7 +95,6 @@ void ServiceThread::service_thread_entry(JavaThread* jt, TRAPS) {
     bool oop_handles_to_release = false;
     bool cldg_cleanup_work = false;
     bool jvmti_tagmap_work = false;
-    bool compiled_ic_holder_work = false;
     {
       // Need state transition ThreadBlockInVM so that this thread
       // will be handled by safepoint correctly when this thread is
@@ -126,8 +124,7 @@ void ServiceThread::service_thread_entry(JavaThread* jt, TRAPS) {
               (oopstorage_work = OopStorage::has_cleanup_work_and_reset()) |
               (oop_handles_to_release = JavaThread::has_oop_handles_to_release()) |
               (cldg_cleanup_work = ClassLoaderDataGraph::should_clean_metaspaces_and_reset()) |
-              (jvmti_tagmap_work = JvmtiTagMap::has_object_free_events_and_reset()) |
-              (compiled_ic_holder_work = CompiledICHolder::has_cleanup_work())
+              (jvmti_tagmap_work = JvmtiTagMap::has_object_free_events_and_reset())
              ) == 0) {
         // Wait until notified that there is some work to do.
         ml.wait();
@@ -197,10 +194,6 @@ void ServiceThread::service_thread_entry(JavaThread* jt, TRAPS) {
 
     if (jvmti_tagmap_work) {
       JvmtiTagMap::flush_all_object_free_events();
-    }
-
-    if (compiled_ic_holder_work) {
-      CompiledICHolder::do_cleanup_work();
     }
   }
 }

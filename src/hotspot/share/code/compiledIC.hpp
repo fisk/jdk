@@ -71,49 +71,50 @@ enum class CompiledICState {
 
 class CompiledICHolder : public CHeapObj<mtCompiler> {
   friend class VMStructs;
- private:
-  static CompiledICHolder* volatile _unlink_list;
-  static CompiledICHolder* _purge_list;
 
-  Metadata* _holder_metadata;
-  Klass*    _holder_klass;    // to avoid name conflict with oopDesc::_klass
-  address   _destination;
-  CompiledICHolder* _next;
-  CompiledICState _state;
+  Method* volatile _speculated_method;
+  Klass*  volatile _speculated_klass;
+  Klass*  volatile _itable_defc_klass;
+  Klass*  volatile _itable_refc_klass;
+  address volatile _destination;
+  CompiledICState  _state;
 
  public:
   // Constructor
-  CompiledICHolder(Metadata* metadata, Klass* klass, address destination, CompiledICState state);
+  CompiledICHolder();
 
   // accessors
-  Klass*    holder_klass()  const     { return _holder_klass; }
-  Metadata* holder_metadata() const   { return _holder_metadata; }
-  address   destination() const       { return _destination; }
+  Klass*    speculated_klass()  const  { return _speculated_klass; }
+  Metadata* speculated_method() const  { return _speculated_method; }
+  Klass*    itable_defc_klass()  const { return _itable_defc_klass; }
+  Klass*    itable_refc_klass() const  { return _itable_refc_klass; }
+  address   destination() const        { return _destination; }
 
-  static ByteSize holder_metadata_offset() { return byte_offset_of(CompiledICHolder, _holder_metadata); }
-  static ByteSize holder_klass_offset()    { return byte_offset_of(CompiledICHolder, _holder_klass); }
-  static ByteSize destination_offset()     { return byte_offset_of(CompiledICHolder, _destination); }
+  static ByteSize speculated_method_offset() { return byte_offset_of(CompiledICHolder, _speculated_method); }
+  static ByteSize speculated_klass_offset()  { return byte_offset_of(CompiledICHolder, _speculated_klass); }
+
+  static ByteSize itable_defc_klass_offset() { return byte_offset_of(CompiledICHolder, _itable_defc_klass); }
+  static ByteSize itable_refc_klass_offset() { return byte_offset_of(CompiledICHolder, _itable_refc_klass); }
+
+  static ByteSize destination_offset()       { return byte_offset_of(CompiledICHolder, _destination); }
 
   bool is_clean()       const { return _state == CompiledICState::_clean; }
   bool is_monomorphic() const { return _state == CompiledICState::_monomorphic; }
   bool is_megamorphic() const { return _state == CompiledICState::_itable || _state == CompiledICState::_vtable; }
 
-  CompiledICHolder* next()     { return _next; }
-  void set_next(CompiledICHolder* n) { _next = n; }
+  void set_to_clean();
+  void set_to_monomorphic(const methodHandle& callee_method, Klass* receiver_klass, address destination);
+  void set_to_itable(Klass* defc, Klass* refc, address destination);
+  void set_to_vtable(address destination);
 
-  void release();
-
-  bool is_loader_alive();
-
-  // Holder cleanup
-  static void trigger_cleanup_work();
-  static bool has_cleanup_work();
-  static void do_cleanup_work();
+  // GC Support
+  void clean();
 };
 
 class CompiledIC: public ResourceObj {
  private:
   CompiledMethod* _method;
+  CompiledICHolder* _holder;
   address _call_instruction;
   NativeMovConstReg* _value;    // patchable value cell for this IC
 
@@ -122,8 +123,6 @@ class CompiledIC: public ResourceObj {
 
   void initialize_from_iter(RelocIterator* iter);
 
-  void set_holder(CompiledICHolder* value);
-
  public:
   // conversion (machine PC to CompiledIC*)
   friend CompiledIC* CompiledIC_before(CompiledMethod* nm, address return_addr);
@@ -131,9 +130,8 @@ class CompiledIC: public ResourceObj {
   friend CompiledIC* CompiledIC_at(Relocation* call_site);
   friend CompiledIC* CompiledIC_at(RelocIterator* reloc_iter);
 
-  CompiledICHolder* holder() const;
-
   // State
+  CompiledICHolder* holder() const;
   bool is_clean()       const { return holder()->is_clean(); }
   bool is_monomorphic() const { return holder()->is_monomorphic(); }
   bool is_megamorphic() const { return holder()->is_megamorphic(); }

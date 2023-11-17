@@ -306,7 +306,7 @@ void C1_MacroAssembler::inline_cache_check(Register receiver, Register iCache) {
   int start_offset = offset();
 
   load_klass(rscratch1, receiver, rscratch2);
-  cmpptr(rscratch1, Address(iCache, CompiledICHolder::holder_klass_offset()));
+  cmpptr(rscratch1, Address(iCache, CompiledICHolder::speculated_klass_offset()));
   // if icache check fails, then jump to runtime routine
   // Note: RECEIVER must still contain the receiver!
   jump_cc(Assembler::notEqual,

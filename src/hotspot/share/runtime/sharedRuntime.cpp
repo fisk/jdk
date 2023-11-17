@@ -1607,7 +1607,7 @@ methodHandle SharedRuntime::handle_ic_miss_helper(TRAPS) {
   assert(!call_info.resolved_method()->can_be_statically_bound(),
          "Shouldn't have a dynamic callsite for statically bound methods");
 
-  if (h->is_clean() || (h->is_monomorphic() && receiver()->klass() == h->holder_klass())) {
+  if (h->is_clean() || (h->is_monomorphic() && receiver()->klass() == h->speculated_klass())) {
     // Should be monomorphic if the CompiledIC is clean or is monomorphic and matched the speculated class
     inline_cache->set_to_monomorphic(callee_method, receiver()->klass());
   } else {

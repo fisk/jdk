@@ -174,15 +174,15 @@ VtableStub* VtableStubs::create_itable_stub(int itable_index) {
   // Most registers are in use; we'll use rax, rbx, r10, r11
   // (various calling sequences use r[cd]x, r[sd]i, r[89]; stay away from them)
   const Register recv_klass_reg     = r10;
-  const Register holder_klass_reg   = rax; // declaring interface klass (DECC)
+  const Register holder_klass_reg   = rax; // declaring interface klass (DEFC)
   const Register resolved_klass_reg = r14; // resolved interface klass (REFC)
   const Register temp_reg           = r11;
   const Register temp_reg2          = r13;
   const Register method             = rbx;
   const Register icholder_reg       = rax;
 
-  __ movptr(resolved_klass_reg, Address(icholder_reg, CompiledICHolder::holder_klass_offset()));
-  __ movptr(holder_klass_reg,   Address(icholder_reg, CompiledICHolder::holder_metadata_offset()));
+  __ movptr(resolved_klass_reg, Address(icholder_reg, CompiledICHolder::itable_refc_klass_offset()));
+  __ movptr(holder_klass_reg,   Address(icholder_reg, CompiledICHolder::itable_defc_klass_offset()));
 
   Label L_no_such_interface;
 

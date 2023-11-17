@@ -409,14 +409,14 @@ void CompiledMethod::clear_inline_caches() {
 
 // Clear IC callsites
 // as well as any associated CompiledICHolders.
-void CompiledMethod::clear_ic_callsites() {
+void CompiledMethod::purge_ic_callsites() {
   assert(CompiledICLocker::is_safe(this), "mt unsafe call");
   ResourceMark rm;
   RelocIterator iter(this);
   while(iter.next()) {
     if (iter.type() == relocInfo::virtual_call_type) {
       CompiledIC* ic = CompiledIC_at(&iter);
-      ic->holder()->release();
+      delete ic->holder();
     }
   }
 }
@@ -443,10 +443,7 @@ class CheckClass : public MetadataClosure {
 
 
 static void clean_ic_if_metadata_is_dead(CompiledIC *ic) {
-  CompiledICHolder* h = ic->holder();
-  if (!h->is_loader_alive()) {
-    ic->set_to_clean();
-  }
+  ic->holder()->clean();
 }
 
 // Clean references to unloaded nmethods at addr from this one, which is not unloaded.

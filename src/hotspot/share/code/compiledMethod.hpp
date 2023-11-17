@@ -373,7 +373,7 @@ public:
   void cleanup_inline_caches_whitebox();
 
   virtual void clear_inline_caches();
-  void clear_ic_callsites();
+  void purge_ic_callsites();
 
   // Execute nmethod barrier code, as if entering through nmethod call.
   void run_nmethod_entry_barrier();

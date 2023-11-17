@@ -28,12 +28,10 @@
 #include "code/compiledIC.hpp"
 #include "code/nmethod.hpp"
 #include "code/vtableStubs.hpp"
-#include "interpreter/interpreter.hpp"
 #include "memory/resourceArea.hpp"
-#include "memory/universe.hpp"
 #include "oops/klass.inline.hpp"
 #include "oops/method.inline.hpp"
-#include "oops/oop.inline.hpp"
+#include "runtime/atomic.hpp"
 #include "runtime/continuationEntry.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
@@ -67,79 +65,52 @@ bool CompiledICLocker::is_safe(address code) {
   return CompiledICProtectionBehaviour::current()->is_safe(cm);
 }
 
-CompiledICHolder::CompiledICHolder(Metadata* metadata, Klass* klass, address destination, CompiledICState state)
-  : _holder_metadata(metadata), _holder_klass(klass), _destination(destination), _next(nullptr), _state(state) {
+CompiledICHolder::CompiledICHolder()
+  : _speculated_method(),
+    _speculated_klass(),
+    _itable_defc_klass(),
+    _itable_refc_klass(),
+    _destination(SharedRuntime::get_resolve_virtual_call_stub()),
+    _state(CompiledICState::_clean) {}
+
+void CompiledICHolder::set_to_clean() {
+  Atomic::store(&_destination, SharedRuntime::get_resolve_virtual_call_stub());
+  _state = CompiledICState::_clean;
 }
 
-void CompiledICHolder::release() {
-  for (;;) {
-    CompiledICHolder* head = Atomic::load(&_unlink_list);
-    set_next(head);
-    if (Atomic::cmpxchg(&_unlink_list, head, this) == head) {
-      return;
-    }
+void CompiledICHolder::set_to_monomorphic(const methodHandle& callee_method, Klass* receiver_klass, address destination) {
+  if (_speculated_method == nullptr) {
+    // Only transition monotonically from null to a single speculated class
+    Atomic::store(&_speculated_method, callee_method());
+    Atomic::store(&_speculated_klass, receiver_klass);
+  }
+  Atomic::release_store(&_destination, destination);
+  _state = CompiledICState::_monomorphic;
+}
+
+void CompiledICHolder::set_to_itable(Klass* defc, Klass* refc, address destination) {
+  Atomic::store(&_itable_refc_klass, refc);
+  Atomic::store(&_itable_defc_klass, defc);
+
+  Atomic::release_store(&_destination, destination);
+  _state = CompiledICState::_itable;
+}
+
+void CompiledICHolder::set_to_vtable(address destination) {
+  Atomic::store(&_destination, destination);
+  _state = CompiledICState::_vtable;
+}
+
+void CompiledICHolder::clean() {
+  if (_speculated_klass != nullptr && !_speculated_klass->is_loader_alive()) {
+    Atomic::store(&_speculated_method, (Method*)nullptr);
+    Atomic::store(&_speculated_klass, (Klass*)nullptr);
   }
 }
-
-bool CompiledICHolder::is_loader_alive() {
-  if (_holder_metadata != nullptr) {
-    Klass* k = _state == CompiledICState::_monomorphic ? ((Method*)_holder_metadata)->method_holder() : (Klass*)_holder_metadata;
-    if (!k->is_loader_alive()) {
-      return false;
-    }
-  }
-
-  if (_holder_klass != nullptr && !_holder_klass->is_loader_alive()) {
-    return false;
-  }
-  return true;
-}
-
-void CompiledICHolder::trigger_cleanup_work() {
-  assert(SafepointSynchronize::is_at_safepoint(), "Intended to trigger in safepoint cleanup");
-  MonitorLocker ml(Service_lock, Mutex::_no_safepoint_check_flag);
-  _purge_list = _unlink_list;
-  _unlink_list = nullptr;
-  if (_purge_list != nullptr) {
-    ml.notify_all();
-  }
-}
-
-bool CompiledICHolder::has_cleanup_work() {
-  return _purge_list != nullptr;
-}
-
-// The service thread takes care of deleting released CompiledICHolders
-void CompiledICHolder::do_cleanup_work() {
-  CompiledICHolder* current = _purge_list;
-  _purge_list = nullptr;
-
-  ThreadBlockInVM tbivm(JavaThread::current());
-  while (current != nullptr) {
-    CompiledICHolder* next = current->next();
-    delete current;
-    current = next;
-  }
-}
-
-CompiledICHolder* volatile CompiledICHolder::_unlink_list;
-CompiledICHolder* CompiledICHolder::_purge_list;
 
 CompiledICHolder* CompiledIC::holder() const {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-  return (CompiledICHolder*)_value->data();
-}
-
-void CompiledIC::set_holder(CompiledICHolder* value) {
-  assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
-
-  if (holder() != nullptr) {
-    holder()->release();
-  }
-
-  _value->set_data((intptr_t)(void*)value);
-  // LSan doesn't understand that the holder escapes into an instruction immediate
-  LSAN_IGNORE_OBJECT(value);
+  return _holder;
 }
 
 //-----------------------------------------------------------------------------
@@ -150,6 +121,8 @@ void CompiledIC::initialize_from_iter(RelocIterator* iter) {
 
   virtual_call_Relocation* r = iter->virtual_call_reloc();
   _value = nativeMovConstReg_at(r->cached_value());
+
+  _holder = (CompiledICHolder*)_value->data();
 }
 
 CompiledIC::CompiledIC(CompiledMethod* cm, address call_instruction)
@@ -189,7 +162,6 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
   assert(is_monomorphic(), "going directly to megamorphic?");
 
   address entry;
-  CompiledICHolder* holder;
   if (call_info->call_kind() == CallInfo::itable_call) {
     assert(bytecode == Bytecodes::_invokeinterface, "");
     int itable_index = call_info->itable_index();
@@ -203,10 +175,9 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
     InstanceKlass* k = call_info->resolved_method()->method_holder();
     assert(k->verify_itable_index(itable_index), "sanity check");
 #endif //ASSERT
-    holder = new CompiledICHolder(call_info->resolved_method()->method_holder(),
-                                  call_info->resolved_klass(),
-                                  entry,
-                                  CompiledICState::_itable);
+    _holder->set_to_itable(call_info->resolved_method()->method_holder(),
+                           call_info->resolved_klass(),
+                           entry);
   } else {
     assert(call_info->call_kind() == CallInfo::vtable_call, "either itable or vtable");
     // Can be different than selected_method->vtable_index(), due to package-private etc.
@@ -216,13 +187,8 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
     if (entry == nullptr) {
       return false;
     }
-    holder = new CompiledICHolder(nullptr,
-                                  nullptr,
-                                  entry,
-                                  CompiledICState::_vtable);
+    _holder->set_to_vtable(entry);
   }
-
-  set_holder(holder);
 
   assert(is_megamorphic(), "sanity check");
   return true;
@@ -231,8 +197,8 @@ bool CompiledIC::set_to_megamorphic(CallInfo* call_info, Bytecodes::Code bytecod
 void CompiledIC::set_to_clean() {
   assert(CompiledICLocker::is_safe(_method), "mt unsafe call");
 
-  address entry = SharedRuntime::get_resolve_virtual_call_stub();
-  set_holder(new CompiledICHolder(nullptr, nullptr, entry, CompiledICState::_clean));
+  // TODO: Clear with GC and see who else is cleaning really
+  _holder->set_to_clean();
 }
 
 void CompiledIC::set_to_monomorphic(const methodHandle& callee_method, Klass* receiver_klass) {
@@ -246,7 +212,7 @@ void CompiledIC::set_to_monomorphic(const methodHandle& callee_method, Klass* re
   } else {
     entry = callee_method->get_c2i_unverified_entry();
   }
-  set_holder(new CompiledICHolder(callee_method(), receiver_klass, entry, CompiledICState::_monomorphic));
+  _holder->set_to_monomorphic(callee_method, receiver_klass, entry);
 }
 
 #ifdef ASSERT

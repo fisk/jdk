@@ -1690,7 +1690,7 @@ void MachUEPNode::emit(CodeBuffer& cbuf, PhaseRegAlloc* ra_) const
   uint insts_size = cbuf.insts_size();
 
   masm.load_klass(rscratch1, j_rarg0, rscratch2);
-  masm.cmpptr(rscratch1, Address(rax, CompiledICHolder::holder_klass_offset()));
+  masm.cmpptr(rscratch1, Address(rax, CompiledICHolder::speculated_klass_offset()));
 
   masm.jump_cc(Assembler::notEqual, RuntimeAddress(SharedRuntime::get_ic_miss_stub()));
 

@@ -1340,9 +1340,7 @@ void MacroAssembler::call(AddressLiteral entry, Register rscratch) {
 
 void MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
-  // TODO: Scratch emit messes with assert
-  // assert((offset() + 1) % BytesPerWord == 0, "mov must be aligned"); // TODO: Better displacement constant
-  movptr(rax, (intptr_t)(void*)new CompiledICHolder(nullptr, nullptr, entry, CompiledICState::_clean)); // TODO: don't emit during scratch_emit
+  movptr(rax, (intptr_t)(void*)new CompiledICHolder()); // TODO: don't emit during scratch_emit
   relocate(rh);
   call(Address(rax, CompiledICHolder::destination_offset()));
 }

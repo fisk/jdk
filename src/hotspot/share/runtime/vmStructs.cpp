@@ -210,8 +210,10 @@
   nonstatic_field(ArrayKlass,                  _dimension,                                    int)                                   \
   volatile_nonstatic_field(ArrayKlass,         _higher_dimension,                             ObjArrayKlass*)                        \
   volatile_nonstatic_field(ArrayKlass,         _lower_dimension,                              ArrayKlass*)                           \
-  nonstatic_field(CompiledICHolder,            _holder_metadata,                              Metadata*)                             \
-  nonstatic_field(CompiledICHolder,            _holder_klass,                                 Klass*)                                \
+  volatile_nonstatic_field(CompiledICHolder,   _speculated_method,                            Method*)                               \
+  volatile_nonstatic_field(CompiledICHolder,   _speculated_klass,                             Klass*)                                \
+  volatile_nonstatic_field(CompiledICHolder,   _itable_defc_klass,                            Klass*)                                \
+  volatile_nonstatic_field(CompiledICHolder,   _itable_refc_klass,                            Klass*)                                \
   nonstatic_field(ConstantPool,                _tags,                                         Array<u1>*)                            \
   nonstatic_field(ConstantPool,                _cache,                                        ConstantPoolCache*)                    \
   nonstatic_field(ConstantPool,                _pool_holder,                                  InstanceKlass*)                        \
