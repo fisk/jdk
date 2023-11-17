@@ -1181,8 +1181,7 @@ void nmethod::make_deoptimized() {
   while (iter.next()) {
 
     switch (iter.type()) {
-      case relocInfo::virtual_call_type:
-      case relocInfo::opt_virtual_call_type: {
+      case relocInfo::virtual_call_type: {
         CompiledIC *ic = CompiledIC_at(&iter);
         address pc = ic->end_of_call();
         NativePostCallNop* nop = nativePostCallNop_at(pc);
@@ -1192,7 +1191,8 @@ void nmethod::make_deoptimized() {
         assert(NativeDeoptInstruction::is_deopt_at(pc), "check");
         break;
       }
-      case relocInfo::static_call_type: {
+      case relocInfo::static_call_type:
+      case relocInfo::opt_virtual_call_type: {
         CompiledDirectCall *csc = CompiledDirectCall::at(iter.reloc());
         address pc = csc->end_of_call();
         NativePostCallNop* nop = nativePostCallNop_at(pc);

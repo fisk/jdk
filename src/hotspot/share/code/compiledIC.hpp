@@ -138,7 +138,7 @@ class CompiledIC: public ResourceObj {
   bool is_monomorphic() const { return holder()->is_monomorphic(); }
   bool is_megamorphic() const { return holder()->is_megamorphic(); }
 
-  address end_of_call() const { return  _call_instruction + 6; } // TODO: Better constant for 6
+  address end_of_call() const { return  _call_instruction + 3; } // TODO: Better constant for 3
 
   // MT-safe patching of inline caches. Note: Only safe to call is_xxx when holding the CompiledICLocker
   // so you are guaranteed that no patching takes place. The same goes for verify.
@@ -158,7 +158,7 @@ class CompiledIC: public ResourceObj {
 };
 
 inline CompiledIC* CompiledIC_before(CompiledMethod* nm, address return_addr) {
-  CompiledIC* c_ic = new CompiledIC(nm, return_addr - 6); // TODO: Better constant for 6
+  CompiledIC* c_ic = new CompiledIC(nm, return_addr - 3); // TODO: Better constant for 3
   c_ic->verify();
   return c_ic;
 }

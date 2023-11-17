@@ -244,7 +244,7 @@ void CompiledIC::set_to_monomorphic(const methodHandle& callee_method, Klass* re
   if (code != nullptr && code->is_in_use() && !code->is_unloading()) {
     entry = code->entry_point();
   } else {
-    entry = callee_method->get_c2i_entry();
+    entry = callee_method->get_c2i_unverified_entry();
   }
   set_holder(new CompiledICHolder(callee_method(), receiver_klass, entry, CompiledICState::_monomorphic));
 }
