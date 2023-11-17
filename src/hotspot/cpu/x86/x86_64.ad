@@ -484,7 +484,7 @@ int MachCallStaticJavaNode::ret_addr_offset()
 
 int MachCallDynamicJavaNode::ret_addr_offset()
 {
-  int offset = 15; // 15 bytes from start of call to where return address points
+  int offset = 13; // 13 bytes from start of call to where return address points
   offset += clear_avx_size();
   return offset;
 }
@@ -2179,7 +2179,6 @@ encode %{
       int method_index = resolved_method_index(cbuf);
       RelocationHolder rspec = _optimized_virtual ? opt_virtual_call_Relocation::spec(method_index)
                                                   : static_call_Relocation::spec(method_index);
-      assert(__ offset() % 4 == 0, "misaligned static call");
       emit_d32_reloc(cbuf, (int) ($meth$$method - ((intptr_t) cbuf.insts_end()) - 4),
                      rspec, RELOC_DISP32);
       address mark = cbuf.insts_mark();
