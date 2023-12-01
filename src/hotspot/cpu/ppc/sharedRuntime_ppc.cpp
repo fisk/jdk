@@ -1184,44 +1184,9 @@ AdapterHandlerEntry* SharedRuntime::generate_i2c2i_adapters(MacroAssembler *masm
 
   Label call_interpreter;
 
-  assert(!MacroAssembler::needs_explicit_null_check(oopDesc::klass_offset_in_bytes()),
-         "klass offset should reach into any page");
-  // Check for null argument if we don't have implicit null checks.
-  if (!ImplicitNullChecks || !os::zero_page_read_protected()) {
-    if (TrapBasedNullChecks) {
-      __ trap_null_check(R3_ARG1);
-    } else {
-      Label valid;
-      __ cmpdi(CCR0, R3_ARG1, 0);
-      __ bne_predict_taken(CCR0, valid);
-      // We have a null argument, branch to ic_miss_stub.
-      __ b64_patchable((address)SharedRuntime::get_ic_miss_stub(),
-                       relocInfo::runtime_call_type);
-      __ BIND(valid);
-    }
-  }
-  // Assume argument is not null, load klass from receiver.
-  __ load_klass(receiver_klass, R3_ARG1);
-
-  __ ld(ic_klass, CompiledICHolder::holder_klass_offset(), ic);
-
-  if (TrapBasedICMissChecks) {
-    __ trap_ic_miss_check(receiver_klass, ic_klass);
-  } else {
-    Label valid;
-    __ cmpd(CCR0, receiver_klass, ic_klass);
-    __ beq_predict_taken(CCR0, valid);
-    // We have an unexpected klass, branch to ic_miss_stub.
-    __ b64_patchable((address)SharedRuntime::get_ic_miss_stub(),
-                     relocInfo::runtime_call_type);
-    __ BIND(valid);
-  }
-
+  __ ic_check(4 /* end_alignment */);
+  __ ld(R19_method, CompiledICData::speculated_method_offset(), ic);
   // Argument is valid and klass is as expected, continue.
-
-  // Extract method from inline cache, verified entry point needs it.
-  __ ld(R19_method, CompiledICHolder::holder_metadata_offset(), ic);
-  assert(R19_method == ic, "the inline cache register is dead here");
 
   __ ld(code, method_(code));
   __ cmpdi(CCR0, code, 0);
@@ -2185,7 +2150,6 @@ nmethod *SharedRuntime::generate_native_wrapper(MacroAssembler *masm,
   intptr_t frame_done_pc;
   intptr_t oopmap_pc;
 
-  Label    ic_miss;
   Label    handle_pending_exception;
 
   Register r_callers_sp = R21;
@@ -2209,18 +2173,8 @@ nmethod *SharedRuntime::generate_native_wrapper(MacroAssembler *masm,
 
   // Check ic: object class == cached class?
   if (!method_is_static) {
-  Register ic = R19_inline_cache_reg;
-  Register receiver_klass = r_temp_1;
-
-  __ cmpdi(CCR0, R3_ARG1, 0);
-  __ beq(CCR0, ic_miss);
-  __ verify_oop(R3_ARG1, FILE_AND_LINE);
-  __ load_klass(receiver_klass, R3_ARG1);
-
-  __ cmpd(CCR0, receiver_klass, ic);
-  __ bne(CCR0, ic_miss);
+    __ ic_check(4 /* end_alignment */);
   }
-
 
   // Generate the Verified Entry Point (VEP).
   // --------------------------------------------------------------------------
@@ -2700,16 +2654,6 @@ nmethod *SharedRuntime::generate_native_wrapper(MacroAssembler *masm,
   __ restore_LR_CR(R11);
   __ b64_patchable((address)StubRoutines::forward_exception_entry(),
                        relocInfo::runtime_call_type);
-
-  // Handler for a cache miss (out-of-line).
-  // --------------------------------------------------------------------------
-
-  if (!method_is_static) {
-  __ bind(ic_miss);
-
-  __ b64_patchable((address)SharedRuntime::get_ic_miss_stub(),
-                       relocInfo::runtime_call_type);
-  }
 
   // Done.
   // --------------------------------------------------------------------------

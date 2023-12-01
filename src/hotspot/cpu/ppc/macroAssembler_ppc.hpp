@@ -367,6 +367,10 @@ class MacroAssembler: public Assembler {
                            Register toc);
 #endif
 
+  intptr_t create_ic_data();
+  static int ic_check_size();
+  int ic_check(int end_alignment);
+
  protected:
 
   // It is imperative that all calls into the VM are handled via the

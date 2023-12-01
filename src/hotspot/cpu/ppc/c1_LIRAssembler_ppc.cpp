@@ -77,9 +77,7 @@ int LIR_Assembler::initial_frame_size_in_bytes() const {
 // we fetch the class of the receiver and compare it with the cached class.
 // If they do not match we jump to slow case.
 int LIR_Assembler::check_icache() {
-  int offset = __ offset();
-  __ inline_cache_check(R3_ARG1, R19_inline_cache_reg);
-  return offset;
+  return __ ic_check(CodeEntryAlignment);
 }
 
 void LIR_Assembler::clinit_barrier(ciMethod* method) {
@@ -675,7 +673,7 @@ void LIR_Assembler::ic_call(LIR_OpJavaCall* op) {
   // Virtual call relocation will point to ic load.
   address virtual_call_meta_addr = __ pc();
   // Load a clear inline cache.
-  AddressLiteral empty_ic((address) Universe::non_oop_word());
+  AddressLiteral empty_ic((address) __ create_ic_data());
   bool success = __ load_const_from_method_toc(R19_inline_cache_reg, empty_ic, R2_TOC);
   if (!success) {
     bailout("const section overflow");
