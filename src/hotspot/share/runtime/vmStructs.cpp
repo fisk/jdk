@@ -213,8 +213,8 @@
   volatile_nonstatic_field(ArrayKlass,         _lower_dimension,                              ArrayKlass*)                           \
   volatile_nonstatic_field(CompiledICData,     _speculated_method,                            Method*)                               \
   volatile_nonstatic_field(CompiledICData,     _speculated_klass,                             uintptr_t)                             \
-  volatile_nonstatic_field(CompiledICData,     _itable_defc_klass,                            Klass*)                                \
-  volatile_nonstatic_field(CompiledICData,     _itable_refc_klass,                            Klass*)                                \
+  nonstatic_field(CompiledICData,              _itable_defc_klass,                            Klass*)                                \
+  nonstatic_field(CompiledICData,              _itable_refc_klass,                            Klass*)                                \
   nonstatic_field(ConstantPool,                _tags,                                         Array<u1>*)                            \
   nonstatic_field(ConstantPool,                _cache,                                        ConstantPoolCache*)                    \
   nonstatic_field(ConstantPool,                _pool_holder,                                  InstanceKlass*)                        \
