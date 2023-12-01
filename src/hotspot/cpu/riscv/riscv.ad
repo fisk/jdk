@@ -1824,12 +1824,8 @@ void MachUEPNode::emit(CodeBuffer& cbuf, PhaseRegAlloc* ra_) const
 {
   // This is the unverified entry point.
   C2_MacroAssembler _masm(&cbuf);
-
-  Label skip;
-  __ cmp_klass(j_rarg0, t1, t0, t2 /* call-clobbered t2 as a tmp */, skip);
-  __ far_jump(RuntimeAddress(SharedRuntime::get_ic_miss_stub()));
-  __ bind(skip);
-
+  __ ic_check(CodeEntryAlignment);
+  
   // These NOPs are critical so that verified entry point is properly
   // 4 bytes aligned for patching by NativeJump::patch_verified_entry()
   __ align(NativeInstruction::instruction_size);

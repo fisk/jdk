@@ -27,6 +27,7 @@
 #include "precompiled.hpp"
 #include "asm/assembler.hpp"
 #include "asm/assembler.inline.hpp"
+#include "code/compiledIC.hpp"
 #include "compiler/disassembler.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/barrierSetAssembler.hpp"
@@ -3310,12 +3311,60 @@ address MacroAssembler::trampoline_call(Address entry) {
   return call_pc;
 }
 
+uintptr_t MacroAssembler::create_ic_data() {
+#ifdef COMPILER2
+  if (code_section()->scratch_emit()) {
+    return (uintptr_t)Universe::non_oop_word();
+  }
+#endif
+  return (uintptr_t)new CompiledICData();
+}
+
 address MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
   IncompressibleRegion ir(this);  // relocations
-  movptr(t1, (address)Universe::non_oop_word());
+  movptr(t1, create_ic_data());
   assert_cond(entry != nullptr);
   return trampoline_call(Address(entry, rh));
+}
+
+int MacroAssembler::ic_check_size() {
+  return NativeInstruction::instruction_size * 9;
+}
+
+int MacroAssembler::ic_check(int end_alignment) {
+  IncompressibleRegion ir(this);
+  Register receiver = j_rarg0;
+  Register data = t1;
+  Register tmp1 = t0;
+  Register tmp2 = t2;
+
+  int start_offset = offset();
+
+  align(end_alignment, offset() + ic_check_size());
+
+  int uep_offset = offset();
+
+  if (UseCompressedClassPointers) {
+    lw(tmp1,  Address(receiver, oopDesc::klass_offset_in_bytes()));
+    lw(tmp2, Address(data, CompiledICData::speculated_klass_offset()));
+  } else {
+    ld(tmp1,  Address(receiver, oopDesc::klass_offset_in_bytes()));
+    ld(tmp2, Address(data, CompiledICData::speculated_klass_offset()));
+  }
+
+  Label dont;
+  beq(tmp1, tmp2, dont);
+  far_jump(RuntimeAddress(SharedRuntime::get_ic_miss_stub()));
+  bind(dont);
+
+  int beoffs = offset();
+  align(end_alignment, 0);
+
+  int offs = offset();
+  assert((offs % end_alignment) == 0, "Misaligned verified entry point: %d %d %d %d %d %d",
+         start_offset, uep_offset, beoffs, offs, ic_check_size(), end_alignment);
+  return uep_offset;
 }
 
 // Emit a trampoline stub for a call to a target which is too far away.
