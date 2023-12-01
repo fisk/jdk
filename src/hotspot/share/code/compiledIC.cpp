@@ -29,6 +29,7 @@
 #include "code/nmethod.hpp"
 #include "code/vtableStubs.hpp"
 #include "memory/resourceArea.hpp"
+#include "memory/universe.hpp"
 #include "oops/compressedKlass.hpp"
 #include "oops/klass.inline.hpp"
 #include "oops/method.inline.hpp"
@@ -128,7 +129,7 @@ void CompiledICData::metadata_do(MetadataClosure* cl) {
   }
 }
 
-Klass* CompiledICData::speculated_klass()  const {
+Klass* CompiledICData::speculated_klass() const {
   if (is_speculated_klass_unloaded()) {
     return nullptr;
   }
@@ -138,6 +139,16 @@ Klass* CompiledICData::speculated_klass()  const {
   } else {
     return (Klass*)_speculated_klass;
   }
+}
+
+void* CompiledICData::create(MacroAssembler* masm) {
+#ifdef COMPILER2
+  if (masm->code_section()->scratch_emit()) {
+    return (void*)Universe::non_oop_word();
+  }
+#endif
+
+  return (void*)new CompiledICData();
 }
 
 //-----------------------------------------------------------------------------

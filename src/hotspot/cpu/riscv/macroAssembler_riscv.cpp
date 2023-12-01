@@ -3311,19 +3311,10 @@ address MacroAssembler::trampoline_call(Address entry) {
   return call_pc;
 }
 
-uintptr_t MacroAssembler::create_ic_data() {
-#ifdef COMPILER2
-  if (code_section()->scratch_emit()) {
-    return (uintptr_t)Universe::non_oop_word();
-  }
-#endif
-  return (uintptr_t)new CompiledICData();
-}
-
 address MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
   IncompressibleRegion ir(this);  // relocations
-  movptr(t1, create_ic_data());
+  movptr(t1, CompiledICData::create(this));
   assert_cond(entry != nullptr);
   return trampoline_call(Address(entry, rh));
 }

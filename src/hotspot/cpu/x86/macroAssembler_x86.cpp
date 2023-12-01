@@ -1338,23 +1338,13 @@ void MacroAssembler::call(AddressLiteral entry, Register rscratch) {
   }
 }
 
-intptr_t MacroAssembler::create_ic_data() {
-#ifdef COMPILER2
-  if (code_section()->scratch_emit()) {
-    return (intptr_t)Universe::non_oop_word();
-  }
-#endif
-
-  return (intptr_t)new CompiledICData();
-}
-
 void MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
 #ifdef _LP64
   // Needs full 64-bit immediate for later patching.
-  mov64(rax, create_ic_data());
+  mov64(rax, (int64_t)CompiledICData::create(this));
 #else
-  movptr(rax, create_ic_data());
+  movptr(rax, (intptr_t)CompiledICData::create(this));
 #endif
   call(AddressLiteral(entry, rh));
 }

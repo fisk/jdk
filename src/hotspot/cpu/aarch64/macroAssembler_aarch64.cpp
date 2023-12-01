@@ -991,22 +991,12 @@ void MacroAssembler::c2bool(Register x) {
   cset(x, Assembler::NE);
 }
 
-uintptr_t MacroAssembler::create_ic_data() {
-#ifdef COMPILER2
-  if (code_section()->scratch_emit()) {
-    return (uintptr_t)Universe::non_oop_word();
-  }
-#endif
-
-  return (uintptr_t)new CompiledICData();
-}
-
 address MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
   // address const_ptr = long_constant((jlong)Universe::non_oop_word());
   // uintptr_t offset;
   // ldr_constant(rscratch2, const_ptr);
-  movptr(rscratch2, create_ic_data());
+  movptr(rscratch2, (intptr_t)CompiledICData::create(this));
   return trampoline_call(Address(entry, rh));
 }
 

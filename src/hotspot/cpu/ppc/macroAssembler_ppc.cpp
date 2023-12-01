@@ -1192,16 +1192,6 @@ void MacroAssembler::post_call_nop() {
   nop();
 }
 
-intptr_t MacroAssembler::create_ic_data() {
-#ifdef COMPILER2
-  if (code_section()->scratch_emit()) {
-    return (intptr_t)Universe::non_oop_word();
-  }
-#endif
-
-  return (intptr_t)new CompiledICData();
-}
-
 int MacroAssembler::ic_check_size() {
   bool implicit_null_checks_available = ImplicitNullChecks && os::zero_page_read_protected(),
        use_fast_receiver_null_check   = implicit_null_checks_available || TrapBasedNullChecks,
