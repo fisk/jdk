@@ -673,7 +673,7 @@ void LIR_Assembler::ic_call(LIR_OpJavaCall* op) {
   // Virtual call relocation will point to ic load.
   address virtual_call_meta_addr = __ pc();
   // Load a clear inline cache.
-  AddressLiteral empty_ic((address) CompiledICData::create(_masm));
+  AddressLiteral empty_ic((address) Universe::non_oop_word());
   bool success = __ load_const_from_method_toc(R19_inline_cache_reg, empty_ic, R2_TOC);
   if (!success) {
     bailout("const section overflow");

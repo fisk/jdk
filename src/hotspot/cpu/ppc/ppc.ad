@@ -3545,7 +3545,7 @@ encode %{
       // Virtual call relocation will point to ic load.
       address virtual_call_meta_addr = __ pc();
       // Load a clear inline cache.
-      AddressLiteral empty_ic((address) CompiledICData::create(&_masm));
+      AddressLiteral empty_ic((address) Universe::non_oop_word());
       bool success = __ load_const_from_method_toc(ic_reg, empty_ic, Rtoc, /*fixed_size*/ true);
       if (!success) {
         ciEnv::current()->record_out_of_memory_failure();

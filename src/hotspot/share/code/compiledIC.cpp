@@ -141,16 +141,6 @@ Klass* CompiledICData::speculated_klass() const {
   }
 }
 
-void* CompiledICData::create(MacroAssembler* masm) {
-#ifdef COMPILER2
-  if (masm->code_section()->scratch_emit()) {
-    return (void*)Universe::non_oop_word();
-  }
-#endif
-
-  return (void*)new CompiledICData();
-}
-
 //-----------------------------------------------------------------------------
 // High-level access to an inline cache. Guaranteed to be MT-safe.
 

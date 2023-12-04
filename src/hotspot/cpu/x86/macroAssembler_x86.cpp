@@ -1342,9 +1342,9 @@ void MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
 #ifdef _LP64
   // Needs full 64-bit immediate for later patching.
-  mov64(rax, (int64_t)CompiledICData::create(this));
+  mov64(rax, (int64_t)Universe::non_oop_word());
 #else
-  movptr(rax, (intptr_t)CompiledICData::create(this));
+  movptr(rax, (intptr_t)Universe::non_oop_word());
 #endif
   call(AddressLiteral(entry, rh));
 }

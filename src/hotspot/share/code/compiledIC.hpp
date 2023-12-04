@@ -93,9 +93,6 @@ class CompiledICData : public CHeapObj<mtCompiler> {
   // GC Support
   void clean_metadata();
   void metadata_do(MetadataClosure* cl);
-
-  // Assembler support
-  static void* create(MacroAssembler* masm);
 };
 
 class CompiledIC: public ResourceObj {

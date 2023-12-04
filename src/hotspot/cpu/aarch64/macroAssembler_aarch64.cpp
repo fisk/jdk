@@ -996,7 +996,7 @@ address MacroAssembler::ic_call(address entry, jint method_index) {
   // address const_ptr = long_constant((jlong)Universe::non_oop_word());
   // uintptr_t offset;
   // ldr_constant(rscratch2, const_ptr);
-  movptr(rscratch2, (intptr_t)CompiledICData::create(this));
+  movptr(rscratch2, (intptr_t)Universe::non_oop_word());
   return trampoline_call(Address(entry, rh));
 }
 
