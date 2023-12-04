@@ -3472,7 +3472,7 @@ encode %{
 
     // Create the nodes for loading the IC from the TOC.
     loadConLNodesTuple loadConLNodes_IC =
-      loadConLNodesTuple_create(ra_, n_toc, new immLOper((jlong) new CompiledICData()),
+      loadConLNodesTuple_create(ra_, n_toc, new immLOper((jlong) Universe::non_oop_word()),
                                 OptoReg::Name(R19_H_num), OptoReg::Name(R19_num));
 
     // Create the call node.
