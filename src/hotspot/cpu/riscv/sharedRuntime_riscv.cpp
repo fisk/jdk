@@ -639,7 +639,7 @@ AdapterHandlerEntry* SharedRuntime::generate_i2c2i_adapters(MacroAssembler *masm
   {
     __ block_comment("c2i_unverified_entry {");
 
-    __ ic_check(1 /* end_alignment */);
+    __ ic_check();
     __ ld(xmethod, Address(holder, CompiledICData::speculated_method_offset()));
 
     __ bind(ok);
@@ -1424,7 +1424,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
   __ verify_oop(receiver);
   assert_different_registers(receiver, t0, t1);
 
-  __ ic_check(8 /* end_alignment */);
+  __ ic_check();
 
   int vep_offset = ((intptr_t)__ pc()) - start;
 

@@ -3320,41 +3320,40 @@ address MacroAssembler::ic_call(address entry, jint method_index) {
 }
 
 int MacroAssembler::ic_check_size() {
-  return NativeInstruction::instruction_size * 9;
+  // No compressed
+  return (NativeInstruction::instruction_size * (2 /* 2 loads */ + 1 /* branch */)) +
+          far_branch_size();
 }
 
 int MacroAssembler::ic_check(int end_alignment) {
   IncompressibleRegion ir(this);
   Register receiver = j_rarg0;
   Register data = t1;
-  Register tmp1 = t0;
+
+  Register tmp1 = t0; // t0 always scratch
+  // t2 is saved on call, thus should have been saved before this check.
+  // Hence we can clobber it.
   Register tmp2 = t2;
 
-  int start_offset = offset();
-
-  align(end_alignment, offset() + ic_check_size());
-
+  align(end_alignment, ic_check_size());
   int uep_offset = offset();
 
   if (UseCompressedClassPointers) {
-    lw(tmp1,  Address(receiver, oopDesc::klass_offset_in_bytes()));
-    lw(tmp2, Address(data, CompiledICData::speculated_klass_offset()));
+    lwu(tmp1, Address(receiver, oopDesc::klass_offset_in_bytes()));
+    lwu(tmp2, Address(data, CompiledICData::speculated_klass_offset()));
   } else {
     ld(tmp1,  Address(receiver, oopDesc::klass_offset_in_bytes()));
     ld(tmp2, Address(data, CompiledICData::speculated_klass_offset()));
   }
 
-  Label dont;
-  beq(tmp1, tmp2, dont);
+  Label ic_hit;
+  beq(tmp1, tmp2, ic_hit);
+  // Note, far_jump is not fixed size.
+  // Is this ever generates a movptr alignment/size will be off.
   far_jump(RuntimeAddress(SharedRuntime::get_ic_miss_stub()));
-  bind(dont);
+  bind(ic_hit);
 
-  int beoffs = offset();
-  align(end_alignment, 0);
-
-  int offs = offset();
-  assert((offs % end_alignment) == 0, "Misaligned verified entry point: %d %d %d %d %d %d",
-         start_offset, uep_offset, beoffs, offs, ic_check_size(), end_alignment);
+  assert((offset() % end_alignment) == 0, "Misaligned verified entry point.");
   return uep_offset;
 }
 
