@@ -517,24 +517,18 @@ static void append_oop_references(GrowableArray<oop>* oops, Klass* k) {
 }
 
 void CodeBuffer::finalize_oop_references(const methodHandle& mh) {
-  ResourceMark rm;
   NoSafepointVerifier nsv;
 
   GrowableArray<oop> oops;
 
   // Make sure that immediate metadata records something in the OopRecorder
-  // Also fill in inline cache data
   for (int n = (int) SECT_FIRST; n < (int) SECT_LIMIT; n++) {
     // pull code out of each section
     CodeSection* cs = code_section(n);
     if (cs->is_empty() || !cs->has_locs()) continue;  // skip trivial section
     RelocIterator iter(cs);
     while (iter.next()) {
-      if (iter.type() == relocInfo::virtual_call_type) {
-        virtual_call_Relocation* r = iter.virtual_call_reloc();
-        NativeMovConstReg* value = nativeMovConstReg_at(r->cached_value());
-        value->set_data((intptr_t)new CompiledICData());
-      } else if (iter.type() == relocInfo::metadata_type) {
+      if (iter.type() == relocInfo::metadata_type) {
         metadata_Relocation* md = iter.metadata_reloc();
         if (md->metadata_is_immediate()) {
           Metadata* m = md->metadata_value();

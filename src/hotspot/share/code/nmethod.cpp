@@ -1151,7 +1151,11 @@ void nmethod::finalize_relocations() {
   // we don't have to race with deoptimization
   RelocIterator iter(this);
   while (iter.next()) {
-    if (iter.type() == relocInfo::post_call_nop_type) {
+    if (iter.type() == relocInfo::virtual_call_type) {
+      virtual_call_Relocation* r = iter.virtual_call_reloc();
+      NativeMovConstReg* value = nativeMovConstReg_at(r->cached_value());
+      value->set_data((intptr_t)new CompiledICData());
+    } else if (iter.type() == relocInfo::post_call_nop_type) {
       post_call_nop_Relocation* const reloc = iter.post_call_nop_reloc();
       address pc = reloc->addr();
       install_post_call_nop_displacement(this, pc);
