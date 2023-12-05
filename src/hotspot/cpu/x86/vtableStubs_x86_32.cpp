@@ -24,6 +24,7 @@
 
 #include "precompiled.hpp"
 #include "asm/macroAssembler.hpp"
+#include "code/compiledIC.hpp"
 #include "code/vtableStubs.hpp"
 #include "interp_masm_x86.hpp"
 #include "memory/resourceArea.hpp"
@@ -188,8 +189,8 @@ VtableStub* VtableStubs::create_itable_stub(int itable_index) {
   const Register icholder_reg       = rax;
   const Register receiver           = rcx;
 
-  __ movptr(resolved_klass_reg, Address(icholder_reg, CompiledICHolder::holder_klass_offset()));
-  __ movptr(holder_klass_reg,   Address(icholder_reg, CompiledICHolder::holder_metadata_offset()));
+  __ movptr(resolved_klass_reg, Address(icholder_reg, CompiledICData::itable_refc_klass_offset()));
+  __ movptr(holder_klass_reg,   Address(icholder_reg, CompiledICData::itable_defc_klass_offset()));
 
   Label L_no_such_interface;
 

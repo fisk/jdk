@@ -1354,20 +1354,22 @@ int MacroAssembler::ic_check_size() {
 }
 
 int MacroAssembler::ic_check(int end_alignment) {
-  Register receiver = j_rarg0;
+  Register receiver = LP64_ONLY(j_rarg0) NOT_LP64(rcx);
   Register data = rax;
+  Register temp = LP64_ONLY(rscratch1) NOT_LP64(rbx);
 
   align(end_alignment, offset() + ic_check_size());
 
   int uep_offset = offset();
 
   if (UseCompressedClassPointers) {
-    movl(rscratch1, Address(receiver, oopDesc::klass_offset_in_bytes()));
-    cmpl(rscratch1, Address(data, CompiledICData::speculated_klass_offset()));
+    movl(temp, Address(receiver, oopDesc::klass_offset_in_bytes()));
+    cmpl(temp, Address(data, CompiledICData::speculated_klass_offset()));
   } else {
-    movptr(rscratch1, Address(receiver, oopDesc::klass_offset_in_bytes()));
-    cmpptr(rscratch1, Address(data, CompiledICData::speculated_klass_offset()));
+    movptr(temp, Address(receiver, oopDesc::klass_offset_in_bytes()));
+    cmpptr(temp, Address(data, CompiledICData::speculated_klass_offset()));
   }
+
   // if inline cache check fails, then jump to runtime routine
   jump_cc(Assembler::notEqual, RuntimeAddress(SharedRuntime::get_ic_miss_stub()));
   assert((offset() % end_alignment) == 0, "Misaligned verified entry point");
