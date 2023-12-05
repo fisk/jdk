@@ -3314,7 +3314,7 @@ address MacroAssembler::trampoline_call(Address entry) {
 address MacroAssembler::ic_call(address entry, jint method_index) {
   RelocationHolder rh = virtual_call_Relocation::spec(pc(), method_index);
   IncompressibleRegion ir(this);  // relocations
-  movptr(t1, Universe::non_oop_word());
+  movptr(t1, (address)Universe::non_oop_word());
   assert_cond(entry != nullptr);
   return trampoline_call(Address(entry, rh));
 }
