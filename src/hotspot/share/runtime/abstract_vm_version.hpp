@@ -184,6 +184,9 @@ class Abstract_VM_Version: AllStatic {
   // Does platform support stack watermark barriers for concurrent stack processing?
   constexpr static bool supports_stack_watermark_barrier() { return false; }
 
+  // Does this platform support conditional branch based loop safepoint polls?
+  constexpr static bool supports_cond_branch_loop_polls() { return true; }
+
   // Does platform support float16 instructions?
   static bool supports_float16() { return false; }
 

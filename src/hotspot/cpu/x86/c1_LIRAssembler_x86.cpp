@@ -540,24 +540,26 @@ void LIR_Assembler::return_op(LIR_Opr result, C1SafepointPollStub* code_stub) {
 }
 
 
-int LIR_Assembler::safepoint_poll(LIR_Opr tmp, CodeEmitInfo* info) {
+int LIR_Assembler::safepoint_poll(LIR_Opr tmp, CodeEmitInfo* info, C1SafepointPollStub* stub) {
   guarantee(info != nullptr, "Shouldn't be null");
   int offset = __ offset();
 #ifdef _LP64
   const Register poll_addr = rscratch1;
-  __ movptr(poll_addr, Address(r15_thread, JavaThread::polling_page_offset()));
+  __ movptr(poll_addr, Address(r15_thread, JavaThread::polling_word_offset()));
 #else
   assert(tmp->is_cpu_register(), "needed");
   const Register poll_addr = tmp->as_register();
   __ get_thread(poll_addr);
-  __ movptr(poll_addr, Address(poll_addr, in_bytes(JavaThread::polling_page_offset())));
+  __ movptr(poll_addr, Address(poll_addr, in_bytes(JavaThread::polling_word_offset())));
 #endif
   add_debug_info_for_branch(info);
   __ relocate(relocInfo::poll_type);
+  stub->set_safepoint_offset(__ offset());
   address pre_pc = __ pc();
-  __ testl(rax, Address(poll_addr, 0));
+  __ testb(poll_addr, SafepointMechanism::poll_bit());
+  __ jcc(Assembler::notZero, *stub->entry());
   address post_pc = __ pc();
-  guarantee(pointer_delta(post_pc, pre_pc, 1) == 2 LP64_ONLY(+1), "must be exact length");
+  guarantee(pointer_delta(post_pc, pre_pc, 1) == 9 LP64_ONLY(+1), "must be exact length");
   return offset;
 }
 

@@ -16486,7 +16486,16 @@ instruct safePoint(rFlagsReg cr, iRegP poll)
     "ldrw zr, [$poll]\t# Safepoint: poll for GC"
   %}
   ins_encode %{
-    __ read_polling_page(as_Register($poll$$reg), relocInfo::poll_type);
+    Label dummy_label;
+    Label* code_stub = &dummy_label;
+    Compile* C = Compile::current();
+    if (!C->output()->in_scratch_emit_size()) {
+      C2SafepointPollStub* stub = new (C->comp_arena()) C2SafepointPollStub(__ offset(), false /* at_return */);
+      C->output()->add_stub(stub);
+      code_stub = &stub->entry();
+    }
+    __ relocate(relocInfo::poll_type);
+    __ safepoint_poll(*code_stub, false /* at_return */, false /* acquire */, true /* in_nmethod */, $poll$$Register);
   %}
   ins_pipe(pipe_serial); // ins_pipe(iload_reg_mem);
 %}
