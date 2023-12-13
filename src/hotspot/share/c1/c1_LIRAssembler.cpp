@@ -541,7 +541,7 @@ void LIR_Assembler::emit_op1(LIR_Op1* op) {
       if (compilation()->debug_info_recorder()->last_pc_offset() == code_offset()) {
         _masm->nop();
       }
-      safepoint_poll(op->in_opr(), op->info());
+      safepoint_poll(op->in_opr(), op->info(), ((LIR_OpSafepoint*)op)->stub());
       break;
 
 #ifdef IA32

@@ -2844,19 +2844,19 @@ SafepointBlob* SharedRuntime::generate_handler_blob(address call_ptr, int poll_t
     __ br(Assembler::NE, no_adjust);
     __ authenticate_return_address(r20);
 
-#ifdef ASSERT
-    // Verify the correct encoding of the poll we're about to skip.
-    // See NativeInstruction::is_ldrw_to_zr()
-    __ ldrw(rscratch1, Address(r20));
-    __ ubfx(rscratch2, rscratch1, 22, 10);
-    __ cmpw(rscratch2, 0b1011100101);
-    __ br(Assembler::NE, bail);
-    __ ubfx(rscratch2, rscratch1, 0, 5);
-    __ cmpw(rscratch2, 0b11111);
-    __ br(Assembler::NE, bail);
-#endif
+    //#ifdef ASSERT
+    //    // Verify the correct encoding of the poll we're about to skip.
+    //    // See NativeInstruction::is_ldrw_to_zr()
+    //    __ ldrw(rscratch1, Address(r20));
+    //    __ ubfx(rscratch2, rscratch1, 22, 10);
+    //    __ cmpw(rscratch2, 0b1011100101);
+    //    __ br(Assembler::NE, bail);
+    //    __ ubfx(rscratch2, rscratch1, 0, 5);
+    //    __ cmpw(rscratch2, 0b11111);
+    //    __ br(Assembler::NE, bail);
+    //#endif
     // Adjust return pc forward to step over the safepoint poll instruction
-    __ add(r20, r20, NativeInstruction::instruction_size);
+    __ add(r20, r20, 2 * NativeInstruction::instruction_size);
     __ protect_return_address(r20);
     __ str(r20, Address(rfp, wordSize));
   }

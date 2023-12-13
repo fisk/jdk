@@ -472,12 +472,12 @@ void LIR_OpVisitState::visit(LIR_Op* op) {
 
     case lir_safepoint:
     {
-      assert(op->as_Op1() != nullptr, "must be");
-      LIR_Op1* op1 = (LIR_Op1*)op;
+      LIR_OpSafepoint* op1 = (LIR_OpSafepoint*)op;
 
       assert(op1->_info != nullptr, "");  do_info(op1->_info);
       if (op1->_opr->is_valid())       do_temp(op1->_opr); // safepoints on SPARC need temporary register
       assert(op1->_result->is_illegal(), "safepoint does not produce value");
+      if (op1->stub() != nullptr)      do_stub(op1->stub());
 
       break;
     }
@@ -980,6 +980,11 @@ LIR_OpReturn::LIR_OpReturn(LIR_Opr opr) :
   if (VM_Version::supports_stack_watermark_barrier()) {
     _stub = new C1SafepointPollStub();
   }
+}
+
+LIR_OpSafepoint::LIR_OpSafepoint(LIR_Opr addr, CodeEmitInfo* info) :
+  LIR_Op1(lir_safepoint, addr, info),
+  _stub(new C1SafepointPollStub(false)) {
 }
 
 //---------------------------------------------------
