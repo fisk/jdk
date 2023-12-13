@@ -1385,9 +1385,6 @@ public:
     }
   }
 
-  address read_polling_page(Register r, relocInfo::relocType rtype);
-  void get_polling_page(Register dest, relocInfo::relocType rtype);
-
   // CRC32 code for java.util.zip.CRC32::updateBytes() intrinsic.
   void update_byte_crc32(Register crc, Register val, Register table);
   void update_word_crc32(Register crc, Register v, Register tmp,

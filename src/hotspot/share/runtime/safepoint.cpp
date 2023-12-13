@@ -971,7 +971,7 @@ void ThreadSafepointState::handle_polling_page_exception() {
   else {
 
     // verify the blob built the "return address" correctly
-    assert(real_return_addr == caller_fr.pc(), "must match");
+    assert(real_return_addr == caller_fr.pc(), "must match " PTR_FORMAT " " PTR_FORMAT " " PTR_FORMAT, p2i(real_return_addr), p2i(caller_fr.pc()), p2i(CodeCache::find_blob(caller_fr.pc())->as_nmethod_or_null()->entry_point()));
 
     set_at_poll_safepoint(true);
     // Process pending operation

@@ -1408,6 +1408,16 @@ class LIR_Op1: public LIR_Op {
   virtual void verify() const;
 };
 
+class LIR_OpSafepoint: public LIR_Op1 {
+  C1SafepointPollStub* _stub;
+
+public:
+  LIR_OpSafepoint(LIR_Opr addr, CodeEmitInfo* info);
+
+  C1SafepointPollStub* stub() {
+    return _stub;
+  }
+};
 
 // for runtime calls
 class LIR_OpRTCall: public LIR_OpCall {
@@ -2225,7 +2235,7 @@ class LIR_List: public CompilationResourceObj {
   void metadata2reg  (Metadata* o, LIR_Opr reg)  { assert(reg->type() == T_METADATA, "bad reg"); append(new LIR_Op1(lir_move, LIR_OprFact::metadataConst(o), reg));   }
   void klass2reg_patch(Metadata* o, LIR_Opr reg, CodeEmitInfo* info);
 
-  void safepoint(LIR_Opr tmp, CodeEmitInfo* info)  { append(new LIR_Op1(lir_safepoint, tmp, info)); }
+  void safepoint(LIR_Opr tmp, CodeEmitInfo* info)  { append(new LIR_OpSafepoint(tmp, info)); }
   void return_op(LIR_Opr result)                   { append(new LIR_OpReturn(result)); }
 
   void convert(Bytecodes::Code code, LIR_Opr left, LIR_Opr dst, ConversionStub* stub = nullptr/*, bool is_32bit = false*/) { append(new LIR_OpConvert(code, left, dst, stub)); }
