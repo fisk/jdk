@@ -508,12 +508,14 @@ void LIR_Assembler::return_op(LIR_Opr result, C1SafepointPollStub* code_stub) {
   __ ret(lr);
 }
 
-int LIR_Assembler::safepoint_poll(LIR_Opr tmp, CodeEmitInfo* info) {
+int LIR_Assembler::safepoint_poll(LIR_Opr tmp, CodeEmitInfo* info, C1SafepointPollStub* code_stub) {
   guarantee(info != nullptr, "Shouldn't be null");
-  __ get_polling_page(rscratch1, relocInfo::poll_type);
+  __ ldr(rscratch1, Address(rthread, JavaThread::polling_word_offset()));
   add_debug_info_for_branch(info);  // This isn't just debug info:
                                     // it's the oop map
-  __ read_polling_page(rscratch1, relocInfo::poll_type);
+  __ relocate(relocInfo::poll_type);
+  code_stub->set_safepoint_offset(__ offset());
+  __ safepoint_poll(*code_stub->entry(), false /* at_return */, false /* acquire */, true /* in_nmethod */, rscratch1);
   return __ offset();
 }
 

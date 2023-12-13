@@ -12438,12 +12438,19 @@ instruct safePoint_poll_tls(rFlagsReg cr, rRegP poll)
   format %{ "testl   rax, [$poll]\t"
             "# Safepoint: poll for GC" %}
   ins_cost(125);
-  size(4); /* setting an explicit size will cause debug builds to assert if size is incorrect */
+  size(10); /* setting an explicit size will cause debug builds to assert if size is incorrect */
   ins_encode %{
+    Label dummy_label;
+    Label* code_stub = &dummy_label;
+    Compile* C = Compile::current();
+    if (!C->output()->in_scratch_emit_size()) {
+      C2SafepointPollStub* stub = new (C->comp_arena()) C2SafepointPollStub(__ offset(), false /* at_return */);
+      C->output()->add_stub(stub);
+      code_stub = &stub->entry();
+    }
     __ relocate(relocInfo::poll_type);
-    address pre_pc = __ pc();
-    __ testl(rax, Address($poll$$Register, 0));
-    assert(nativeInstruction_at(pre_pc)->is_safepoint_poll(), "must emit test %%eax [reg]");
+    __ testb($poll$$Register, SafepointMechanism::poll_bit());
+    __ jcc(Assembler::notZero, *code_stub);
   %}
   ins_pipe(ialu_reg_mem);
 %}

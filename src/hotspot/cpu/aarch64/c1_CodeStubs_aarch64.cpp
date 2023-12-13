@@ -40,13 +40,17 @@
 
 void C1SafepointPollStub::emit_code(LIR_Assembler* ce) {
   __ bind(_entry);
-  InternalAddress safepoint_pc(ce->masm()->pc() - ce->masm()->offset() + safepoint_offset());
+  assert(safepoint_offset() != 0, "not initialized");
+  InternalAddress safepoint_pc(__ pc() - __ offset() + safepoint_offset());
   __ adr(rscratch1, safepoint_pc);
   __ str(rscratch1, Address(rthread, JavaThread::saved_exception_pc_offset()));
 
-  assert(SharedRuntime::polling_page_return_handler_blob() != nullptr,
-         "polling page return stub not created yet");
-  address stub = SharedRuntime::polling_page_return_handler_blob()->entry_point();
+  address stub;
+  if (_at_return) {
+    stub = SharedRuntime::polling_page_return_handler_blob()->entry_point();
+  } else {
+    stub = SharedRuntime::polling_page_safepoint_handler_blob()->entry_point();
+  }
 
   __ far_jump(RuntimeAddress(stub));
 }

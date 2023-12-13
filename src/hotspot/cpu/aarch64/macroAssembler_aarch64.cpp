@@ -552,11 +552,13 @@ address MacroAssembler::target_addr_for_insn_or_null(address insn_addr, unsigned
 }
 
 void MacroAssembler::safepoint_poll(Label& slow_path, bool at_return, bool acquire, bool in_nmethod, Register tmp) {
-  if (acquire) {
-    lea(tmp, Address(rthread, JavaThread::polling_word_offset()));
-    ldar(tmp, tmp);
-  } else {
-    ldr(tmp, Address(rthread, JavaThread::polling_word_offset()));
+  if (!in_nmethod || at_return) {
+    if (acquire) {
+      lea(tmp, Address(rthread, JavaThread::polling_word_offset()));
+      ldar(tmp, tmp);
+    } else {
+      ldr(tmp, Address(rthread, JavaThread::polling_word_offset()));
+    }
   }
   if (at_return) {
     // Note that when in_nmethod is set, the stack pointer is incremented before the poll. Therefore,
@@ -564,7 +566,12 @@ void MacroAssembler::safepoint_poll(Label& slow_path, bool at_return, bool acqui
     cmp(in_nmethod ? sp : rfp, tmp);
     br(Assembler::HI, slow_path);
   } else {
-    tbnz(tmp, log2i_exact(SafepointMechanism::poll_bit()), slow_path);
+    if (in_nmethod) {
+      tst(tmp, SafepointMechanism::poll_bit());
+      br(Assembler::NE, slow_path);
+    } else {
+      tbnz(tmp, log2i_exact(SafepointMechanism::poll_bit()), slow_path);
+    }
   }
 }
 
@@ -4961,25 +4968,6 @@ void MacroAssembler::bang_stack_size(Register size, Register tmp) {
     lea(tmp, Address(tmp, -(int)os::vm_page_size()));
     str(size, Address(tmp));
   }
-}
-
-// Move the address of the polling page into dest.
-void MacroAssembler::get_polling_page(Register dest, relocInfo::relocType rtype) {
-  ldr(dest, Address(rthread, JavaThread::polling_page_offset()));
-}
-
-// Read the polling page.  The address of the polling page must
-// already be in r.
-address MacroAssembler::read_polling_page(Register r, relocInfo::relocType rtype) {
-  address mark;
-  {
-    InstructionMark im(this);
-    code_section()->relocate(inst_mark(), rtype);
-    ldrw(zr, Address(r, 0));
-    mark = inst_mark();
-  }
-  verify_cross_modify_fence_not_required();
-  return mark;
 }
 
 void MacroAssembler::adrp(Register reg1, const Address &dest, uint64_t &byte_offset) {

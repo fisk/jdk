@@ -32,21 +32,29 @@
 #define __ masm.
 
 int C2SafepointPollStub::max_size() const {
-  return 33;
+  return 40;
 }
 
 void C2SafepointPollStub::emit(C2_MacroAssembler& masm) {
-  assert(SharedRuntime::polling_page_return_handler_blob() != nullptr,
-         "polling page return stub not created yet");
-  address stub = SharedRuntime::polling_page_return_handler_blob()->entry_point();
+  address stub;
+  if (_at_return) {
+    stub = SharedRuntime::polling_page_return_handler_blob()->entry_point();
+  } else if (SharedRuntime::is_wide_vector(Compile::current()->max_vector_size())) {
+    stub = SharedRuntime::polling_page_vectors_safepoint_handler_blob()->entry_point();
+  } else {
+    stub = SharedRuntime::polling_page_safepoint_handler_blob()->entry_point();
+  }
+  assert(stub != nullptr, "polling page return stub not created yet");
 
   RuntimeAddress callback_addr(stub);
 
   __ bind(entry());
   InternalAddress safepoint_pc(masm.pc() - masm.offset() + _safepoint_offset);
 #ifdef _LP64
+  __ push(rscratch1);
   __ lea(rscratch1, safepoint_pc);
   __ movptr(Address(r15_thread, JavaThread::saved_exception_pc_offset()), rscratch1);
+  __ pop(rscratch1);
 #else
   const Register tmp1 = rcx;
   const Register tmp2 = rdx;

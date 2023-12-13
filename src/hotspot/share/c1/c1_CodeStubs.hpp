@@ -83,10 +83,12 @@ class CodeStubList: public GrowableArray<CodeStub*> {
 class C1SafepointPollStub: public CodeStub {
  private:
   uintptr_t _safepoint_offset;
+  bool _at_return;
 
  public:
-  C1SafepointPollStub() :
-      _safepoint_offset(0) {
+  C1SafepointPollStub(bool at_return = true) :
+      _safepoint_offset(0),
+      _at_return(at_return) {
   }
 
   uintptr_t safepoint_offset() { return _safepoint_offset; }

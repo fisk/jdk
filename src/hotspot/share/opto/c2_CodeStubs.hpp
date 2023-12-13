@@ -74,10 +74,12 @@ public:
 class C2SafepointPollStub : public C2CodeStub {
 private:
   uintptr_t _safepoint_offset;
+  bool _at_return;
 
 public:
-  C2SafepointPollStub(uintptr_t safepoint_offset) :
-    _safepoint_offset(safepoint_offset) {}
+  C2SafepointPollStub(uintptr_t safepoint_offset, bool at_return = true) :
+    _safepoint_offset(safepoint_offset),
+    _at_return(at_return) {}
   int max_size() const;
   void emit(C2_MacroAssembler& masm);
 };
