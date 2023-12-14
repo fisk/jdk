@@ -98,10 +98,15 @@ void C1SafepointPollStub::emit_code(LIR_Assembler* ce) {
   __ pop(tmp2);
   __ pop(tmp1);
 #endif /* _LP64 */
-  assert(SharedRuntime::polling_page_return_handler_blob() != nullptr,
-         "polling page return stub not created yet");
+  address stub;
+  if (_at_return) {
+    stub = SharedRuntime::polling_page_return_handler_blob()->entry_point();
+  } else {
+    stub = SharedRuntime::polling_page_safepoint_handler_blob()->entry_point();
+  }
 
-  address stub = SharedRuntime::polling_page_return_handler_blob()->entry_point();
+  assert(stub != nullptr, "polling page return stub not created yet");
+
   __ jump(RuntimeAddress(stub));
 }
 
