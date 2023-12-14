@@ -89,6 +89,16 @@ void ParallelArguments::initialize() {
   if (FLAG_IS_DEFAULT(ParallelRefProcEnabled) && ParallelGCThreads > 1) {
     FLAG_SET_DEFAULT(ParallelRefProcEnabled, true);
   }
+
+#ifdef COMPILER2
+    // Enable loop strip mining to offer better pause time guarantees
+    if (FLAG_IS_DEFAULT(UseCountedLoopSafepoints)) {
+      FLAG_SET_DEFAULT(UseCountedLoopSafepoints, true);
+      if (FLAG_IS_DEFAULT(LoopStripMiningIter)) {
+        FLAG_SET_DEFAULT(LoopStripMiningIter, 1000);
+      }
+    }
+#endif
 }
 
 // The alignment used for boundary between young gen and old gen
