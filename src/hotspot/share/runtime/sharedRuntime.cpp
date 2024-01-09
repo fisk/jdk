@@ -1791,7 +1791,7 @@ JRT_LEAF(void, SharedRuntime::fixup_callers_callsite(Method* method, address cal
 
     // If we got here through a static call or opt_virtual call, then we know where the
     // call address would be; let's peek at it
-    address callsite_addr = return_pc - NativeCall::instruction_size;
+    address callsite_addr = (address)nativeCall_before(return_pc);
     RelocIterator iter(caller, callsite_addr, callsite_addr + 1);
     if (!iter.next()) {
       // No reloc entry found; not a static or opt virutal call

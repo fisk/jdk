@@ -1230,11 +1230,10 @@ int MacroAssembler::ic_check(int end_alignment) {
     }
     if (UseCompressedClassPointers) {
       lwz(tmp1, oopDesc::klass_offset_in_bytes(), receiver);
-      lwz(tmp2, in_bytes(CompiledICData::speculated_klass_offset()), data);
     } else {
       ld(tmp1, oopDesc::klass_offset_in_bytes(), receiver);
-      ld(tmp2, in_bytes(CompiledICData::speculated_klass_offset()), data);
     }
+    ld(tmp2, in_bytes(CompiledICData::speculated_klass_offset()), data);
     trap_ic_miss_check(tmp1, tmp2);
 
   } else {
@@ -1251,13 +1250,11 @@ int MacroAssembler::ic_check(int end_alignment) {
     }
     if (UseCompressedClassPointers) {
       lwz(tmp1, oopDesc::klass_offset_in_bytes(), receiver);
-      lwz(tmp2, in_bytes(CompiledICData::speculated_klass_offset()), data);
-      cmpw(CCR0, tmp1, tmp2);
     } else {
       ld(tmp1, oopDesc::klass_offset_in_bytes(), receiver);
-      ld(tmp2, in_bytes(CompiledICData::speculated_klass_offset()), data);
-      cmpd(CCR0, tmp1, tmp2);
     }
+    ld(tmp2, in_bytes(CompiledICData::speculated_klass_offset()), data);
+    cmpd(CCR0, tmp1, tmp2);
     bnectr(CCR0);
   }
 
