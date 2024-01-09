@@ -207,6 +207,10 @@ void CompiledIC::ensure_initialized(CallInfo* call_info, Klass* receiver_klass) 
 }
 
 void CompiledIC::set_to_clean() {
+  if (TraceInlineCacheClearing || TraceICs) {
+    tty->print_cr("IC@" INTPTR_FORMAT ": set to clean", p2i(_call->instruction_address()));
+    print();
+  }
   _call->set_destination_mt_safe(SharedRuntime::get_resolve_virtual_call_stub());
 }
 
@@ -215,10 +219,20 @@ void CompiledIC::set_to_monomorphic() {
   Method* method = data()->speculated_method();
   CompiledMethod* code = method->code();
   address entry;
-  if (code != nullptr && code->is_in_use() && !code->is_unloading()) {
+  bool to_compiled = code != nullptr && code->is_in_use() && !code->is_unloading();
+
+  if (to_compiled) {
     entry = code->entry_point();
   } else {
     entry = method->get_c2i_unverified_entry();
+  }
+
+  if (TraceICs) {
+    ResourceMark rm;
+    tty->print_cr("IC@" INTPTR_FORMAT ": monomorphic to %s: %s",
+                  p2i(_call->instruction_address()),
+                  to_compiled ? "compiled" : "interpreter",
+                  method->print_value_string());
   }
 
   _call->set_destination_mt_safe(entry);
@@ -254,6 +268,12 @@ void CompiledIC::set_to_megamorphic(CallInfo* call_info) {
     if (entry == nullptr) {
       return;
     }
+  }
+
+  if (TraceICs) {
+    ResourceMark rm;
+    tty->print_cr ("IC@" INTPTR_FORMAT ": to megamorphic %s entry: " INTPTR_FORMAT,
+                   p2i(_call->instruction_address()), call_info->selected_method()->print_value_string(), p2i(entry));
   }
 
   _call->set_destination_mt_safe(entry);
@@ -337,17 +357,23 @@ void CompiledDirectCall::set_to_clean() {
     }
   }
   assert(is_clean(), "should be clean after cleaning");
+
+  if (TraceInlineCacheClearing || TraceICs) {
+    tty->print_cr("DC@" INTPTR_FORMAT ": set to clean", p2i(_call->instruction_address()));
+    print();
+  }
 }
 
 void CompiledDirectCall::set(const methodHandle& callee_method) {
   CompiledMethod* code = callee_method->code();
   CompiledMethod* caller = CodeCache::find_compiled(instruction_address());
 
-  if (caller->method()->is_continuation_enter_intrinsic() &&
-      ContinuationEntry::is_interpreted_call(instruction_address())) {
-    set_to_interpreted(callee_method, callee_method->get_c2i_entry());
-    assert(is_call_to_interpreted(), "should be interpreted after set to interpreted");
-  } else if (code != nullptr && code->is_in_use() && !code->is_unloading()) {
+  bool to_interp_cont_enter = caller->method()->is_continuation_enter_intrinsic() &&
+                              ContinuationEntry::is_interpreted_call(instruction_address());
+
+  bool to_compiled = !to_interp_cont_enter && code != nullptr && code->is_in_use() && !code->is_unloading();
+
+  if (to_compiled) {
     _call->set_destination_mt_safe(code->verified_entry_point());
     assert(is_call_to_compiled(), "should be compiled after set to compiled");
   } else {
@@ -356,6 +382,15 @@ void CompiledDirectCall::set(const methodHandle& callee_method) {
     // to the callee_method so the c2i adapter knows how to build the frame
     set_to_interpreted(callee_method, callee_method->get_c2i_entry());
     assert(is_call_to_interpreted(), "should be interpreted after set to interpreted");
+  }
+
+  if (TraceICs) {
+    ResourceMark rm;
+    tty->print_cr("DC@" INTPTR_FORMAT ": set to %s: %s: " INTPTR_FORMAT,
+                  p2i(_call->instruction_address()),
+                  to_compiled ? "compiled" : "interpreter",
+                  callee_method->print_value_string(),
+                  p2i(_call->destination()));
   }
 }
 
@@ -403,7 +438,7 @@ address CompiledDirectCall::find_stub() {
 
 #ifndef PRODUCT
 void CompiledDirectCall::print() {
-  tty->print("static call at " INTPTR_FORMAT " to " INTPTR_FORMAT " -> ", p2i(instruction_address()), p2i(destination()));
+  tty->print("direct call at " INTPTR_FORMAT " to " INTPTR_FORMAT " -> ", p2i(instruction_address()), p2i(destination()));
   if (is_clean()) {
     tty->print("clean");
   } else if (is_call_to_compiled()) {
