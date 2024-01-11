@@ -16483,7 +16483,9 @@ instruct safePoint(rFlagsReg cr, iRegP poll)
   effect(KILL cr);
 
   format %{
-    "ldrw zr, [$poll]\t# Safepoint: poll for GC"
+    "tst [$poll], 0x1\n\t"
+    "br.ne #slow_path\t"
+    "# Safepoint: poll for GC"
   %}
   ins_encode %{
     Label dummy_label;

@@ -12435,7 +12435,8 @@ instruct safePoint_poll_tls(rFlagsReg cr, rRegP poll)
   match(SafePoint poll);
   effect(KILL cr, USE poll);
 
-  format %{ "testl   rax, [$poll]\t"
+  format %{ "testb   [$poll], 0x1\n\t"
+            "jnz #slow_path\t"
             "# Safepoint: poll for GC" %}
   ins_cost(125);
   size(10); /* setting an explicit size will cause debug builds to assert if size is incorrect */
