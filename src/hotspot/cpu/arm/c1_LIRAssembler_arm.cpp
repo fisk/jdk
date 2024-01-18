@@ -161,10 +161,7 @@ void LIR_Assembler::osr_entry() {
 
 
 int LIR_Assembler::check_icache() {
-  Register receiver = LIR_Assembler::receiverOpr()->as_register();
-  int offset = __ offset();
-  __ inline_cache_check(receiver, Ricklass);
-  return offset;
+  return __ ic_check(CodeEntryAlignment);
 }
 
 void LIR_Assembler::clinit_barrier(ciMethod* method) {
