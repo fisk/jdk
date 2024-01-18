@@ -207,7 +207,7 @@ void CompiledIC::ensure_initialized(CallInfo* call_info, Klass* receiver_klass) 
 }
 
 void CompiledIC::set_to_clean() {
-  log_trace(inlinecache)("IC@" INTPTR_FORMAT ": set to clean", p2i(_call->instruction_address()));
+  log_debug(inlinecache)("IC@" INTPTR_FORMAT ": set to clean", p2i(_call->instruction_address()));
   _call->set_destination_mt_safe(SharedRuntime::get_resolve_virtual_call_stub());
 }
 
@@ -349,7 +349,7 @@ void CompiledDirectCall::set_to_clean() {
   }
   assert(is_clean(), "should be clean after cleaning");
 
-  log_trace(inlinecache)("DC@" INTPTR_FORMAT ": set to clean", p2i(_call->instruction_address()));
+  log_debug(inlinecache)("DC@" INTPTR_FORMAT ": set to clean", p2i(_call->instruction_address()));
 }
 
 void CompiledDirectCall::set(const methodHandle& callee_method) {
