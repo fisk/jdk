@@ -225,16 +225,6 @@ void G1Arguments::initialize() {
     FLAG_SET_DEFAULT(ParallelRefProcEnabled, true);
   }
 
-#ifdef COMPILER2
-  // Enable loop strip mining to offer better pause time guarantees
-  if (FLAG_IS_DEFAULT(UseCountedLoopSafepoints)) {
-    FLAG_SET_DEFAULT(UseCountedLoopSafepoints, true);
-    if (FLAG_IS_DEFAULT(LoopStripMiningIter)) {
-      FLAG_SET_DEFAULT(LoopStripMiningIter, 1000);
-    }
-  }
-#endif
-
   initialize_mark_stack_size();
   initialize_verification_types();
 

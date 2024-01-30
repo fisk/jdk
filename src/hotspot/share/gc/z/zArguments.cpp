@@ -186,16 +186,6 @@ void ZArguments::initialize() {
                                           "MaxTenuringThreshold"));
   }
 
-#ifdef COMPILER2
-  // Enable loop strip mining by default
-  if (FLAG_IS_DEFAULT(UseCountedLoopSafepoints)) {
-    FLAG_SET_DEFAULT(UseCountedLoopSafepoints, true);
-    if (FLAG_IS_DEFAULT(LoopStripMiningIter)) {
-      FLAG_SET_DEFAULT(LoopStripMiningIter, 1000);
-    }
-  }
-#endif
-
   // CompressedOops not supported
   FLAG_SET_DEFAULT(UseCompressedOops, false);
 

@@ -3677,8 +3677,7 @@ jint Arguments::apply_ergo() {
     return JNI_EINVAL;
   }
 
-  // Set compiler flags after GC is selected and GC specific
-  // flags (LoopStripMiningIter) are set.
+  // Set compiler flags after GC is selected
   CompilerConfig::ergo_initialize();
 
   // Set bytecode rewriting flags

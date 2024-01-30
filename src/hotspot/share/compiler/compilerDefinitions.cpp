@@ -604,6 +604,10 @@ void CompilerConfig::ergo_initialize() {
   }
 
 #ifdef COMPILER2
+  // Enable loop strip mining by default
+  if (FLAG_IS_DEFAULT(UseCountedLoopSafepoints) && FLAG_IS_DEFAULT(LoopStripMiningIter)) {
+      FLAG_SET_DEFAULT(LoopStripMiningIter, 1000);
+  }
   if (!EliminateLocks) {
     EliminateNestedLocks = false;
   }
