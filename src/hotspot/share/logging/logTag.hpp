@@ -203,6 +203,7 @@ class outputStream;
   LOG_TAG(table) \
   LOG_TAG(task) \
   DEBUG_ONLY(LOG_TAG(test)) \
+  LOG_TAG(thermostat) \
   LOG_TAG(thread) \
   LOG_TAG(throttle) \
   LOG_TAG(timer) \
