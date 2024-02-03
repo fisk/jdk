@@ -92,6 +92,7 @@
 #include "runtime/timerTrace.hpp"
 #include "runtime/trimNativeHeap.hpp"
 #include "runtime/vmOperations.hpp"
+#include "runtime/vmThermostat.hpp"
 #include "runtime/vm_version.hpp"
 #include "services/attachListener.hpp"
 #include "services/management.hpp"
@@ -819,6 +820,9 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   if (CDSConfig::is_dumping_static_archive()) {
     MetaspaceShared::preload_and_dump();
   }
+
+  // Start the VMThermostat thread
+  VMThermostat::initialize();
 
   return JNI_OK;
 }
