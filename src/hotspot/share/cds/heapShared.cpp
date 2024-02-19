@@ -676,14 +676,15 @@ bool HeapShared::initialize_enum_klass(InstanceKlass* k, TRAPS) {
     log_info(cds, heap)("Initializing Enum class: %s", k->external_name());
   }
 
-  oop mirror = k->java_mirror();
   int i = 0;
+  Handle mirror_h(THREAD, k->java_mirror());
   for (JavaFieldStream fs(k); !fs.done(); fs.next()) {
     if (fs.access_flags().is_static()) {
       int root_index = info->enum_klass_static_field_root_index_at(i++);
       fieldDescriptor& fd = fs.field_descriptor();
       assert(fd.field_type() == T_OBJECT || fd.field_type() == T_ARRAY, "must be");
-      mirror->obj_field_put(fd.offset(), get_root(root_index, /*clear=*/true));
+      oop root = get_root(root_index, /*clear=*/true);
+      mirror_h->obj_field_put(fd.offset(), root);
     }
   }
   return true;
@@ -1214,7 +1215,6 @@ void HeapShared::init_archived_fields_for(Klass* k, const ArchivedKlassSubGraphI
 
   // Load the subgraph entry fields from the record and store them back to
   // the corresponding fields within the mirror.
-  oop m = k->java_mirror();
   Array<int>* entry_field_records = record->entry_field_records();
   if (entry_field_records != nullptr) {
     int efr_len = entry_field_records->length();
@@ -1223,6 +1223,7 @@ void HeapShared::init_archived_fields_for(Klass* k, const ArchivedKlassSubGraphI
       int field_offset = entry_field_records->at(i);
       int root_index = entry_field_records->at(i+1);
       oop v = get_root(root_index, /*clear=*/true);
+      oop m = k->java_mirror();
       m->obj_field_put(field_offset, v);
       log_debug(cds, heap)("  " PTR_FORMAT " init field @ %2d = " PTR_FORMAT, p2i(k), field_offset, p2i(v));
     }
