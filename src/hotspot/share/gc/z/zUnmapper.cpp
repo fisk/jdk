@@ -62,6 +62,13 @@ ZPage* ZUnmapper::dequeue() {
 }
 
 bool ZUnmapper::try_enqueue(ZPage* page) {
+  if (ZAnonymousMemoryBacking) {
+    // With anonymous memory backing we can't multi-map memory. For now
+    // let's give up on asynchronous unmapping.
+    log_debug(gc, unmap)("Synchronous unmapping " SIZE_FORMAT "M page", page->size() / M);
+    return false;
+  }
+
   // Enqueue for asynchronous unmap and destroy
   ZLocker<ZConditionLock> locker(&_lock);
   if (is_saturated()) {

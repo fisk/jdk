@@ -105,7 +105,7 @@ public:
   void pretouch(zoffset offset, size_t size) const;
 
   void map(zoffset offset, const ZPhysicalMemory& pmem) const;
-  void unmap(zoffset offset, size_t size) const;
+  void unmap(zoffset offset, const ZPhysicalMemory& pmem) const;
 };
 
 #endif // SHARE_GC_Z_ZPHYSICALMEMORY_HPP

@@ -245,7 +245,7 @@ void ZPhysicalMemoryBacking::map(zaddress_unsafe addr, size_t size, zoffset offs
   _impl->map(addr, size, offset);
 }
 
-void ZPhysicalMemoryBacking::unmap(zaddress_unsafe addr, size_t size) const {
+void ZPhysicalMemoryBacking::unmap(zaddress_unsafe addr, size_t size, zoffset offset) const {
   assert(is_aligned(untype(addr), ZGranuleSize), "Misaligned");
   assert(is_aligned(size, ZGranuleSize), "Misaligned");
 

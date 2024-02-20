@@ -50,6 +50,9 @@
   product(bool, ZBufferStoreBarriers, true, DIAGNOSTIC,                     \
           "Buffer store barriers")                                          \
                                                                             \
+  product(bool, ZAnonymousMemoryBacking, false, DIAGNOSTIC,                 \
+          "Back the Java heap with MAP_ANONYMOUS pages")                    \
+                                                                            \
   product(uint, ZYoungGCThreads, 0, DIAGNOSTIC,                             \
           "Number of GC threads for the young generation")                  \
                                                                             \

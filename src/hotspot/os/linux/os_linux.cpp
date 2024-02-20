@@ -3855,17 +3855,6 @@ static bool validate_thps_configured() {
   assert(UseTransparentHugePages, "Sanity");
   assert(os::Linux::thp_requested(), "Sanity");
 
-  if (UseZGC) {
-    if (!HugePages::supports_shmem_thp()) {
-      log_warning(pagesize)("Shared memory transparent huge pages are not enabled in the OS. "
-          "Set /sys/kernel/mm/transparent_hugepage/shmem_enabled to 'advise' to enable them.");
-      // UseTransparentHugePages has historically been tightly coupled with
-      // anonymous THPs. Fall through here and let the validity be determined
-      // by the OS configuration for anonymous THPs. ZGC doesn't use the flag
-      // but instead checks os::Linux::thp_requested().
-    }
-  }
-
   if (!HugePages::supports_thp()) {
     log_warning(pagesize)("Anonymous transparent huge pages are not enabled in the OS. "
         "Set /sys/kernel/mm/transparent_hugepage/enabled to 'madvise' to enable them.");

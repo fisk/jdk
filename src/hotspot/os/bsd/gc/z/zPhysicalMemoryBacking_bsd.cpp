@@ -170,7 +170,7 @@ void ZPhysicalMemoryBacking::map(zaddress_unsafe addr, size_t size, zoffset offs
   }
 }
 
-void ZPhysicalMemoryBacking::unmap(zaddress_unsafe addr, size_t size) const {
+void ZPhysicalMemoryBacking::unmap(zaddress_unsafe addr, size_t size, zoffset offset) const {
   // Note that we must keep the address space reservation intact and just detach
   // the backing memory. For this reason we map a new anonymous, non-accessible
   // and non-reserved page over the mapping instead of actually unmapping.

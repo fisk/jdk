@@ -28,6 +28,7 @@
 
 ZLargePages::State ZLargePages::_state;
 bool ZLargePages::_os_enforced_transparent_mode;
+bool ZLargePages::_is_anonymous;
 
 void ZLargePages::initialize() {
   pd_initialize();

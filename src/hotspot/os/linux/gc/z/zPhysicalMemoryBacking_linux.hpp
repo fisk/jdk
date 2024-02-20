@@ -31,10 +31,10 @@ class ZErrno;
 class ZPhysicalMemoryBacking {
 private:
   int      _fd;
-  size_t   _size;
   uint64_t _filesystem;
   size_t   _block_size;
   size_t   _available;
+  char*    _physical_mapping;
   bool     _initialized;
 
   void warn_available_space(size_t max_capacity) const;
@@ -44,6 +44,7 @@ private:
   int create_file_fd(const char* name) const;
   int create_fd(const char* name) const;
 
+  bool is_anonymous() const;
   bool is_tmpfs() const;
   bool is_hugetlbfs() const;
   bool tmpfs_supports_transparent_huge_pages() const;
@@ -73,7 +74,7 @@ public:
   size_t uncommit(zoffset offset, size_t length) const;
 
   void map(zaddress_unsafe addr, size_t size, zoffset offset) const;
-  void unmap(zaddress_unsafe addr, size_t size) const;
+  void unmap(zaddress_unsafe addr, size_t size, zoffset offset) const;
 };
 
 #endif // OS_LINUX_GC_Z_ZPHYSICALMEMORYBACKING_LINUX_HPP

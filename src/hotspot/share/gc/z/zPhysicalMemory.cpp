@@ -382,8 +382,15 @@ void ZPhysicalMemoryManager::map(zoffset offset, const ZPhysicalMemory& pmem) co
 }
 
 // Unmap virtual memory from physical memory
-void ZPhysicalMemoryManager::unmap(zoffset offset, size_t size) const {
+void ZPhysicalMemoryManager::unmap(zoffset offset, const ZPhysicalMemory& pmem) const {
   const zaddress_unsafe addr = ZOffset::address_unsafe(offset);
 
-  _backing.unmap(addr, size);
+  size_t segment_offset = 0;
+
+  // Unmap segments
+  for (int i = 0; i < pmem.nsegments(); i++) {
+    const ZPhysicalMemorySegment& segment = pmem.segment(i);
+    _backing.unmap(addr + segment_offset, segment.size(), segment.start());
+    segment_offset += segment.size();
+  }
 }

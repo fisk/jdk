@@ -88,10 +88,20 @@
 #ifndef HUGETLBFS_MAGIC
 #define HUGETLBFS_MAGIC                  0x958458f6
 #endif
+#define ZANONYMOUS_MAGIC                 0x1337;
+
+#ifndef MREMAP_DONTUNMAP
+#define MREMAP_DONTUNMAP	               4
+#endif
+
+#ifndef MADV_FREE
+#define MADV_FREE	                       8
+#endif
 
 // Filesystem names
 #define ZFILESYSTEM_TMPFS                "tmpfs"
 #define ZFILESYSTEM_HUGETLBFS            "hugetlbfs"
+#define ZFILESYSTEM_ANONYMOUS            "anonymous"
 
 // Proc file entry for max map mount
 #define ZFILENAME_PROC_MAX_MAP_COUNT     "/proc/sys/vm/max_map_count"
@@ -124,49 +134,68 @@ ZPhysicalMemoryBacking::ZPhysicalMemoryBacking(size_t max_capacity)
     _filesystem(0),
     _block_size(0),
     _available(0),
-    _initialized(false) {
+    _physical_mapping(nullptr),
+    _initialized(false){
 
-  // Create backing file
-  _fd = create_fd(ZFILENAME_HEAP);
-  if (_fd == -1) {
-    return;
-  }
-
-  // Truncate backing file
-  while (ftruncate(_fd, max_capacity) == -1) {
-    if (errno != EINTR) {
+  if (ZAnonymousMemoryBacking) {
+    // Use anonymous memory backing when available
+    _physical_mapping = (char*)mmap(0, max_capacity, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (_physical_mapping == MAP_FAILED) {
       ZErrno err;
-      log_error_p(gc)("Failed to truncate backing file (%s)", err.to_string());
+      fatal("Failed to map memory (%s)", err.to_string());
+    }
+    _filesystem = ZANONYMOUS_MAGIC;
+    _block_size = ZGranuleSize;
+  } else {
+    // Resort to using shared memory
+
+    // Create backing file
+    _fd = create_fd(ZFILENAME_HEAP);
+    if (_fd == -1) {
       return;
     }
-  }
 
-  // Get filesystem statistics
-  struct statfs buf;
-  if (fstatfs(_fd, &buf) == -1) {
-    ZErrno err;
-    log_error_p(gc)("Failed to determine filesystem type for backing file (%s)", err.to_string());
-    return;
-  }
+    // Truncate backing file
+    while (ftruncate(_fd, max_capacity) == -1) {
+      if (errno != EINTR) {
+        ZErrno err;
+        log_error_p(gc)("Failed to truncate backing file (%s)", err.to_string());
+        return;
+      }
+    }
 
-  _filesystem = buf.f_type;
-  _block_size = buf.f_bsize;
-  _available = buf.f_bavail * _block_size;
+    // Get filesystem statistics
+    struct statfs buf;
+    if (fstatfs(_fd, &buf) == -1) {
+      ZErrno err;
+      log_error_p(gc)("Failed to determine filesystem type for backing file (%s)", err.to_string());
+      return;
+    }
+
+    _filesystem = buf.f_type;
+    _block_size = buf.f_bsize;
+    _available = buf.f_bavail * _block_size;
+  }
 
   log_info_p(gc, init)("Heap Backing Filesystem: %s (" UINT64_FORMAT_X ")",
-                       is_tmpfs() ? ZFILESYSTEM_TMPFS : is_hugetlbfs() ? ZFILESYSTEM_HUGETLBFS : "other", _filesystem);
+                       is_tmpfs() ? ZFILESYSTEM_TMPFS :
+                       is_hugetlbfs() ? ZFILESYSTEM_HUGETLBFS :
+                       is_anonymous() ? ZFILESYSTEM_ANONYMOUS :
+                       "other", _filesystem);
 
-  // Make sure the filesystem type matches requested large page type
-  if (ZLargePages::is_transparent() && !is_tmpfs()) {
-    log_error_p(gc)("-XX:+UseTransparentHugePages can only be enabled when using a %s filesystem",
-                    ZFILESYSTEM_TMPFS);
-    return;
-  }
+  if (!is_anonymous()) {
+    // Make sure the filesystem type matches requested large page type
+    if (ZLargePages::is_transparent() && !is_tmpfs()) {
+      log_error_p(gc)("-XX:+UseTransparentHugePages can only be enabled when using a %s filesystem",
+                      ZFILESYSTEM_TMPFS);
+      return;
+    }
 
-  if (ZLargePages::is_transparent() && !tmpfs_supports_transparent_huge_pages()) {
-    log_error_p(gc)("-XX:+UseTransparentHugePages on a %s filesystem not supported by kernel",
-                    ZFILESYSTEM_TMPFS);
-    return;
+    if (ZLargePages::is_transparent() && !tmpfs_supports_transparent_huge_pages()) {
+      log_error_p(gc)("-XX:+UseTransparentHugePages on a %s filesystem not supported by kernel",
+                      ZFILESYSTEM_TMPFS);
+      return;
+    }
   }
 
   if (ZLargePages::is_explicit() && !is_hugetlbfs()) {
@@ -371,6 +400,10 @@ void ZPhysicalMemoryBacking::warn_commit_limits(size_t max_capacity) const {
 
   // Warn if max map count is too low
   warn_max_map_count(max_capacity);
+}
+
+bool ZPhysicalMemoryBacking::is_anonymous() const {
+  return _filesystem == ZANONYMOUS_MAGIC;
 }
 
 bool ZPhysicalMemoryBacking::is_tmpfs() const {
@@ -599,6 +632,27 @@ bool ZPhysicalMemoryBacking::commit_inner(zoffset offset, size_t length) const {
   log_trace(gc, heap)("Committing memory: " SIZE_FORMAT "M-" SIZE_FORMAT "M (" SIZE_FORMAT "M)",
                       untype(offset) / M, untype(offset + length) / M, length / M);
 
+  if (is_anonymous()) {
+    // Step 1: Try grabbing the memory in a way that commits the memory to the system
+    void* const res = mmap(0, length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (res == MAP_FAILED) {
+      // Failed
+      return false;
+    }
+
+    // Madvise transparent huge pages
+    os::realign_memory((char*)res, length, ZGranuleSize);
+
+    // Step 2: Once committing has finished, slot the memory into our file mapping. This will succeed.
+    void* const file_addr = _physical_mapping + untype(offset);
+    if (mremap(res, length, length, MREMAP_MAYMOVE | MREMAP_FIXED, file_addr) == MAP_FAILED) {
+      ZErrno err;
+      fatal("Failed to remap memory (%s)", err.to_string());
+    }
+
+    return true;
+  }
+
 retry:
   const ZErrno err = fallocate(false /* punch_hole */, offset, length);
   if (err) {
@@ -699,30 +753,55 @@ size_t ZPhysicalMemoryBacking::uncommit(zoffset offset, size_t length) const {
   log_trace(gc, heap)("Uncommitting memory: " SIZE_FORMAT "M-" SIZE_FORMAT "M (" SIZE_FORMAT "M)",
                       untype(offset) / M, untype(offset + length) / M, length / M);
 
-  const ZErrno err = fallocate(true /* punch_hole */, offset, length);
-  if (err) {
-    log_error(gc)("Failed to uncommit memory (%s)", err.to_string());
-    return 0;
+  if (is_anonymous()) {
+    // Uncommitting with MADV_FREE should be a bit cheaper then synchronously unmapping
+    void* const file_addr = _physical_mapping + untype(offset);
+    if (madvise(file_addr, length, MADV_FREE) != 0) {
+      return 0;
+    }
+  } else {
+    const ZErrno err = fallocate(true /* punch_hole */, offset, length);
+    if (err) {
+      log_error(gc)("Failed to uncommit memory (%s)", err.to_string());
+      return 0;
+    }
   }
 
   return length;
 }
 
 void ZPhysicalMemoryBacking::map(zaddress_unsafe addr, size_t size, zoffset offset) const {
-  const void* const res = mmap((void*)untype(addr), size, PROT_READ|PROT_WRITE, MAP_FIXED|MAP_SHARED, _fd, untype(offset));
-  if (res == MAP_FAILED) {
-    ZErrno err;
-    fatal("Failed to map memory (%s)", err.to_string());
+  if (is_anonymous()) {
+    void* const file_addr = _physical_mapping + untype(offset);
+    if (mremap(file_addr, size, size, MREMAP_MAYMOVE | MREMAP_DONTUNMAP | MREMAP_FIXED, (void*)untype(addr)) == MAP_FAILED) {
+      ZErrno err;
+      fatal("Failed to map memory (%s)", err.to_string());
+    }
+  } else {
+    const void* const res = mmap((void*)untype(addr), size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, _fd, untype(offset));
+    if (res == MAP_FAILED) {
+      ZErrno err;
+      fatal("Failed to map memory (%s)", err.to_string());
+    }
   }
 }
 
-void ZPhysicalMemoryBacking::unmap(zaddress_unsafe addr, size_t size) const {
+void ZPhysicalMemoryBacking::unmap(zaddress_unsafe addr, size_t size, zoffset offset) const {
   // Note that we must keep the address space reservation intact and just detach
   // the backing memory. For this reason we map a new anonymous, non-accessible
   // and non-reserved page over the mapping instead of actually unmapping.
-  const void* const res = mmap((void*)untype(addr), size, PROT_NONE, MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
-  if (res == MAP_FAILED) {
-    ZErrno err;
-    fatal("Failed to map memory (%s)", err.to_string());
+
+  if (is_anonymous()) {
+    void* const file_addr = _physical_mapping + untype(offset);
+    if (mremap((void*)untype(addr), size, size, MREMAP_MAYMOVE | MREMAP_DONTUNMAP | MREMAP_FIXED, file_addr) == MAP_FAILED) {
+      ZErrno err;
+      fatal("Failed to map memory (%s) " PTR_FORMAT ", " PTR_FORMAT, err.to_string(), untype(addr), p2i(file_addr));
+    }
+  } else {
+    const void* const res = mmap((void*)untype(addr), size, PROT_NONE, MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
+    if (res == MAP_FAILED) {
+      ZErrno err;
+      fatal("Failed to map memory (%s)", err.to_string());
+    }
   }
 }

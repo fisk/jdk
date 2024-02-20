@@ -36,6 +36,7 @@ private:
 
   static State _state;
   static bool  _os_enforced_transparent_mode;
+  static bool  _is_anonymous;
 
   static void pd_initialize();
 

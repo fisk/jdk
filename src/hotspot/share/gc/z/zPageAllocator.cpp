@@ -443,7 +443,7 @@ void ZPageAllocator::map_page(const ZPage* page) const {
 
 void ZPageAllocator::unmap_page(const ZPage* page) const {
   // Unmap physical memory
-  _physical.unmap(page->start(), page->size());
+  _physical.unmap(page->start(), page->physical_memory());
 }
 
 void ZPageAllocator::safe_destroy_page(ZPage* page) {
