@@ -76,6 +76,11 @@ static bool should_select_anonymous_backing() {
     return false;
   }
 
+  if (AllocateHeapAt != nullptr) {
+    // Explicit file backing requires non-anonymous heap
+    return false;
+  }
+
   // We need Linux 5.7 to use anonymous memory
   if (!supports_anonymous_backing()) {
     // Without the appropriate Linux support, resort to using shared memory

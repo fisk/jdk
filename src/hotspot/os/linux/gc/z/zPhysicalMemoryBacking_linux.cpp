@@ -772,7 +772,7 @@ void ZPhysicalMemoryBacking::map(zaddress_unsafe addr, size_t size, zoffset offs
     void* const file_addr = _physical_mapping + untype(offset);
     if (mremap(file_addr, size, size, MREMAP_MAYMOVE | MREMAP_DONTUNMAP | MREMAP_FIXED, (void*)untype(addr)) == MAP_FAILED) {
       ZErrno err;
-      fatal("Failed to map memory (%s)", err.to_string());
+      fatal("Failed to map memory (%s) " PTR_FORMAT ", " PTR_FORMAT, err.to_string(), untype(addr), p2i(file_addr));
     }
   } else {
     const void* const res = mmap((void*)untype(addr), size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, _fd, untype(offset));
