@@ -88,7 +88,6 @@
 #ifndef HUGETLBFS_MAGIC
 #define HUGETLBFS_MAGIC                  0x958458f6
 #endif
-#define ZANONYMOUS_MAGIC                 0x1337;
 
 #ifndef MREMAP_DONTUNMAP
 #define MREMAP_DONTUNMAP	               4
@@ -101,7 +100,6 @@
 // Filesystem names
 #define ZFILESYSTEM_TMPFS                "tmpfs"
 #define ZFILESYSTEM_HUGETLBFS            "hugetlbfs"
-#define ZFILESYSTEM_ANONYMOUS            "anonymous"
 
 // Proc file entry for max map mount
 #define ZFILENAME_PROC_MAX_MAP_COUNT     "/proc/sys/vm/max_map_count"
@@ -138,16 +136,18 @@ ZPhysicalMemoryBacking::ZPhysicalMemoryBacking(size_t max_capacity)
     _initialized(false){
 
   if (ZAnonymousMemoryBacking) {
-    // Use anonymous memory backing when available
+    // Use anonymous memory backing when available, no filesystem needed
     _physical_mapping = (char*)mmap(0, max_capacity, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (_physical_mapping == MAP_FAILED) {
       ZErrno err;
       fatal("Failed to map memory (%s)", err.to_string());
     }
-    _filesystem = ZANONYMOUS_MAGIC;
+
     _block_size = ZGranuleSize;
+
+    log_info_p(gc, init)("Heap Backing: Anonymous Memory");
   } else {
-    // Resort to using shared memory
+    // Resort to using shared memory backed by a filesystem
 
     // Create backing file
     _fd = create_fd(ZFILENAME_HEAP);
@@ -175,15 +175,12 @@ ZPhysicalMemoryBacking::ZPhysicalMemoryBacking(size_t max_capacity)
     _filesystem = buf.f_type;
     _block_size = buf.f_bsize;
     _available = buf.f_bavail * _block_size;
-  }
 
-  log_info_p(gc, init)("Heap Backing Filesystem: %s (" UINT64_FORMAT_X ")",
-                       is_tmpfs() ? ZFILESYSTEM_TMPFS :
-                       is_hugetlbfs() ? ZFILESYSTEM_HUGETLBFS :
-                       is_anonymous() ? ZFILESYSTEM_ANONYMOUS :
-                       "other", _filesystem);
+    log_info_p(gc, init)("Heap Backing Filesystem: %s (" UINT64_FORMAT_X ")",
+                         is_tmpfs() ? ZFILESYSTEM_TMPFS :
+                         is_hugetlbfs() ? ZFILESYSTEM_HUGETLBFS :
+                         "other", _filesystem);
 
-  if (!is_anonymous()) {
     // Make sure the filesystem type matches requested large page type
     if (ZLargePages::is_transparent() && !is_tmpfs()) {
       log_error_p(gc)("-XX:+UseTransparentHugePages can only be enabled when using a %s filesystem",
@@ -403,7 +400,7 @@ void ZPhysicalMemoryBacking::warn_commit_limits(size_t max_capacity) const {
 }
 
 bool ZPhysicalMemoryBacking::is_anonymous() const {
-  return _filesystem == ZANONYMOUS_MAGIC;
+  return ZAnonymousMemoryBacking;
 }
 
 bool ZPhysicalMemoryBacking::is_tmpfs() const {
