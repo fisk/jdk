@@ -1963,7 +1963,7 @@ void FileMapInfo::stream_heap_region() {
   bool success = false;
 
   if (can_use_heap_region()) {
-    if (map_auxiliary_region(MetaspaceShared::hp, /*readonly=*/false) != nullptr) {
+    if (map_auxiliary_region(MetaspaceShared::hp, /*readonly=*/true) != nullptr) {
       FileMapRegion* r = region_at(MetaspaceShared::hp);
       HeapShared::initialize_streaming();
       success = true;
