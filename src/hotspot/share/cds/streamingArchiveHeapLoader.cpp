@@ -563,9 +563,10 @@ void StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_next_root(Ja
   install_root(current_root_index, root);
 }
 
-void StreamingArchiveHeapLoader::materialize_objects() {
-  // Get the materialized roots array
+bool StreamingArchiveHeapLoader::materialize_early() {
+  jlong start = os::javaTimeNanos();
   JavaThread* thread = JavaThread::current();
+  int roots_length = compute_roots_length();
 
   size_t bootstrap_max_memory = Universe::heap()->bootstrap_max_memory();
   size_t bootstrap_min_memory = 2 * M;
@@ -576,16 +577,6 @@ void StreamingArchiveHeapLoader::materialize_objects() {
   log_info(cds, heap)("Max bootstrapping memory: " SIZE_FORMAT "M, min bootstrapping memory: " SIZE_FORMAT "M, selected budget: " SIZE_FORMAT "M",
                       bootstrap_max_memory / M, bootstrap_min_memory / M, before_gc_materialize_budget_bytes / M);
 
-  int roots_length = compute_roots_length();
-
-  // Objects are laid out in DFS order; DFS traverse the roots by linearly walking all objects
-  HandleMark hm(thread);
-  log_info(cds, heap)("Concurrent object materialization start");
-
-  jlong start = os::javaTimeNanos();
-
-  // Early materialization with a budget before GC is allowed
-  MutexLocker ml(CDSHeapLoading_lock, Mutex::_safepoint_check_flag);
   for (_current_root_index = 0; _current_root_index < roots_length; ++_current_root_index) {
     if (_stop_background_processing || _allow_gc || _allocated_words > before_gc_materialize_budget_words) {
       log_info(cds, heap)("Early object materialization interrupted at root %d", _current_root_index);
@@ -602,25 +593,35 @@ void StreamingArchiveHeapLoader::materialize_objects() {
   log_info(cds,heap)("Early object materialization time: " SIZE_FORMAT "ms",
                      (end - start) / 1000000);
 
-  if (!await_gc_enabled()) {
-    // Continue materializing with GC allowed
-    log_info(cds, heap)("Concurrent object materialization start after gc enabling");
+  return finished_before_gc_allowed;
+}
 
-    for (; _current_root_index < roots_length; ++_current_root_index) {
-      if (_stop_background_processing) {
-        log_info(cds, heap)("Late object materialization interrupted at root %d", _current_root_index);
-        break;
-      }
-
-      IterativeObjectLoader::materialize_next_root(thread);
-    }
-
-    log_info(cds, heap)("Concurrent object materialization end");
+void StreamingArchiveHeapLoader::materialize_late() {
+  if (await_gc_enabled()) {
+    // Materialization is signalled to stop
+    return;
   }
 
-  await_finished_processing();
+  // Continue materializing with GC allowed
+  log_info(cds, heap)("Concurrent object materialization start after gc enabling");
+  JavaThread* thread = JavaThread::current();
+  int roots_length = compute_roots_length();
 
+  for (; _current_root_index < roots_length; ++_current_root_index) {
+    if (_stop_background_processing) {
+      log_info(cds, heap)("Late object materialization interrupted at root %d", _current_root_index);
+      break;
+    }
+
+    IterativeObjectLoader::materialize_next_root(thread);
+  }
+
+  log_info(cds, heap)("Concurrent object materialization end");
+}
+
+void StreamingArchiveHeapLoader::cleanup(bool finished_before_gc_allowed) {
   log_info(cds, heap)("Concurrent object materialization cleanup start");
+  JavaThread* thread = JavaThread::current();
 
   // Remove OopStorage roots
   if (!finished_before_gc_allowed) {
@@ -642,6 +643,20 @@ void StreamingArchiveHeapLoader::materialize_objects() {
   FileMapInfo::current_info()->unmap_region(MetaspaceShared::bm);
 
   log_info(cds, heap)("Concurrent object materialization cleanup end");
+}
+
+void StreamingArchiveHeapLoader::materialize_objects() {
+  JavaThread* thread = JavaThread::current();
+  // Objects are laid out in DFS order; DFS traverse the roots by linearly walking all objects
+  HandleMark hm(thread);
+  log_info(cds, heap)("Concurrent object materialization start");
+
+  // Early materialization with a budget before GC is allowed
+  MutexLocker ml(CDSHeapLoading_lock, Mutex::_safepoint_check_flag);
+  bool finished_before_gc_allowed = materialize_early();
+  materialize_late();
+  await_finished_processing();
+  cleanup(finished_before_gc_allowed);
 }
 
 void StreamingArchiveHeapLoader::switch_object_index_to_handle(int object_index) {
