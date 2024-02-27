@@ -650,17 +650,7 @@ void StreamingArchiveHeapLoader::cleanup(bool finished_before_gc_allowed) {
   _cleanup_materialization_time_ns = os::javaTimeNanos() - start;
 }
 
-void StreamingArchiveHeapLoader::materialize_objects() {
-  JavaThread* thread = JavaThread::current();
-  // Objects are laid out in DFS order; DFS traverse the roots by linearly walking all objects
-  HandleMark hm(thread);
-  // Early materialization with a budget before GC is allowed
-  MutexLocker ml(CDSHeapLoading_lock, Mutex::_safepoint_check_flag);
-  bool finished_before_gc_allowed = materialize_early();
-  materialize_late();
-  await_finished_processing();
-  cleanup(finished_before_gc_allowed);
-
+void StreamingArchiveHeapLoader::log_telemetry() {
   log_info(cds,heap)("Early object materialization time (concurrent): " SIZE_FORMAT "us",
                      _early_materialization_time_ns / 1000);
   log_info(cds, heap)("Late object materialization time (concurrent): " SIZE_FORMAT "us",
@@ -675,6 +665,19 @@ void StreamingArchiveHeapLoader::materialize_objects() {
                       (_final_materialization_time_ns + _accumulated_lazy_materialization_time_ns) / 1000);
   log_info(cds, heap)("Concurrent materialization time: " SIZE_FORMAT "us",
                       (_early_materialization_time_ns + _late_materialization_time_ns + _cleanup_materialization_time_ns) / 1000);
+}
+
+void StreamingArchiveHeapLoader::materialize_objects() {
+  JavaThread* thread = JavaThread::current();
+  // Objects are laid out in DFS order; DFS traverse the roots by linearly walking all objects
+  HandleMark hm(thread);
+  // Early materialization with a budget before GC is allowed
+  MutexLocker ml(CDSHeapLoading_lock, Mutex::_safepoint_check_flag);
+  bool finished_before_gc_allowed = materialize_early();
+  materialize_late();
+  await_finished_processing();
+  cleanup(finished_before_gc_allowed);
+  log_telemetry();
 }
 
 void StreamingArchiveHeapLoader::switch_object_index_to_handle(int object_index) {

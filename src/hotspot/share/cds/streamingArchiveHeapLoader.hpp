@@ -164,6 +164,7 @@ private:
   static bool materialize_early();
   static void materialize_late();
   static void cleanup(bool finished_before_gc_allowed);
+  static void log_telemetry();
 
   class TracingObjectLoader {
     static oop materialize_object(int object_index, Stack<CDSHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread, bool allow_gc);
