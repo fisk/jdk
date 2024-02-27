@@ -314,6 +314,11 @@ size_t StreamingArchiveHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
 
   ensure_buffer_space(new_used);
 
+  if (is_interned_string(src_obj)) {
+    java_lang_String::hash_code(src_obj); // Sets the hash code field(s)
+    assert(java_lang_String::hash_is_set(src_obj), "hash must be set");
+  }
+
   address from = cast_from_oop<address>(src_obj);
   address to = offset_to_buffered_address<address>(_buffer_used);
   assert(is_object_aligned(_buffer_used), "sanity");

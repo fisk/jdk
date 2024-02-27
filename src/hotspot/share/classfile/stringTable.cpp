@@ -229,6 +229,46 @@ class StringTableLookupOop : public StackObj {
   }
 };
 
+class CDSStringTableLookupOop : public StackObj {
+private:
+  Thread* _thread;
+  uintx _hash;
+  oop _find;
+  oop _found;
+
+public:
+  CDSStringTableLookupOop(Thread* thread, uintx hash, oop find)
+    : _thread(thread), _hash(hash), _find(find), _found(nullptr) { }
+
+  uintx get_hash() const {
+    return _hash;
+  }
+
+  bool equals(WeakHandle* value) {
+    oop val_oop = value->peek();
+    if (val_oop == nullptr) {
+      return false;
+    }
+
+    bool equals = java_lang_String::equals(_find, val_oop);
+    if (!equals) {
+      return false;
+    }
+
+    _found = value->resolve();
+    return true;
+  }
+
+  oop found() {
+    return _found;
+  }
+
+  bool is_dead(WeakHandle* value) {
+    oop val_oop = value->peek();
+    return val_oop == nullptr;
+  }
+};
+
 void StringTable::create_table() {
   size_t start_size_log_2 = ceil_log2(StringTableSize);
   _current_size = ((size_t)1) << start_size_log_2;
@@ -364,6 +404,27 @@ oop StringTable::intern(Handle string_or_null_h, const jchar* name, int len, TRA
     return found_string;
   }
   return do_intern(string_or_null_h, name, len, hash, THREAD);
+}
+
+oop StringTable::cds_intern(Thread* thread, oop string) {
+  uintx hash = (uintx)java_lang_String::precomputed_hash(string);
+  CDSStringTableLookupOop lookup(thread, hash, string);
+
+  if (StringDedup::is_enabled()) {
+    // Notify deduplication support that the string is being interned.  A string
+    // must never be deduplicated after it has been interned.  Doing so interferes
+    // with compiler optimizations done on e.g. interned string literals.
+    StringDedup::notify_intern(string);
+  }
+
+  WeakHandle wh(_oop_storage, string);
+
+  if (_local_table->insert(thread, lookup, wh, nullptr)) {
+    // Common case: insertion succeeded
+    return string;
+  }
+
+  return lookup.found();
 }
 
 oop StringTable::do_intern(Handle string_or_null_h, const jchar* name,

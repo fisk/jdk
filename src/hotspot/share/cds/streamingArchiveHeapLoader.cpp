@@ -369,7 +369,7 @@ oop StreamingArchiveHeapLoader::TracingObjectLoader::materialize_object(int obje
       }
 
       // Replace string with interned string
-      heap_object = StringTable::intern(heap_object, thread);
+      heap_object = StringTable::cds_intern(thread, heap_object);
       replace_heap_object_for_object_index(object_index, heap_object, allow_gc);
     }
   }
@@ -470,7 +470,7 @@ void StreamingArchiveHeapLoader::IterativeObjectLoader::initialize_range(int fir
     if (last_object_was_interned_string) {
       int string_object_index = i - 1;
       oop string_object = heap_object_for_object_index(string_object_index, allow_gc);
-      replace_heap_object_for_object_index(string_object_index, StringTable::intern(string_object, thread), allow_gc);
+      replace_heap_object_for_object_index(string_object_index, StringTable::cds_intern(thread, string_object), allow_gc);
       last_object_was_interned_string = false;
     } else if (java_lang_String::is_instance(heap_object)) {
       size_t buffer_offset = buffer_offset_for_archive_object(archive_object);
