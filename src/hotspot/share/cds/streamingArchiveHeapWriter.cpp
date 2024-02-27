@@ -316,6 +316,7 @@ size_t StreamingArchiveHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
 
   if (is_interned_string(src_obj)) {
     java_lang_String::hash_code(src_obj); // Sets the hash code field(s)
+    java_lang_String::set_deduplication_forbidden(src_obj); // Allows faster interning at runtime
     assert(java_lang_String::hash_is_set(src_obj), "hash must be set");
   }
 

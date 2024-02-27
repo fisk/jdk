@@ -410,13 +410,6 @@ oop StringTable::cds_intern(Thread* thread, oop string) {
   uintx hash = (uintx)java_lang_String::precomputed_hash(string);
   CDSStringTableLookupOop lookup(thread, hash, string);
 
-  if (StringDedup::is_enabled()) {
-    // Notify deduplication support that the string is being interned.  A string
-    // must never be deduplicated after it has been interned.  Doing so interferes
-    // with compiler optimizations done on e.g. interned string literals.
-    StringDedup::notify_intern(string);
-  }
-
   WeakHandle wh(_oop_storage, string);
 
   if (_local_table->insert(thread, lookup, wh, nullptr)) {
