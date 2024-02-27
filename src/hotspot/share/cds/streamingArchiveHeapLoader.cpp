@@ -71,6 +71,12 @@ int* StreamingArchiveHeapLoader::_root_highest_object_index_table;
 
 bool StreamingArchiveHeapLoader::_waiting_for_iterator;
 
+static jlong _early_materialization_time_ns = 0;
+static jlong _late_materialization_time_ns = 0;
+static jlong _final_materialization_time_ns = 0;
+static jlong _cleanup_materialization_time_ns = 0;
+static volatile jlong _accumulated_lazy_materialization_time_ns = 0;
+
 int StreamingArchiveHeapLoader::object_index_for_root_index(int root_index) {
   return _roots_archive[root_index];
 }
@@ -586,12 +592,9 @@ bool StreamingArchiveHeapLoader::materialize_early() {
     IterativeObjectLoader::materialize_next_root(thread);
   }
 
-  jlong end = os::javaTimeNanos();
+  _early_materialization_time_ns = os::javaTimeNanos() - start;
 
   bool finished_before_gc_allowed = !_allow_gc && _current_root_index == roots_length;
-
-  log_info(cds,heap)("Early object materialization time: " SIZE_FORMAT "ms",
-                     (end - start) / 1000000);
 
   return finished_before_gc_allowed;
 }
@@ -602,8 +605,9 @@ void StreamingArchiveHeapLoader::materialize_late() {
     return;
   }
 
+  jlong start = os::javaTimeNanos();
+
   // Continue materializing with GC allowed
-  log_info(cds, heap)("Concurrent object materialization start after gc enabling");
   JavaThread* thread = JavaThread::current();
   int roots_length = compute_roots_length();
 
@@ -616,12 +620,13 @@ void StreamingArchiveHeapLoader::materialize_late() {
     IterativeObjectLoader::materialize_next_root(thread);
   }
 
-  log_info(cds, heap)("Concurrent object materialization end");
+  _late_materialization_time_ns = os::javaTimeNanos() - start;
 }
 
 void StreamingArchiveHeapLoader::cleanup(bool finished_before_gc_allowed) {
-  log_info(cds, heap)("Concurrent object materialization cleanup start");
   JavaThread* thread = JavaThread::current();
+
+  jlong start = os::javaTimeNanos();
 
   // Remove OopStorage roots
   if (!finished_before_gc_allowed) {
@@ -642,21 +647,34 @@ void StreamingArchiveHeapLoader::cleanup(bool finished_before_gc_allowed) {
   FileMapInfo::current_info()->unmap_region(MetaspaceShared::hp);
   FileMapInfo::current_info()->unmap_region(MetaspaceShared::bm);
 
-  log_info(cds, heap)("Concurrent object materialization cleanup end");
+  _cleanup_materialization_time_ns = os::javaTimeNanos() - start;
 }
 
 void StreamingArchiveHeapLoader::materialize_objects() {
   JavaThread* thread = JavaThread::current();
   // Objects are laid out in DFS order; DFS traverse the roots by linearly walking all objects
   HandleMark hm(thread);
-  log_info(cds, heap)("Concurrent object materialization start");
-
   // Early materialization with a budget before GC is allowed
   MutexLocker ml(CDSHeapLoading_lock, Mutex::_safepoint_check_flag);
   bool finished_before_gc_allowed = materialize_early();
   materialize_late();
   await_finished_processing();
   cleanup(finished_before_gc_allowed);
+
+  log_info(cds,heap)("Early object materialization time (concurrent): " SIZE_FORMAT "us",
+                     _early_materialization_time_ns / 1000);
+  log_info(cds, heap)("Late object materialization time (concurrent): " SIZE_FORMAT "us",
+                      _late_materialization_time_ns / 1000);
+  log_info(cds, heap)("Object materialization cleanup time (concurrent): " SIZE_FORMAT "us",
+                      _cleanup_materialization_time_ns / 1000);
+  log_info(cds, heap)("Final object materialization time (synchronous): " SIZE_FORMAT "us",
+                      _final_materialization_time_ns / 1000);
+  log_info(cds, heap)("Bootstrapping lazy materialization time (synchronous): " SIZE_FORMAT "us",
+                      _accumulated_lazy_materialization_time_ns / 1000);
+  log_info(cds, heap)("Synchronous materialization time: " SIZE_FORMAT "us",
+                      (_final_materialization_time_ns + _accumulated_lazy_materialization_time_ns) / 1000);
+  log_info(cds, heap)("Concurrent materialization time: " SIZE_FORMAT "us",
+                      (_early_materialization_time_ns + _late_materialization_time_ns + _cleanup_materialization_time_ns) / 1000);
 }
 
 void StreamingArchiveHeapLoader::switch_object_index_to_handle(int object_index) {
@@ -671,8 +689,6 @@ void StreamingArchiveHeapLoader::switch_object_index_to_handle(int object_index)
 }
 
 void StreamingArchiveHeapLoader::enable_gc() {
-  log_info(cds, heap)("Enable GC");
-
   // Need java.lang.Thread loaded to create the Thread object of the CDS thread
   // which starts way earlier due to its startup helping nature
   CDSThread::materialize_thread_object();
@@ -714,7 +730,7 @@ void StreamingArchiveHeapLoader::finish_materialize_objects() {
   HandleMark hm(thread);
   int length = compute_roots_length();
 
-  log_info(cds, heap)("Synchronous object materialization start");
+  jlong start = os::javaTimeNanos();
 
   MutexLocker ml(CDSHeapLoading_lock, Mutex::_safepoint_check_flag);
   _stop_background_processing = true;
@@ -731,10 +747,8 @@ void StreamingArchiveHeapLoader::finish_materialize_objects() {
   _finished_processing = true;
   CDSHeapLoading_lock->notify_all();
 
-  log_info(cds, heap)("Synchronous object materialization end");
+  _final_materialization_time_ns = os::javaTimeNanos() - start;
 }
-
-static volatile jlong _accumulated_lazy_materialization_time_ns = 0;
 
 void account_lazy_materialization_time_ns(jlong time, const char* description, int index) {
   Atomic::add(&_accumulated_lazy_materialization_time_ns, time);
