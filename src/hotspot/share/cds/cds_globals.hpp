@@ -79,6 +79,9 @@
   product(bool, DumpStreamableObjects, true,                                \
           "Dump the Java heap in a generic streamable object format")       \
                                                                             \
+  product(bool, SyncLoadStreamableObjects, false,                           \
+          "Load streamable objects synchronously without concurrency")      \
+                                                                            \
   product(ccstr, SharedClassListFile, nullptr,                              \
           "Override the default CDS class list")                            \
                                                                             \

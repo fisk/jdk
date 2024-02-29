@@ -35,6 +35,7 @@
 #include "gc/shared/oopStorage.inline.hpp"
 #include "gc/shared/oopStorageSet.inline.hpp"
 #include "logging/log.hpp"
+#include "runtime/globals_extension.hpp"
 #include "runtime/mutex.hpp"
 #include "oops/access.inline.hpp"
 #include "oops/objArrayOop.inline.hpp"
@@ -648,23 +649,41 @@ void StreamingArchiveHeapLoader::cleanup(bool finished_before_gc_allowed) {
   FileMapInfo::current_info()->unmap_region(MetaspaceShared::bm);
 
   _cleanup_materialization_time_ns = os::javaTimeNanos() - start;
+
+  log_telemetry();
 }
 
 void StreamingArchiveHeapLoader::log_telemetry() {
-  log_info(cds,heap)("Early object materialization time (concurrent): " SIZE_FORMAT "us",
-                     _early_materialization_time_ns / 1000);
-  log_info(cds, heap)("Late object materialization time (concurrent): " SIZE_FORMAT "us",
-                      _late_materialization_time_ns / 1000);
-  log_info(cds, heap)("Object materialization cleanup time (concurrent): " SIZE_FORMAT "us",
-                      _cleanup_materialization_time_ns / 1000);
-  log_info(cds, heap)("Final object materialization time (synchronous): " SIZE_FORMAT "us",
+  const char* async_or_sync = SyncLoadStreamableObjects ? "sync" : "async";
+  log_info(cds, heap)("early object materialization time (%s): " SIZE_FORMAT "us",
+                      async_or_sync, _early_materialization_time_ns / 1000);
+  log_info(cds, heap)("late object materialization time (%s): " SIZE_FORMAT "us",
+                      async_or_sync, _late_materialization_time_ns / 1000);
+  log_info(cds, heap)("object materialization cleanup time (%s): " SIZE_FORMAT "us",
+                      async_or_sync, _cleanup_materialization_time_ns / 1000);
+  log_info(cds, heap)("final object materialization time (sync): " SIZE_FORMAT "us",
                       _final_materialization_time_ns / 1000);
-  log_info(cds, heap)("Bootstrapping lazy materialization time (synchronous): " SIZE_FORMAT "us",
+  log_info(cds, heap)("bootstrapping lazy materialization time (sync): " SIZE_FORMAT "us",
                       _accumulated_lazy_materialization_time_ns / 1000);
-  log_info(cds, heap)("Synchronous materialization time: " SIZE_FORMAT "us",
-                      (_final_materialization_time_ns + _accumulated_lazy_materialization_time_ns) / 1000);
-  log_info(cds, heap)("Concurrent materialization time: " SIZE_FORMAT "us",
-                      (_early_materialization_time_ns + _late_materialization_time_ns + _cleanup_materialization_time_ns) / 1000);
+
+  jlong sync_time = _final_materialization_time_ns + _accumulated_lazy_materialization_time_ns;
+  jlong async_time = _early_materialization_time_ns + _late_materialization_time_ns + _cleanup_materialization_time_ns;
+
+  if (SyncLoadStreamableObjects) {
+    sync_time += async_time;
+    async_time = 0;
+  }
+
+  log_info(cds, heap)("sync materialization time: " SIZE_FORMAT "us",
+                      sync_time / 1000);
+
+  log_info(cds, heap)("async materialization time: " SIZE_FORMAT "us",
+                      async_time / 1000);
+
+  jlong iterative_time = SyncLoadStreamableObjects ? sync_time : async_time;
+  size_t materialized_bytes = _allocated_words * HeapWordSize;
+  log_info(cds, heap)("%s materialized " SIZE_FORMAT "K (" SIZE_FORMAT "M/s)", async_or_sync,
+                      materialized_bytes / 1024, size_t(materialized_bytes * UCONST64(1000000000) / M / iterative_time));
 }
 
 void StreamingArchiveHeapLoader::materialize_objects() {
@@ -677,7 +696,6 @@ void StreamingArchiveHeapLoader::materialize_objects() {
   materialize_late();
   await_finished_processing();
   cleanup(finished_before_gc_allowed);
-  log_telemetry();
 }
 
 void StreamingArchiveHeapLoader::switch_object_index_to_handle(int object_index) {
@@ -692,9 +710,15 @@ void StreamingArchiveHeapLoader::switch_object_index_to_handle(int object_index)
 }
 
 void StreamingArchiveHeapLoader::enable_gc() {
-  // Need java.lang.Thread loaded to create the Thread object of the CDS thread
-  // which starts way earlier due to its startup helping nature
-  CDSThread::materialize_thread_object();
+  if (SyncLoadStreamableObjects) {
+    if (_finished_processing) {
+      return;
+    }
+  } else {
+    // Need java.lang.Thread loaded to create the Thread object of the CDS thread
+    // which starts way earlier due to its startup helping nature
+    CDSThread::materialize_thread_object();
+  }
 
   MutexLocker ml(CDSHeapLoading_lock, Mutex::_safepoint_check_flag);
   // First wait until no tracing is active
@@ -725,6 +749,11 @@ void StreamingArchiveHeapLoader::enable_gc() {
     _waiting_for_iterator = false;
   }
   CDSHeapLoading_lock->notify_all();
+
+  if (SyncLoadStreamableObjects) {
+    materialize_late();
+    cleanup(false /* finished_before_gc_allowed */);
+  }
 }
 
 void StreamingArchiveHeapLoader::finish_materialize_objects() {
@@ -803,7 +832,23 @@ void StreamingArchiveHeapLoader::initialize() {
 
   HeapShared::init_roots(roots);
 
-  CDSThread::initialize();
+  if (FLAG_IS_DEFAULT(SyncLoadStreamableObjects)) {
+    SyncLoadStreamableObjects = !os::is_MP();
+  }
+
+  if (SyncLoadStreamableObjects) {
+    // Objects are laid out in DFS order; DFS traverse the roots by linearly walking all objects
+    HandleMark hm(thread);
+    // Early materialization with a budget before GC is allowed
+    MutexLocker ml(CDSHeapLoading_lock, Mutex::_safepoint_check_flag);
+    bool finished_before_gc_allowed = materialize_early();
+    if (finished_before_gc_allowed) {
+      _finished_processing = true;
+      cleanup(true /* finished_before_gc_allowed */);
+    }
+  } else {
+    CDSThread::initialize();
+  }
 }
 
 oop StreamingArchiveHeapLoader::root(int root_index) {
