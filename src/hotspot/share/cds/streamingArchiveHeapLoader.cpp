@@ -540,10 +540,23 @@ size_t StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_range(int 
   return materialized_words;
 }
 
-void StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_next_root(JavaThread* thread) {
-  int current_root_index = _current_root_index;
-  int highest_object_index = highest_object_index_for_root_index(current_root_index);
-  int root_object_index = object_index_for_root_index(current_root_index);
+bool StreamingArchiveHeapLoader::IterativeObjectLoader::has_more() {
+  return _current_root_index < compute_roots_length();
+}
+
+void StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_next_batch(JavaThread* thread) {
+  int min_batch_objects = 128;
+  int from_root_index = _current_root_index;
+  int max_to_root_index = compute_roots_length() - 1;
+  int until_root_index;
+  int highest_object_index;
+
+  for (until_root_index = from_root_index; until_root_index <= max_to_root_index; ++until_root_index) {
+    highest_object_index = highest_object_index_for_root_index(until_root_index);
+    if (highest_object_index - _previous_batch_last_object_index >= min_batch_objects) {
+      break;
+    }
+  }
 
   oop root = nullptr;
   bool allow_gc = _allow_gc;
@@ -564,16 +577,18 @@ void StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_next_root(Ja
     }
   }
 
-  root = heap_object_for_object_index(root_object_index, allow_gc);
-
   // Install the root
-  install_root(current_root_index, root);
+  for (int i = from_root_index; i <= until_root_index; ++i) {
+    int root_object_index = object_index_for_root_index(i);
+    root = heap_object_for_object_index(root_object_index, allow_gc);
+    install_root(i, root);
+    ++_current_root_index;
+  }
 }
 
 bool StreamingArchiveHeapLoader::materialize_early() {
   jlong start = os::javaTimeNanos();
   JavaThread* thread = JavaThread::current();
-  int roots_length = compute_roots_length();
 
   size_t bootstrap_max_memory = Universe::heap()->bootstrap_max_memory();
   size_t bootstrap_min_memory = 2 * M;
@@ -584,18 +599,18 @@ bool StreamingArchiveHeapLoader::materialize_early() {
   log_info(cds, heap)("Max bootstrapping memory: " SIZE_FORMAT "M, min bootstrapping memory: " SIZE_FORMAT "M, selected budget: " SIZE_FORMAT "M",
                       bootstrap_max_memory / M, bootstrap_min_memory / M, before_gc_materialize_budget_bytes / M);
 
-  for (_current_root_index = 0; _current_root_index < roots_length; ++_current_root_index) {
+  while (IterativeObjectLoader::has_more()) {
     if (_stop_background_processing || _allow_gc || _allocated_words > before_gc_materialize_budget_words) {
       log_info(cds, heap)("Early object materialization interrupted at root %d", _current_root_index);
       break;
     }
 
-    IterativeObjectLoader::materialize_next_root(thread);
+    IterativeObjectLoader::materialize_next_batch(thread);
   }
 
   _early_materialization_time_ns = os::javaTimeNanos() - start;
 
-  bool finished_before_gc_allowed = !_allow_gc && _current_root_index == roots_length;
+  bool finished_before_gc_allowed = !_allow_gc && !IterativeObjectLoader::has_more();
 
   return finished_before_gc_allowed;
 }
@@ -610,15 +625,14 @@ void StreamingArchiveHeapLoader::materialize_late() {
 
   // Continue materializing with GC allowed
   JavaThread* thread = JavaThread::current();
-  int roots_length = compute_roots_length();
 
-  for (; _current_root_index < roots_length; ++_current_root_index) {
+  while (IterativeObjectLoader::has_more()) {
     if (_stop_background_processing) {
       log_info(cds, heap)("Late object materialization interrupted at root %d", _current_root_index);
       break;
     }
 
-    IterativeObjectLoader::materialize_next_root(thread);
+    IterativeObjectLoader::materialize_next_batch(thread);
   }
 
   _late_materialization_time_ns = os::javaTimeNanos() - start;
@@ -728,7 +742,7 @@ void StreamingArchiveHeapLoader::enable_gc() {
 
   _allow_gc = true;
 
-  if (_current_root_index != compute_roots_length()) {
+  if (IterativeObjectLoader::has_more()) {
     // Inflate oop handles and continue materializing objects in a less efficient mode
     int num_handles = _num_archived_objects;
     int current_end = _current_batch_last_object_index;
@@ -760,7 +774,6 @@ void StreamingArchiveHeapLoader::finish_materialize_objects() {
   // Get the materialized roots array
   JavaThread* thread = JavaThread::current();
   HandleMark hm(thread);
-  int length = compute_roots_length();
 
   jlong start = os::javaTimeNanos();
 
@@ -771,8 +784,8 @@ void StreamingArchiveHeapLoader::finish_materialize_objects() {
     CDSHeapLoading_lock->wait();
   }
 
-  for (; _current_root_index < length; ++_current_root_index) {
-    IterativeObjectLoader::materialize_next_root(thread);
+  while (IterativeObjectLoader::has_more()) {
+    IterativeObjectLoader::materialize_next_batch(thread);
   }
 
   // Notify CDS thread we are done
@@ -861,7 +874,7 @@ oop StreamingArchiveHeapLoader::root(int root_index) {
   {
     MutexLocker ml(CDSHeapLoading_lock, Mutex::_safepoint_check_flag);
 
-    if (_current_root_index == compute_roots_length()) {
+    if (!IterativeObjectLoader::has_more()) {
       objArrayOop roots = objArrayOop((oop)NativeAccess<>::oop_load(_roots_heap));
       result = roots->obj_at(root_index);
     } else {

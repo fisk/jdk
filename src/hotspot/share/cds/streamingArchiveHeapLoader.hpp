@@ -187,7 +187,8 @@ private:
     static size_t materialize_range(int first_object_index, int last_object_index, JavaThread* thread, bool allow_gc);
 
   public:
-    static void materialize_next_root(JavaThread* thread);
+    static bool has_more();
+    static void materialize_next_batch(JavaThread* thread);
   };
 
   static void install_root(int root_index, oop heap_object);
