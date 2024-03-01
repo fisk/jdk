@@ -181,10 +181,14 @@ static void patch_metadata(oop heap_object, int offset) {
   }
 }
 
-static void patch_metadata(oop heap_object) {
+static void patch_header(oop heap_object, markWord mark) {
   if (java_lang_Class::is_instance(heap_object)) {
     patch_metadata(heap_object, java_lang_Class::klass_offset());
     patch_metadata(heap_object, java_lang_Class::array_klass_offset());
+  }
+  intptr_t archive_hash = mark.hash();
+  if (archive_hash != 0) {
+    heap_object->set_mark(mark.copy_set_hash(archive_hash));
   }
 }
 
@@ -254,11 +258,7 @@ void StreamingArchiveHeapLoader::TracingObjectLoader::copy_object(int object_ind
     Copy::disjoint_words((HeapWord*)archive_object, cast_from_oop<HeapWord*>(heap_object), size);
     PushReferenceOopClosure cl(dfs_stack, heap_object, object_index);
     heap_object->oop_iterate(&cl);
-    patch_metadata(heap_object);
-    intptr_t archive_hash = mark.hash();
-    if (archive_hash != 0) {
-      heap_object->set_mark(heap_object->mark().copy_set_hash(archive_hash));
-    }
+    patch_header(heap_object, mark);
     return;
   }
 
@@ -305,12 +305,7 @@ void StreamingArchiveHeapLoader::TracingObjectLoader::copy_object(int object_ind
     oopDesc::set_klass_gap(cast_from_oop<HeapWord*>(heap_object), *(int*)(address(archive_object) + oopDesc::klass_gap_offset_in_bytes()));
   }
 
-  patch_metadata(heap_object);
-
-  intptr_t archive_hash = mark.hash();
-  if (archive_hash != 0) {
-    heap_object->set_mark(heap_object->mark().copy_set_hash(archive_hash));
-  }
+  patch_header(heap_object, mark);
 }
 
 oop StreamingArchiveHeapLoader::TracingObjectLoader::materialize_object_inner(int object_index, Stack<CDSHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread, bool allow_gc) {
@@ -456,11 +451,7 @@ void StreamingArchiveHeapLoader::IterativeObjectLoader::copy_object(oopDesc* arc
   Copy::disjoint_words((HeapWord*)archive_object, cast_from_oop<HeapWord*>(heap_object), size);
   InflateReferenceOopClosure cl(allow_gc);
   heap_object->oop_iterate(&cl);
-  patch_metadata(heap_object);
-  intptr_t archive_hash = archive_object->mark().hash();
-  if (archive_hash != 0) {
-    heap_object->set_mark(heap_object->mark().copy_set_hash(archive_hash));
-  }
+  patch_header(heap_object, archive_object->mark());
 }
 
 // The range is inclusive
