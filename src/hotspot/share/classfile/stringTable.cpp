@@ -369,6 +369,26 @@ oop StringTable::intern(Symbol* symbol, TRAPS) {
 
 oop StringTable::intern(oop string, TRAPS) {
   if (string == nullptr) return nullptr;
+  if (!HeapShared::is_loading_mapping_mode()) {
+    unsigned int hash = java_lang_String::hash_code(string);
+    CDSStringTableLookupOop lookup(THREAD, hash, string);
+
+    // Notify deduplication support that the string is being interned.  A string
+    // must never be deduplicated after it has been interned.  Doing so interferes
+    // with compiler optimizations done on e.g. interned string literals.
+    if (StringDedup::is_enabled()) {
+      StringDedup::notify_intern(string);
+    }
+
+    WeakHandle wh(_oop_storage, string);
+
+    if (_local_table->insert(THREAD, lookup, wh, nullptr)) {
+      // Common case: insertion succeeded
+      return string;
+    }
+
+    return lookup.found();
+  }
   ResourceMark rm(THREAD);
   int length;
   Handle h_string (THREAD, string);
