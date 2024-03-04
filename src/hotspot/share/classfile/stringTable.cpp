@@ -194,7 +194,7 @@ class StringTableLookupJchar : StackObj {
   }
 };
 
-class StringTableLookupOop : public StackObj {
+class StringTableLookupHandle : public StackObj {
  private:
   Thread* _thread;
   uintx _hash;
@@ -202,7 +202,7 @@ class StringTableLookupOop : public StackObj {
   Handle _found;  // Might be a different oop with the same value that's already
                   // in the table, which is the point.
  public:
-  StringTableLookupOop(Thread* thread, uintx hash, Handle handle)
+  StringTableLookupHandle(Thread* thread, uintx hash, Handle handle)
     : _thread(thread), _hash(hash), _find(handle) { }
 
   uintx get_hash() const {
@@ -229,7 +229,7 @@ class StringTableLookupOop : public StackObj {
   }
 };
 
-class CDSStringTableLookupOop : public StackObj {
+class StringTableLookupOop : public StackObj {
 private:
   Thread* _thread;
   uintx _hash;
@@ -237,7 +237,7 @@ private:
   oop _found;
 
 public:
-  CDSStringTableLookupOop(Thread* thread, uintx hash, oop find)
+  StringTableLookupOop(Thread* thread, uintx hash, oop find)
     : _thread(thread), _hash(hash), _find(find), _found(nullptr) { }
 
   uintx get_hash() const {
@@ -369,33 +369,38 @@ oop StringTable::intern(Symbol* symbol, TRAPS) {
 
 oop StringTable::intern(oop string, TRAPS) {
   if (string == nullptr) return nullptr;
-  if (!HeapShared::is_loading_mapping_mode()) {
-    unsigned int hash = java_lang_String::hash_code(string);
-    CDSStringTableLookupOop lookup(THREAD, hash, string);
-
-    // Notify deduplication support that the string is being interned.  A string
-    // must never be deduplicated after it has been interned.  Doing so interferes
-    // with compiler optimizations done on e.g. interned string literals.
-    if (StringDedup::is_enabled()) {
-      StringDedup::notify_intern(string);
-    }
-
-    WeakHandle wh(_oop_storage, string);
-
-    if (_local_table->insert(THREAD, lookup, wh, nullptr)) {
-      // Common case: insertion succeeded
-      return string;
-    }
-
-    return lookup.found();
+  if (HeapShared::is_loading_mapping_mode()) {
+    // The key of the dumped CDS string table when using mapping mode, is jchar*
+    // and hence we convert the string to jchar* to be able to perform a lookup
+    // in the shared table as well.
+    ResourceMark rm(THREAD);
+    int length;
+    Handle h_string (THREAD, string);
+    jchar* chars = java_lang_String::as_unicode_string(string, length,
+                                                       CHECK_NULL);
+    oop result = intern(h_string, chars, length, CHECK_NULL);
+    return result;
   }
-  ResourceMark rm(THREAD);
-  int length;
-  Handle h_string (THREAD, string);
-  jchar* chars = java_lang_String::as_unicode_string(string, length,
-                                                     CHECK_NULL);
-  oop result = intern(h_string, chars, length, CHECK_NULL);
-  return result;
+
+  // This is the normal path when not having to use the CDS shared table.
+  unsigned int hash = java_lang_String::hash_code(string);
+  StringTableLookupOop lookup(THREAD, hash, string);
+
+  // Notify deduplication support that the string is being interned.  A string
+  // must never be deduplicated after it has been interned.  Doing so interferes
+  // with compiler optimizations done on e.g. interned string literals.
+  if (StringDedup::is_enabled()) {
+    StringDedup::notify_intern(string);
+  }
+
+  WeakHandle wh(_oop_storage, string);
+
+  if (_local_table->insert(THREAD, lookup, wh, nullptr)) {
+    // Common case: insertion succeeded
+    return string;
+  }
+
+  return lookup.found();
 }
 
 oop StringTable::intern(const char* utf8_string, TRAPS) {
@@ -428,7 +433,7 @@ oop StringTable::intern(Handle string_or_null_h, const jchar* name, int len, TRA
 
 oop StringTable::cds_intern(Thread* thread, oop string) {
   uintx hash = (uintx)java_lang_String::precomputed_hash(string);
-  CDSStringTableLookupOop lookup(thread, hash, string);
+  StringTableLookupOop lookup(thread, hash, string);
 
   WeakHandle wh(_oop_storage, string);
 
@@ -462,7 +467,7 @@ oop StringTable::do_intern(Handle string_or_null_h, const jchar* name,
     StringDedup::notify_intern(string_h());
   }
 
-  StringTableLookupOop lookup(THREAD, hash, string_h);
+  StringTableLookupHandle lookup(THREAD, hash, string_h);
   StringTableGet stg(THREAD);
 
   bool rehash_warning;
@@ -861,12 +866,12 @@ void StringtableDCmd::execute(DCmdSource source, TRAPS) {
 // Sharing
 #if INCLUDE_CDS_JAVA_HEAP
 size_t StringTable::shared_entry_count() {
-  assert(!HeapShared::is_loading_streaming_mode(), "should not reach here");
+  assert(HeapShared::is_loading_mapping_mode(), "should not reach here");
   return _shared_table.entry_count();
 }
 
 oop StringTable::lookup_shared(const jchar* name, int len, unsigned int hash) {
-  if (HeapShared::is_loading_streaming_mode()) {
+  if (!HeapShared::is_loading_mapping_mode()) {
     return nullptr;
   }
   assert(hash == java_lang_String::hash_code(name, len),
@@ -875,7 +880,7 @@ oop StringTable::lookup_shared(const jchar* name, int len, unsigned int hash) {
 }
 
 oop StringTable::lookup_shared(const jchar* name, int len) {
-  if (HeapShared::is_loading_streaming_mode()) {
+  if (!HeapShared::is_loading_mapping_mode()) {
     return nullptr;
   }
   return _shared_table.lookup(name, java_lang_String::hash_code(name, len), len);
@@ -889,7 +894,7 @@ void StringTable::allocate_shared_strings_array(TRAPS) {
     return;
   }
 
-  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
+  assert(HeapShared::is_writing_mapping_mode(), "should not reach here");
   if (_items_count > (size_t)max_jint) {
     fatal("Too many strings to be archived: %zu", _items_count);
   }
@@ -946,7 +951,7 @@ void StringTable::allocate_shared_strings_array(TRAPS) {
 
 #ifndef PRODUCT
 void StringTable::verify_secondary_array_index_bits() {
-  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
+  assert(HeapShared::is_writing_mapping_mode(), "should not reach here");
   int max;
   for (max = 1; ; max++) {
     size_t next_size = objArrayOopDesc::object_size(1 << (max + 1));
@@ -972,7 +977,7 @@ void StringTable::verify_secondary_array_index_bits() {
 // [1] Store it into _shared_strings_array. Encode its position as a 32-bit index.
 // [2] Store the index and hashcode into _shared_table.
 oop StringTable::init_shared_table(const DumpedInternedStrings* dumped_interned_strings) {
-  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
+  assert(HeapShared::is_writing_mapping_mode(), "should not reach here");
   assert(HeapShared::can_write(), "must be");
   objArrayOop array = (objArrayOop)(_shared_strings_array.resolve());
 
@@ -1011,7 +1016,7 @@ oop StringTable::init_shared_table(const DumpedInternedStrings* dumped_interned_
 }
 
 void StringTable::set_shared_strings_array_index(int root_index) {
-  assert(!HeapShared::is_writing_streaming_mode(), "should not reach here");
+  assert(HeapShared::is_writing_mapping_mode(), "should not reach here");
   _shared_strings_array_root_index = root_index;
 }
 
