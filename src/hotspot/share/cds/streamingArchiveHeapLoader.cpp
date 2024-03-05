@@ -837,7 +837,7 @@ void StreamingArchiveHeapLoader::initialize() {
   HeapShared::init_roots(roots);
 
   if (FLAG_IS_DEFAULT(SyncLoadStreamableObjects)) {
-    SyncLoadStreamableObjects = !os::is_MP();
+    SyncLoadStreamableObjects = os::initial_active_processor_count() <= 1;
   }
 
   if (SyncLoadStreamableObjects) {
