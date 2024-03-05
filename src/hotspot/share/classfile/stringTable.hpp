@@ -91,9 +91,6 @@ class StringTable : AllStatic {
   static oop intern(oop string, TRAPS);
   static oop intern(const char *utf8_string, TRAPS);
 
-  // Uses a precomputed hash code
-  static oop cds_intern(Thread* thread, oop string);
-
   // Rehash the string table if it gets out of balance
 private:
   static bool should_grow();

@@ -369,10 +369,11 @@ oop StringTable::intern(Symbol* symbol, TRAPS) {
 
 oop StringTable::intern(oop string, TRAPS) {
   if (string == nullptr) return nullptr;
-  if (HeapShared::is_loading_mapping_mode()) {
+  if (HeapShared::is_loading_mapping_mode() || _alt_hash) {
     // The key of the dumped CDS string table when using mapping mode, is jchar*
     // and hence we convert the string to jchar* to be able to perform a lookup
-    // in the shared table as well.
+    // in the shared table as well. The fast path might also not want to deal with
+    // alt hashing.
     ResourceMark rm(THREAD);
     int length;
     Handle h_string (THREAD, string);
@@ -429,20 +430,6 @@ oop StringTable::intern(Handle string_or_null_h, const jchar* name, int len, TRA
     return found_string;
   }
   return do_intern(string_or_null_h, name, len, hash, THREAD);
-}
-
-oop StringTable::cds_intern(Thread* thread, oop string) {
-  uintx hash = (uintx)java_lang_String::precomputed_hash(string);
-  StringTableLookupOop lookup(thread, hash, string);
-
-  WeakHandle wh(_oop_storage, string);
-
-  if (_local_table->insert(thread, lookup, wh, nullptr)) {
-    // Common case: insertion succeeded
-    return string;
-  }
-
-  return lookup.found();
 }
 
 oop StringTable::do_intern(Handle string_or_null_h, const jchar* name,
