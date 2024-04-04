@@ -50,12 +50,17 @@ private:
   typedef ZBitField<uint8_t, bool, 0, 1> field_non_blocking;
   typedef ZBitField<uint8_t, bool, 1, 1> field_gc_relocation;
   typedef ZBitField<uint8_t, bool, 2, 1> field_low_address;
+  typedef ZBitField<uint8_t, bool, 3, 1> field_no_cache;
 
   uint8_t _flags;
 
 public:
   ZAllocationFlags()
     : _flags(0) {}
+
+  void set_no_cache() {
+    _flags |= field_no_cache::encode(true);
+  }
 
   void set_non_blocking() {
     _flags |= field_non_blocking::encode(true);
@@ -79,6 +84,10 @@ public:
 
   bool low_address() const {
     return field_low_address::decode(_flags);
+  }
+
+  bool use_cache() const {
+    return field_no_cache::decode(_flags) == 0;
   }
 };
 

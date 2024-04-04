@@ -118,6 +118,10 @@ size_t ZHeap::used() const {
   return _page_allocator.used();
 }
 
+void ZHeap::ensure_mapped(size_t min_capacity) {
+  _page_allocator.ensure_mapped(min_capacity);
+}
+
 void ZHeap::resize_heap(double resize_factor) {
   _page_allocator.resize_heap(resize_factor);
 }

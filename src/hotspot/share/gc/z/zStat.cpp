@@ -1008,7 +1008,7 @@ void ZStatMutatorAllocRate::sample_allocation(size_t allocation_bytes) {
 
 ZStatMutatorAllocRateStats ZStatMutatorAllocRate::stats() {
   ZLocker<ZLock> locker(_stat_lock);
-  return {_rate.avg(), _rate.predict_next(), _rate.sd()};
+  return {_rate.avg(), _rate.predict_next(), _rate.sd(), _sampling_granule};
 }
 
 //

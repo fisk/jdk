@@ -37,6 +37,7 @@
 
 class ThreadClosure;
 class ZGeneration;
+class ZMapper;
 class ZPageAllocation;
 class ZPageAllocator;
 class ZPageAllocatorStats;
@@ -60,6 +61,7 @@ public:
 
 class ZPageAllocator {
   friend class VMStructs;
+  friend class ZMapper;
   friend class ZUnmapper;
   friend class ZUncommitter;
 
@@ -82,6 +84,7 @@ private:
     size_t                   _used_low;
   } _collection_stats[2];
   ZList<ZPageAllocation>     _stalled;
+  ZMapper*                   _mapper;
   ZUnmapper*                 _unmapper;
   ZUncommitter*              _uncommitter;
   mutable ZSafeDelete<ZPage> _safe_destroy;
@@ -103,11 +106,13 @@ private:
   void map_page(const ZPage* page) const;
   void unmap_page(const ZPage* page) const;
 
+  void prime_alloc_page(size_t size);
+
   void destroy_page(ZPage* page);
 
-  bool is_alloc_allowed(size_t size) const;
+  bool is_alloc_allowed(size_t size, bool use_cache) const;
 
-  bool alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages);
+  bool alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages, bool use_cache);
   bool alloc_page_common(ZPageAllocation* allocation);
   bool alloc_page_stall(ZPageAllocation* allocation);
   bool alloc_page_or_stall(ZPageAllocation* allocation);
@@ -142,6 +147,7 @@ public:
   size_t used() const;
   size_t used_generation(ZGenerationId id) const;
   size_t unused() const;
+  void ensure_mapped(size_t min_capacity);
   void resize_heap(double resize_factor);
 
   void promote_used(size_t size);
