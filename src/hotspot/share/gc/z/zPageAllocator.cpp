@@ -32,6 +32,7 @@
 #include "gc/z/zGenerationId.hpp"
 #include "gc/z/zGlobals.hpp"
 #include "gc/z/zLock.inline.hpp"
+#include "gc/z/zMapper.hpp"
 #include "gc/z/zPage.inline.hpp"
 #include "gc/z/zPageAge.hpp"
 #include "gc/z/zPageAllocator.inline.hpp"
@@ -197,6 +198,7 @@ ZPageAllocator::ZPageAllocator(size_t min_capacity,
     _used_generations{0, 0},
     _collection_stats{{0, 0}, {0, 0}},
     _stalled(),
+    _mapper(new ZMapper(this)),
     _unmapper(new ZUnmapper(this)),
     _uncommitter(new ZUncommitter(this)),
     _safe_destroy(),
@@ -282,6 +284,24 @@ bool ZPageAllocator::prime_cache(ZWorkers* workers, size_t size) {
   return true;
 }
 
+void ZPageAllocator::prime_alloc_page(size_t size) {
+  ZAllocationFlags flags;
+  flags.set_non_blocking();
+  flags.set_low_address();
+  flags.set_no_cache();
+
+  ZPage* const page = alloc_page(ZPageType::large, size, flags, ZPageAge::eden);
+  if (page == nullptr) {
+    return;
+  }
+
+  // Pre-touch page
+  _physical.pretouch(page->start(), size);
+
+  // Populate page cache
+  free_page(page);
+}
+
 size_t ZPageAllocator::initial_capacity() const {
   return _initial_capacity;
 }
@@ -301,6 +321,10 @@ size_t ZPageAllocator::soft_max_capacity() const {
   const size_t heuristic_max_capacity = ZAdaptiveHeap::is_enabled() ? Atomic::load(&_heuristic_max_capacity)
                                                                     : soft_max_capacity;
   return MIN2(heuristic_max_capacity, current_max_capacity);
+}
+
+void ZPageAllocator::ensure_mapped(size_t min_capacity) {
+  _mapper->prime(min_capacity);
 }
 
 void ZPageAllocator::resize_heap(double resize_factor) {
@@ -484,19 +508,20 @@ void ZPageAllocator::destroy_page(ZPage* page) {
   safe_destroy_page(page);
 }
 
-bool ZPageAllocator::is_alloc_allowed(size_t size) const {
-  const size_t available = _current_max_capacity - _used - _claimed;
+bool ZPageAllocator::is_alloc_allowed(size_t size, bool use_cache) const {
+  const size_t unavailable = use_cache ? _used : _capacity;
+  const size_t available = _current_max_capacity - unavailable - _claimed;
   return available >= size;
 }
 
-bool ZPageAllocator::alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages) {
-  if (!is_alloc_allowed(size)) {
+bool ZPageAllocator::alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages, bool use_cache) {
+  if (!is_alloc_allowed(size, use_cache)) {
     // Out of memory
     return false;
   }
 
   // Try allocate from the page cache
-  ZPage* const page = _cache.alloc_page(type, size);
+  ZPage* const page = use_cache ? _cache.alloc_page(type, size) : nullptr;
   if (page != nullptr) {
     // Success
     pages->insert_last(page);
@@ -522,7 +547,7 @@ bool ZPageAllocator::alloc_page_common(ZPageAllocation* allocation) {
   const ZAllocationFlags flags = allocation->flags();
   ZList<ZPage>* const pages = allocation->pages();
 
-  if (!alloc_page_common_inner(type, size, pages)) {
+  if (!alloc_page_common_inner(type, size, pages, flags.use_cache())) {
     // Out of memory
     return false;
   }
@@ -1016,6 +1041,7 @@ void ZPageAllocator::handle_alloc_stalling_for_old(bool cleared_soft_refs) {
 }
 
 void ZPageAllocator::threads_do(ThreadClosure* tc) const {
+  tc->do_thread(_mapper);
   tc->do_thread(_unmapper);
   tc->do_thread(_uncommitter);
 }

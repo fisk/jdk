@@ -901,6 +901,22 @@ static ZDirectorStats sample_stats() {
   };
 }
 
+static void pre_commit(const ZDirectorStats& stats, double sampling_interval) {
+  const size_t used = stats._heap._used;
+  const size_t max_capacity = ZHeap::heap()->max_capacity();
+
+  const size_t used_next_byte_sample = MIN2(used + 2 * stats._mutator_alloc_rate._sampling_granule, max_capacity);
+
+  const double avg_alloc_rate = stats._mutator_alloc_rate._avg;
+  const size_t used_next_time_sample = MIN2(used + size_t(sampling_interval * avg_alloc_rate), max_capacity);
+
+  const size_t used_after_yc = ZHeap::heap()->soft_max_capacity();
+
+  const size_t used_soon = MAX3(used_next_time_sample, used_next_byte_sample, used_after_yc);
+
+  ZHeap::heap()->ensure_mapped(used_soon);
+}
+
 void ZDirector::run_thread() {
   // Main loop
   while (wait_for_tick()) {
@@ -908,6 +924,7 @@ void ZDirector::run_thread() {
     if (!start_gc(stats)) {
       adjust_gc(stats);
     }
+    pre_commit(stats, 1.0 / decision_hz);
   }
 }
 

@@ -352,6 +352,7 @@ struct ZStatMutatorAllocRateStats {
   double _avg;
   double _predict;
   double _sd;
+  size_t _sampling_granule;
 };
 
 //
