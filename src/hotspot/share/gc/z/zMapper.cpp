@@ -79,9 +79,11 @@ void ZMapper::run_thread() {
 
       const size_t remaining = min_capacity - capacity;
       const size_t available = used > capacity ? 0 : capacity - used;
-      const size_t soft_granule = clamp(round_down_power_of_2(soft_max_capacity / 128), ZGranuleSize, MAX2(round_down_power_of_2(remaining), ZGranuleSize));
+      // Don't allocate things that are larger than the largest medium size, in the lower address space
+      const size_t granule_upper_bound = clamp(round_down_power_of_2(remaining), ZGranuleSize, ZGranuleSize * 16);
+      const size_t soft_granule = clamp(round_down_power_of_2(soft_max_capacity / 128), ZGranuleSize, granule_upper_bound);
 
-      size_t size = available < soft_granule ? ZPageSizeSmall : soft_granule;
+      const size_t size = available < soft_granule ? ZPageSizeSmall : soft_granule;
 
       log_trace(gc, map)("Mapping " SIZE_FORMAT "M page (" SIZE_FORMAT "M / " SIZE_FORMAT "M target)",
                          size / M, capacity / M, min_capacity / M);
