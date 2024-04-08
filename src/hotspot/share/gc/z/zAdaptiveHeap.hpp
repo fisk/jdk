@@ -48,8 +48,6 @@ private:
   static ZGenerationOverhead _young_data;
   static ZGenerationOverhead _old_data;
 
-  static double process_cpu_time();
-
 public:
   static bool is_enabled();
   static void enable();
