@@ -52,7 +52,7 @@ private:
 
 public:
   static bool is_enabled();
-  static void try_enable();
+  static void enable();
 
   static void adapt(ZGenerationId generation);
 };
