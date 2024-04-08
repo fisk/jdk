@@ -333,9 +333,10 @@ void ZPageAllocator::resize_heap(double resize_factor) {
   const size_t heuristic_capacity = Atomic::load(&_heuristic_max_capacity);
   const size_t suggested_capacity = heuristic_capacity * resize_factor;
   const size_t current_capacity = Atomic::load(&_capacity);
+  const size_t min_capacity = _min_capacity;
 
   const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
-  const size_t lower_bound = MIN2(size_t(used() * 1.1), upper_bound);
+  const size_t lower_bound = MAX2(MIN2(size_t(used() * 1.1), upper_bound), min_capacity);
 
   const size_t selected_capacity = clamp(suggested_capacity, lower_bound, upper_bound);
 

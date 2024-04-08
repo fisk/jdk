@@ -89,15 +89,17 @@ double ZAdaptiveHeap::process_cpu_time() {
 #endif
 }
 
-void ZAdaptiveHeap::try_enable() {
+void ZAdaptiveHeap::enable() {
   double time_now = process_cpu_time();
   if (time_now < 0.0) {
-    return;
+    return false;
   }
 
   _enabled = true;
   _young_data._last_process_time = time_now;
   _old_data._last_process_time = time_now;
+
+  return true;
 }
 
 // Produces values in the range 0 - 1 in an S shape

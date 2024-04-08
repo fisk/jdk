@@ -40,9 +40,8 @@ void ZArguments::initialize_alignments() {
 }
 
 void ZArguments::initialize_heap_flags_and_sizes() {
-  const double default_adaptive_max_heap_size_percent = 75.0;
-  const double default_adaptive_cpu_overhead_percent = 15.0;
   const size_t default_adaptive_min_heap_size_bytes = 16 * M;
+  const double default_adaptive_max_heap_size_percent = 75.0;
 
   const bool unspecified_max_heap_size =  !FLAG_IS_CMDLINE(MaxHeapSize) &&
                                           !FLAG_IS_CMDLINE(MaxRAMPercentage) &&
@@ -54,25 +53,15 @@ void ZArguments::initialize_heap_flags_and_sizes() {
                                           !FLAG_IS_CMDLINE(InitialRAMPercentage);
   const bool unspecified_cpu_overhead =   !FLAG_IS_CMDLINE(ZCPUOverheadPercent);
 
+  if (!FLAG_IS_CMDLINE(ZCPUOverheadPercent) || ZCPUOverheadPercent > 0.0) {
+    ZAdaptiveHeap::enable();
+  }
+
+  // Adaptive heap sizing is set up; figure out some defaults.
   if (unspecified_max_heap_size) {
     // We are really just guessing how much memory the program needs.
     // Let's guess something high but try to keep it down adaptively.
     FLAG_SET_ERGO(MaxRAMPercentage, default_adaptive_max_heap_size_percent);
-    ZAdaptiveHeap::try_enable();
-  } else if (!unspecified_cpu_overhead) {
-    // There is a max heap size, but the user explicitly opted in to
-    // adaptive heap sizing.
-    ZAdaptiveHeap::try_enable();
-  }
-
-  if (!ZAdaptiveHeap::is_enabled()) {
-    // If adaptive heap sizing is switched off, we are done here.
-    return;
-  }
-
-  // Adaptive heap sizing is set up; figure out some defaults.
-  if (unspecified_cpu_overhead) {
-    FLAG_SET_ERGO(ZCPUOverheadPercent, default_adaptive_cpu_overhead_percent);
   }
   if (unspecified_min_heap_size) {
     FLAG_SET_ERGO(MinHeapSize, default_adaptive_min_heap_size_bytes);
