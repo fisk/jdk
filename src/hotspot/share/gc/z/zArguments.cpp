@@ -40,6 +40,10 @@ void ZArguments::initialize_alignments() {
 }
 
 void ZArguments::initialize_heap_flags_and_sizes() {
+  if (FLAG_IS_CMDLINE(ZCPUOverheadPercent) && ZCPUOverheadPercent <= 0.0) {
+    return;
+  }
+
   const size_t default_adaptive_min_heap_size_bytes = 16 * M;
   const double default_adaptive_max_heap_size_percent = 75.0;
 
@@ -53,9 +57,7 @@ void ZArguments::initialize_heap_flags_and_sizes() {
                                           !FLAG_IS_CMDLINE(InitialRAMPercentage);
   const bool unspecified_cpu_overhead =   !FLAG_IS_CMDLINE(ZCPUOverheadPercent);
 
-  if (!FLAG_IS_CMDLINE(ZCPUOverheadPercent) || ZCPUOverheadPercent > 0.0) {
-    ZAdaptiveHeap::enable();
-  }
+  ZAdaptiveHeap::enable();
 
   // Adaptive heap sizing is set up; figure out some defaults.
   if (unspecified_max_heap_size) {

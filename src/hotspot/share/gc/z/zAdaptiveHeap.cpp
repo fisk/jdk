@@ -32,74 +32,16 @@
 #include "runtime/atomic.hpp"
 #include "utilities/debug.hpp"
 
-#ifdef _WINDOWS
-#include <processthreadsapi.h>
-#include <timezoneapi.h>
-#else
-#include <time.h>
-#endif
-
 bool ZAdaptiveHeap::_enabled = false;
 double ZAdaptiveHeap::_accumulated_young_gc_time = 0.0;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_young_data;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_old_data;
 
-// TODO: OS abstractions
-double ZAdaptiveHeap::process_cpu_time() {
-#ifdef _WINDOWS
-  FILETIME create;
-  FILETIME exit;
-  FILETIME kernel;
-  FILETIME user;
-
-  if (GetProcessTimes(GetCurrentProcess(), &create, &exit, &kernel, &user) == -1) {
-    return -1,0;
-  }
-
-  SYSTEMTIME user_total;
-  if (FileTimeToSystemTime(&user, &user_total) == -1) {
-    return -1.0;
-  }
-
-  SYSTEMTIME kernel_total;
-  if (FileTimeToSystemTime(&kernel, &kernel_total) == -1) {
-    return -1.0;
-  }
-
-  double user_seconds = double(user_total.wHour) * 3600.0 +
-                        double(user_total.wMinute) * 60.0 +
-                        double(user_total.wSecond) +
-                        double(user_total.wMilliseconds) / 1000.0;
-
-  double kernel_seconds = double(kernel_total.wHour) * 3600.0 +
-                          double(kernel_total.wMinute) * 60.0 +
-                          double(kernel_total.wSecond) +
-                          double(kernel_total.wMilliseconds) / 1000.0;
-
-  return user_seconds + kernel_seconds;
-#else
-  timespec tp;
-  int status = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tp);
-  assert(status == 0, "clock_gettime error: %s", os::strerror(errno));
-  if (status != 0) {
-    return -1.0;
-  }
-
-  return double(tp.tv_sec) + double(tp.tv_nsec) / NANOSECS_PER_SEC;
-#endif
-}
-
 void ZAdaptiveHeap::enable() {
-  double time_now = process_cpu_time();
-  if (time_now < 0.0) {
-    return false;
-  }
-
+  double time_now = os::elapsed_process_vtime();
   _enabled = true;
   _young_data._last_process_time = time_now;
   _old_data._last_process_time = time_now;
-
-  return true;
 }
 
 // Produces values in the range 0 - 1 in an S shape
@@ -120,7 +62,7 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
   const double serial_gc_time = cycle_stats._duration_since_start - parallel_gc_duration;
 
   const double process_time_last = generation_data._last_process_time;
-  const double process_time_now = process_cpu_time();
+  const double process_time_now = os::elapsed_process_vtime();
   const double process_time = process_time_now - process_time_last;
   generation_data._last_process_time = process_time_now;
 
