@@ -132,7 +132,7 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
   if (is_proactive && !is_young) {
     // Proactive GCs imply that the heap is excessively large; let's try
     // to shrink it more aggressively that we otherwise might
-    ZHeap::heap()->resize_heap(0.85);
+    ZHeap::heap()->resize_heap(0.0);
     return;
   }
 
