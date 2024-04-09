@@ -1492,8 +1492,7 @@ void Arguments::set_heap_size() {
   // compressed oops at all, so limiting the heap based
   // on compressed oops makes little sense.
 #ifdef _LP64
-  bool override_coop_limit = UseZGC ||
-                             (!FLAG_IS_DEFAULT(MaxRAMPercentage) ||
+  bool override_coop_limit = (!FLAG_IS_DEFAULT(MaxRAMPercentage) ||
                               !FLAG_IS_DEFAULT(MinRAMPercentage) ||
                               !FLAG_IS_DEFAULT(InitialRAMPercentage) ||
                               !FLAG_IS_DEFAULT(MaxRAM));
@@ -3667,6 +3666,8 @@ jint Arguments::apply_ergo() {
   // Set flags based on ergonomics.
   jint result = set_ergonomics_flags();
   if (result != JNI_OK) return result;
+
+  GCConfig::arguments()->set_heap_size(); // TODO: Move function below into this one
 
   // Set heap size based on available physical memory
   set_heap_size();

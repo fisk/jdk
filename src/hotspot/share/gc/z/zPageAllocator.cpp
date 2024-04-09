@@ -334,9 +334,10 @@ void ZPageAllocator::resize_heap(double resize_factor) {
   const size_t suggested_capacity = heuristic_capacity * resize_factor;
   const size_t current_capacity = Atomic::load(&_capacity);
   const size_t min_capacity = _min_capacity;
+  const size_t heuristic_lower_bound = MAX2(size_t(used() * 1.1), size_t(ZStatMutatorAllocRate::stats()._avg) / 8);
 
   const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
-  const size_t lower_bound = MAX2(MIN2(size_t(used() * 1.1), upper_bound), min_capacity);
+  const size_t lower_bound = clamp(heuristic_lower_bound, min_capacity, upper_bound);
 
   const size_t selected_capacity = clamp(suggested_capacity, lower_bound, upper_bound);
 
@@ -919,9 +920,10 @@ size_t ZPageAllocator::uncommit(uint64_t* timeout) {
     // Never uncommit below min capacity. We flush out and uncommit chunks at
     // a time (~0.8% of the max capacity, but at least one granule and at most
     // 256M), in case demand for memory increases while we are uncommitting.
+    const size_t heuristic_max_capacity = soft_max_capacity(); // TODO: Rename
     const size_t retain = MAX2(_used, _min_capacity);
-    const size_t release = _capacity - retain;
-    const size_t limit = MIN2(align_up(_current_max_capacity >> 7, ZGranuleSize), 256 * M);
+    const size_t release = (heuristic_max_capacity < retain) ? 0 : (heuristic_max_capacity - retain);
+    const size_t limit = MIN2(align_up(heuristic_max_capacity >> 7, ZGranuleSize), 256 * M);
     const size_t flush = MIN2(release, limit);
 
     // Flush pages to uncommit

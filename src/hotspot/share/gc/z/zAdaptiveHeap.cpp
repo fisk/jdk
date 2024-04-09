@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -60,6 +60,7 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
   const double parallel_gc_duration = worker_stats._accumulated_duration;
   const double parallel_gc_time = worker_stats._accumulated_time;
   const double serial_gc_time = cycle_stats._duration_since_start - parallel_gc_duration;
+  const double time_since_last = cycle_stats._time_since_last;
 
   const double process_time_last = generation_data._last_process_time;
   const double process_time_now = os::elapsed_process_vtime();
@@ -94,23 +95,25 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
 
   const double avg_cpu_overhead = avg_gc_time / avg_process_time;
 
-  log_debug(gc, adaptive)("Adaptive avg gc time %.3f, avg total time %.3f (%.3f%%)", avg_gc_time, avg_process_time, avg_cpu_overhead * 100.0);
+  log_debug(gc, adaptive)("Adaptive avg gc time %.3f, avg total time %.3f (%.3f%%)",
+                          avg_gc_time, avg_process_time, avg_cpu_overhead * 100.0);
 
   const double cpu_overhead_fraction = ZCPUOverheadPercent / 100.0;
   const double target_cpu_overhead = cpu_overhead_fraction / (1.0 + cpu_overhead_fraction);
-
   const double cpu_overhead_error = is_proactive ? 0.0 : avg_cpu_overhead - target_cpu_overhead;
 
   // High GC frequencies lead to extra overheads such as barrier storms
   // Therefore, we add a factor that ensures there is at least some social
-  // distancing between GCs, even when the GC overhead is small.
-  const double gc_frequency_error = MAX2(0.0, 0.25 - cycle_stats._time_since_last);
+  // distancing between GCs, even when the GC overhead is small. The size of
+  // the factor scales with the level of load induced on the machine.
+  const double machine_load = (process_time / time_since_last) / double(os::active_processor_count());
+  const double gc_frequency_error = machine_load - cycle_stats._time_since_last;
 
-  const double sigmoid_error = sigmoid_function(cpu_overhead_error + gc_frequency_error);
+  const double sigmoid_error = sigmoid_function(MAX2(cpu_overhead_error, gc_frequency_error));
   const double correction_factor = sigmoid_error + 0.5;
 
-  log_debug(gc, adaptive)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f, Correction factor %.3f",
-                          cpu_overhead_error, gc_frequency_error, correction_factor);
+  log_info(gc, adaptive)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f, Correction factor %.3f",
+                         cpu_overhead_error, gc_frequency_error, correction_factor);
 
   if (is_young) {
     _accumulated_young_gc_time += gc_time;
