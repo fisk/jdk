@@ -44,8 +44,8 @@ protected:
   DEBUG_ONLY(void assert_size_info();)
 
 public:
+  virtual void set_heap_size() {}
   virtual void initialize();
-
   virtual size_t conservative_max_heap_alignment() = 0;
 
   // Used by heap size heuristics to determine max
