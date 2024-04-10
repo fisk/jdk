@@ -557,16 +557,15 @@ static bool rule_major_proactive(const ZDirectorStats& stats) {
   // of free space on the heap.
 
   // Only consider doing a proactive GC if the heap usage has grown by at least
-  // 10% of the max capacity since the previous GC, or more than 5 minutes has
-  // passed since the previous GC. This helps avoid superfluous GCs when running
-  // applications with very low allocation rate.
+  // 10% of the max capacity since the previous GC, and more than 5 minutes has
+  // passed since the previous GC. This helps avoid superfluous GCs.
   const size_t used_after_last_gc = stats._old_stats._stat_heap._used_at_relocate_end;
   const size_t used_increase_threshold = stats._heap._soft_max_heap_size * 0.10; // 10%
   const size_t used_threshold = used_after_last_gc + used_increase_threshold;
   const size_t used = stats._heap._used;
   const double time_since_last_gc = stats._old_stats._cycle._time_since_last;
   const double time_since_last_gc_threshold = 5 * 60; // 5 minutes
-  if (used < used_threshold && time_since_last_gc < time_since_last_gc_threshold) {
+  if (used < used_threshold || time_since_last_gc < time_since_last_gc_threshold) {
     // Don't even consider doing a proactive GC
     log_debug(gc, director)("Rule Major: Proactive, UsedUntilEnabled: " SIZE_FORMAT "MB, TimeUntilEnabled: %.3fs",
                             (used_threshold - used) / M,
