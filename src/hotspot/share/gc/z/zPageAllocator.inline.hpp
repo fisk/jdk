@@ -28,7 +28,7 @@
 
 inline ZPageAllocatorStats::ZPageAllocatorStats(size_t min_capacity,
                                                 size_t max_capacity,
-                                                size_t soft_max_capacity,
+                                                size_t heuristic_max_capacity,
                                                 size_t capacity,
                                                 size_t used,
                                                 size_t used_high,
@@ -40,7 +40,7 @@ inline ZPageAllocatorStats::ZPageAllocatorStats(size_t min_capacity,
                                                 size_t allocation_stalls)
   : _min_capacity(min_capacity),
     _max_capacity(max_capacity),
-    _soft_max_capacity(soft_max_capacity),
+    _heuristic_max_capacity(heuristic_max_capacity),
     _capacity(capacity),
     _used(used),
     _used_high(used_high),
@@ -59,8 +59,8 @@ inline size_t ZPageAllocatorStats::max_capacity() const {
   return _max_capacity;
 }
 
-inline size_t ZPageAllocatorStats::soft_max_capacity() const {
-  return _soft_max_capacity;
+inline size_t ZPageAllocatorStats::heuristic_max_capacity() const {
+  return _heuristic_max_capacity;
 }
 
 inline size_t ZPageAllocatorStats::capacity() const {

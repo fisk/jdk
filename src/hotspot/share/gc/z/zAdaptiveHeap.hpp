@@ -44,6 +44,7 @@ private:
         _gc_time() {}
   };
 
+  static volatile double _young_to_old_gc_time;
   static double _accumulated_young_gc_time;
   static ZGenerationOverhead _young_data;
   static ZGenerationOverhead _old_data;
@@ -53,6 +54,7 @@ public:
   static void enable();
 
   static void adapt(ZGenerationId generation);
+  static double young_to_old_gc_time();
 };
 
 #endif // SHARE_GC_Z_ZADAPTIVEHEAP_HPP

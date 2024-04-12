@@ -33,6 +33,7 @@
 #include "utilities/debug.hpp"
 
 bool ZAdaptiveHeap::_enabled = false;
+volatile double ZAdaptiveHeap::_young_to_old_gc_time = 1.0;
 double ZAdaptiveHeap::_accumulated_young_gc_time = 0.0;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_young_data;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_old_data;
@@ -69,17 +70,9 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
 
   const bool is_major = Thread::current() == ZDriver::major();
   const GCCause::Cause cause = is_major ? ZDriver::major()->gc_cause() : ZDriver::minor()->gc_cause();
-  const bool is_proactive = cause == GCCause::_z_proactive;
   const bool is_heap_pressure_gc = cause == GCCause::_z_allocation_rate ||
                                    cause == GCCause::_z_high_usage ||
                                    cause == GCCause::_z_warmup;
-
-  if (is_proactive && !is_young) {
-    // Proactive GCs imply that the heap is excessively large; let's try
-    // to shrink it more aggressively that we otherwise might
-    ZHeap::heap()->resize_heap(0.0);
-    return;
-  }
 
   if (!is_heap_pressure_gc) {
     return;
@@ -95,33 +88,33 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
 
   const double avg_cpu_overhead = avg_gc_time / avg_process_time;
 
-  log_debug(gc, adaptive)("Adaptive avg gc time %.3f, avg total time %.3f (%.3f%%)",
-                          avg_gc_time, avg_process_time, avg_cpu_overhead * 100.0);
+  log_debug(gc, heap)("Adaptive avg gc time %.3f, avg total time %.3f (%.3f%%)",
+                      avg_gc_time, avg_process_time, avg_cpu_overhead * 100.0);
 
   const double cpu_overhead_fraction = ZCPUOverheadPercent / 100.0;
   const double target_cpu_overhead = cpu_overhead_fraction / (1.0 + cpu_overhead_fraction);
-  const double cpu_overhead_error = is_proactive ? 0.0 : avg_cpu_overhead - target_cpu_overhead;
+  const double cpu_overhead_error = avg_cpu_overhead - target_cpu_overhead;
 
   // High GC frequencies lead to extra overheads such as barrier storms
   // Therefore, we add a factor that ensures there is at least some social
   // distancing between GCs, even when the GC overhead is small. The size of
   // the factor scales with the level of load induced on the machine.
   const double machine_load = (process_time / time_since_last) / double(os::active_processor_count());
-  const double gc_frequency_error = machine_load - cycle_stats._time_since_last;
+  const double gc_frequency_error = MAX2(1.0 / 4.0, machine_load) - cycle_stats._time_since_last;
 
   const double sigmoid_error = sigmoid_function(MAX2(cpu_overhead_error, gc_frequency_error));
-  const double correction_factor = sigmoid_error + 0.5;
+  double correction_factor = sigmoid_error + 0.5;
 
-  log_info(gc, adaptive)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f, Correction factor %.3f",
-                         cpu_overhead_error, gc_frequency_error, correction_factor);
+  log_debug(gc, heap)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f, Correction factor %.3f",
+                      cpu_overhead_error, gc_frequency_error, correction_factor);
 
   if (is_young) {
     _accumulated_young_gc_time += gc_time;
-    if (correction_factor < 1.0) {
-      // Don't have enough data to shrink in minor collections
-      return;
-    }
+    // Don't have enough data to shrink in minor collections
+    correction_factor = MAX2(correction_factor, 1.0);
   } else {
+    const double young_to_old_gc_time = _accumulated_young_gc_time / (_accumulated_young_gc_time + serial_gc_time + parallel_gc_time);
+    Atomic::store(&_young_to_old_gc_time, young_to_old_gc_time);
     _accumulated_young_gc_time = 0.0;
   }
 
@@ -130,4 +123,8 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
 
 bool ZAdaptiveHeap::is_enabled() {
   return _enabled;
+}
+
+double ZAdaptiveHeap::young_to_old_gc_time() {
+  return Atomic::load(&_young_to_old_gc_time);
 }

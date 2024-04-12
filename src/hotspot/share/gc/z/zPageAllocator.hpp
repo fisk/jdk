@@ -142,12 +142,12 @@ public:
   size_t initial_capacity() const;
   size_t min_capacity() const;
   size_t max_capacity() const;
-  size_t soft_max_capacity() const;
+  size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;
   size_t used_generation(ZGenerationId id) const;
   size_t unused() const;
-  void ensure_mapped(size_t min_capacity);
+  void set_target_capacity(size_t target_capacity);
   void resize_heap(double resize_factor);
 
   void promote_used(size_t size);
@@ -180,7 +180,7 @@ class ZPageAllocatorStats {
 private:
   size_t _min_capacity;
   size_t _max_capacity;
-  size_t _soft_max_capacity;
+  size_t _heuristic_max_capacity;
   size_t _capacity;
   size_t _used;
   size_t _used_high;
@@ -194,7 +194,7 @@ private:
 public:
   ZPageAllocatorStats(size_t min_capacity,
                       size_t max_capacity,
-                      size_t soft_max_capacity,
+                      size_t heuristic_max_capacity,
                       size_t capacity,
                       size_t used,
                       size_t used_high,
@@ -207,7 +207,7 @@ public:
 
   size_t min_capacity() const;
   size_t max_capacity() const;
-  size_t soft_max_capacity() const;
+  size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;
   size_t used_high() const;
