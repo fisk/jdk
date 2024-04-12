@@ -35,7 +35,7 @@ class ZMapper : public ZThread {
 private:
   ZPageAllocator* const _page_allocator;
   ZConditionLock        _lock;
-  volatile size_t       _current_min_capacity;
+  volatile size_t       _target_capacity;
   bool                  _stop;
 
   bool dequeue();
@@ -47,7 +47,7 @@ protected:
 public:
   ZMapper(ZPageAllocator* page_allocator);
 
-  void prime(size_t min_capacity);
+  void set_target_capacity(size_t target_capacity);
 };
 
 #endif // SHARE_GC_Z_ZMAPPER_HPP

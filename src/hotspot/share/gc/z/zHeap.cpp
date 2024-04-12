@@ -106,8 +106,8 @@ size_t ZHeap::max_capacity() const {
   return _page_allocator.max_capacity();
 }
 
-size_t ZHeap::soft_max_capacity() const {
-  return _page_allocator.soft_max_capacity();
+size_t ZHeap::heuristic_max_capacity() const {
+  return _page_allocator.heuristic_max_capacity();
 }
 
 size_t ZHeap::capacity() const {
@@ -118,8 +118,8 @@ size_t ZHeap::used() const {
   return _page_allocator.used();
 }
 
-void ZHeap::ensure_mapped(size_t min_capacity) {
-  _page_allocator.ensure_mapped(min_capacity);
+void ZHeap::set_target_capacity(size_t target_capacity) {
+  _page_allocator.set_target_capacity(target_capacity);
 }
 
 void ZHeap::resize_heap(double resize_factor) {

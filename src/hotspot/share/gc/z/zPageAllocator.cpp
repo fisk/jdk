@@ -314,7 +314,7 @@ size_t ZPageAllocator::max_capacity() const {
   return _max_capacity;
 }
 
-size_t ZPageAllocator::soft_max_capacity() const {
+size_t ZPageAllocator::heuristic_max_capacity() const {
   // Note that SoftMaxHeapSize is a manageable flag
   const size_t soft_max_capacity = Atomic::load(&SoftMaxHeapSize);
   const size_t current_max_capacity = Atomic::load(&_current_max_capacity);
@@ -323,28 +323,34 @@ size_t ZPageAllocator::soft_max_capacity() const {
   return MIN2(heuristic_max_capacity, current_max_capacity);
 }
 
-void ZPageAllocator::ensure_mapped(size_t min_capacity) {
-  _mapper->prime(min_capacity);
+void ZPageAllocator::set_target_capacity(size_t target_capacity) {
+  _mapper->set_target_capacity(target_capacity);
 }
 
 void ZPageAllocator::resize_heap(double resize_factor) {
   const size_t soft_max_capacity = Atomic::load(&SoftMaxHeapSize);
   const size_t current_max_capacity = Atomic::load(&_current_max_capacity);
-  const size_t heuristic_capacity = Atomic::load(&_heuristic_max_capacity);
-  const size_t suggested_capacity = heuristic_capacity * resize_factor;
+  const size_t heuristic_max_capacity = Atomic::load(&_heuristic_max_capacity);
+  const size_t suggested_capacity = heuristic_max_capacity * resize_factor;
   const size_t current_capacity = Atomic::load(&_capacity);
-  const size_t min_capacity = _min_capacity;
-  const size_t heuristic_lower_bound = MAX2(size_t(used() * 1.1), size_t(ZStatMutatorAllocRate::stats()._avg) / 8);
+  const size_t min_capacity = MIN2(_min_capacity, soft_max_capacity);
+  const size_t heuristic_low = MAX2(size_t(used() * 1.1), size_t(ZStatMutatorAllocRate::stats()._avg) / 16);
 
   const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
-  const size_t lower_bound = clamp(heuristic_lower_bound, min_capacity, upper_bound);
+  const size_t lower_bound = clamp(heuristic_low, min_capacity, upper_bound);
 
   const size_t selected_capacity = clamp(suggested_capacity, lower_bound, upper_bound);
 
-  log_info(gc, adaptive)("Updated heap size: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
-                         selected_capacity / M, double(selected_capacity) / double(heuristic_capacity) * 100.0 - 100.0, current_capacity / M);
-
   Atomic::store(&_heuristic_max_capacity, selected_capacity);
+
+  if (selected_capacity != heuristic_max_capacity) {
+    log_debug(gc, heap)("Target heap lower bound: " SIZE_FORMAT ", upper bound: " SIZE_FORMAT,
+                        lower_bound / M, upper_bound / M);
+    log_debug(gc, heap)("Suggested capacity: " SIZE_FORMAT ", selected capacity: " SIZE_FORMAT ", heuristic capacity: " SIZE_FORMAT,
+                        suggested_capacity / M, selected_capacity / M, heuristic_max_capacity / M);
+    log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
+                        selected_capacity / M, double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, current_capacity / M);
+  }
 }
 
 size_t ZPageAllocator::capacity() const {
@@ -371,7 +377,7 @@ ZPageAllocatorStats ZPageAllocator::stats(ZGeneration* generation) const {
   ZLocker<ZLock> locker(&_lock);
   return ZPageAllocatorStats(_min_capacity,
                              _max_capacity,
-                             soft_max_capacity(),
+                             heuristic_max_capacity(),
                              _capacity,
                              _used,
                              _collection_stats[(int)generation->id()]._used_high,
@@ -920,10 +926,10 @@ size_t ZPageAllocator::uncommit(uint64_t* timeout) {
     // Never uncommit below min capacity. We flush out and uncommit chunks at
     // a time (~0.8% of the max capacity, but at least one granule and at most
     // 256M), in case demand for memory increases while we are uncommitting.
-    const size_t heuristic_max_capacity = soft_max_capacity(); // TODO: Rename
-    const size_t retain = MAX2(_used, _min_capacity);
-    const size_t release = (heuristic_max_capacity < retain) ? 0 : (heuristic_max_capacity - retain);
-    const size_t limit = MIN2(align_up(heuristic_max_capacity >> 7, ZGranuleSize), 256 * M);
+    const size_t heuristic_max = heuristic_max_capacity();
+    const size_t retain = clamp(size_t(_used * 1.05), _min_capacity, _max_capacity);
+    const size_t release = align_down(_capacity - retain, ZGranuleSize);
+    const size_t limit = MIN2(align_up(heuristic_max >> 7, ZGranuleSize), 256 * M);
     const size_t flush = MIN2(release, limit);
 
     // Flush pages to uncommit
@@ -931,6 +937,14 @@ size_t ZPageAllocator::uncommit(uint64_t* timeout) {
     if (flushed == 0) {
       // Nothing flushed
       return 0;
+    }
+
+    if (heuristic_max > _capacity) {
+      // The heap has shrunk; update heuristic heap size to reflect if necessary
+      log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
+                          _capacity / M, double(_capacity) / double(heuristic_max) * 100.0 - 100.0, _capacity / M);
+      set_target_capacity(_capacity);
+      Atomic::store(&_heuristic_max_capacity, _capacity);
     }
 
     // Record flushed pages as claimed
