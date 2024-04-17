@@ -51,6 +51,8 @@
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
 
+#include <math.h>
+
 static const ZStatCounter       ZCounterMutatorAllocationRate("Memory", "Allocation Rate", ZStatUnitBytesPerSecond);
 static const ZStatCounter       ZCounterPageCacheFlush("Memory", "Page Cache Flush", ZStatUnitBytesPerSecond);
 static const ZStatCounter       ZCounterDefragment("Memory", "Defragment", ZStatUnitOpsPerSecond);
@@ -334,7 +336,10 @@ void ZPageAllocator::resize_heap(double resize_factor) {
   const size_t suggested_capacity = heuristic_max_capacity * resize_factor;
   const size_t current_capacity = Atomic::load(&_capacity);
   const size_t min_capacity = MIN2(_min_capacity, soft_max_capacity);
-  const size_t heuristic_low = MAX2(size_t(used() * 1.1), size_t(ZStatMutatorAllocRate::stats()._avg) / 16);
+  // Since a GC cycle is obviously round, we can estimate the minimum bytes due to
+  // a particular allocation rate and GC pressure by calculating GC pressure * pi
+  const double alloc_rate_scaling = ZGCPressure * M_PI;
+  const size_t heuristic_low = MAX2(size_t(used() * 1.1), size_t(ZStatMutatorAllocRate::stats()._avg / alloc_rate_scaling));
 
   const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
   const size_t lower_bound = clamp(heuristic_low, min_capacity, upper_bound);

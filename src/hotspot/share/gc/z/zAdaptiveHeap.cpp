@@ -91,8 +91,12 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
   log_debug(gc, heap)("Adaptive avg gc time %.3f, avg total time %.3f (%.3f%%)",
                       avg_gc_time, avg_process_time, avg_cpu_overhead * 100.0);
 
-  const double cpu_overhead_fraction = ZCPUOverheadPercent / 100.0;
-  const double target_cpu_overhead = cpu_overhead_fraction / (1.0 + cpu_overhead_fraction);
+  // When ZGCPressure is 1.0, the implication is that we want 25% of the
+  // process CPU to be spent on doing GC when the process uses 100% of the
+  // available CPU cores.. The ConcGCThreads sizing by default goes up to
+  // a maximum of 25% of the available cores. So all ConcGCThreads would
+  // be running back to back then.
+  const double target_cpu_overhead = ZGCPressure / 40.0;
   const double cpu_overhead_error = avg_cpu_overhead - target_cpu_overhead;
 
   // High GC frequencies lead to extra overheads such as barrier storms
@@ -100,7 +104,9 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
   // distancing between GCs, even when the GC overhead is small. The size of
   // the factor scales with the level of load induced on the machine.
   const double machine_load = (process_time / time_since_last) / double(os::active_processor_count());
-  const double gc_frequency_error = MAX2(1.0 / 4.0, machine_load) - cycle_stats._time_since_last;
+  const double min_fully_loaded_gc_interval = 5.0 / ZGCPressure;
+  const double min_gc_interval = min_fully_loaded_gc_interval / 4.0;
+  const double gc_frequency_error = MAX2(min_gc_interval, machine_load * min_fully_loaded_gc_interval) - cycle_stats._time_since_last;
 
   const double sigmoid_error = sigmoid_function(MAX2(cpu_overhead_error, gc_frequency_error));
   double correction_factor = sigmoid_error + 0.5;
