@@ -91,7 +91,7 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
   log_debug(gc, heap)("Adaptive avg gc time %.3f, avg total time %.3f (%.3f%%)",
                       avg_gc_time, avg_process_time, avg_cpu_overhead * 100.0);
 
-  // When ZGCPressure is 1.0, the implication is that we want 25% of the
+  // When ZGCPressure is 10, the implication is that we want 25% of the
   // process CPU to be spent on doing GC when the process uses 100% of the
   // available CPU cores.. The ConcGCThreads sizing by default goes up to
   // a maximum of 25% of the available cores. So all ConcGCThreads would
