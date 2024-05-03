@@ -94,3 +94,8 @@ void ZUncommitter::terminate() {
   _stop = true;
   _lock.notify_all();
 }
+
+void ZUncommitter::wake() {
+  ZLocker<ZConditionLock> locker(&_lock);
+  _lock.notify_all();
+}

@@ -30,6 +30,7 @@
 #include "logging/log.hpp"
 #include "runtime/os.hpp"
 #include "runtime/atomic.hpp"
+#include "runtime/globals_extension.hpp"
 #include "utilities/debug.hpp"
 
 bool ZAdaptiveHeap::_enabled = false;
@@ -91,40 +92,49 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
   log_debug(gc, heap)("Adaptive avg gc time %.3f, avg total time %.3f (%.3f%%)",
                       avg_gc_time, avg_process_time, avg_cpu_overhead * 100.0);
 
-  // When ZGCPressure is 10, the implication is that we want 25% of the
-  // process CPU to be spent on doing GC when the process uses 100% of the
-  // available CPU cores.. The ConcGCThreads sizing by default goes up to
-  // a maximum of 25% of the available cores. So all ConcGCThreads would
-  // be running back to back then.
-  const double target_cpu_overhead = ZGCPressure / 40.0;
-  const double cpu_overhead_error = avg_cpu_overhead - target_cpu_overhead;
-
   // High GC frequencies lead to extra overheads such as barrier storms
   // Therefore, we add a factor that ensures there is at least some social
   // distancing between GCs, even when the GC overhead is small. The size of
   // the factor scales with the level of load induced on the machine.
   const double machine_load = (process_time / time_since_last) / double(os::active_processor_count());
-  const double min_fully_loaded_gc_interval = 5.0 / ZGCPressure;
+
+  const double p = pressure(machine_load);
+
+  // When GC pressure is 10, the implication is that we want 25% of the
+  // process CPU to be spent on doing GC when the process uses 100% of the
+  // available CPU cores.. The ConcGCThreads sizing by default goes up to
+  // a maximum of 25% of the available cores. So all ConcGCThreads would
+  // be running back to back then.
+  const double target_cpu_overhead = p / 40.0;
+  const double cpu_overhead_error = avg_cpu_overhead - target_cpu_overhead;
+
+  const double min_fully_loaded_gc_interval = 5.0 / p;
   const double min_gc_interval = min_fully_loaded_gc_interval / 4.0;
   const double gc_frequency_error = MAX2(min_gc_interval, machine_load * min_fully_loaded_gc_interval) - cycle_stats._time_since_last;
 
   const double sigmoid_error = sigmoid_function(MAX2(cpu_overhead_error, gc_frequency_error));
   double correction_factor = sigmoid_error + 0.5;
 
-  log_debug(gc, heap)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f, Correction factor %.3f",
-                      cpu_overhead_error, gc_frequency_error, correction_factor);
+  log_debug(gc, heap)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f, Correction factor %.3f, Pressure: %.3f",
+                      cpu_overhead_error, gc_frequency_error, correction_factor, p);
 
   if (is_young) {
     _accumulated_young_gc_time += gc_time;
     // Don't have enough data to shrink in minor collections
-    correction_factor = MAX2(correction_factor, 1.0);
+    double available_memory = (double)os::available_memory();
+    double total_memory = (double)os::physical_memory();
+    double memory_reserve_fraction = double(available_memory) / double(total_memory);
+
+    if (memory_reserve_fraction > 0.2) {
+      correction_factor = MAX2(correction_factor, 1.0);
+    }
   } else {
     const double young_to_old_gc_time = _accumulated_young_gc_time / (_accumulated_young_gc_time + serial_gc_time + parallel_gc_time);
     Atomic::store(&_young_to_old_gc_time, young_to_old_gc_time);
     _accumulated_young_gc_time = 0.0;
   }
 
-  ZHeap::heap()->resize_heap(correction_factor);
+  ZHeap::heap()->resize_heap(correction_factor, p);
 }
 
 bool ZAdaptiveHeap::is_enabled() {
@@ -133,4 +143,25 @@ bool ZAdaptiveHeap::is_enabled() {
 
 double ZAdaptiveHeap::young_to_old_gc_time() {
   return Atomic::load(&_young_to_old_gc_time);
+}
+
+double ZAdaptiveHeap::pressure(double cpu_usage) {
+  if (FLAG_IS_CMDLINE(ZGCPressure)) {
+    return ZGCPressure;
+  }
+
+  double available_memory = (double)os::available_memory();
+  double total_memory = (double)os::physical_memory();
+  double used_memory = (double)ZHeap::heap()->heuristic_max_capacity();
+  double memory_usage = used_memory / total_memory;
+
+  double memory_reserve_fraction = double(available_memory) / double(total_memory);
+
+  double memory_down_scaling = MIN2(memory_reserve_fraction, 0.2);
+  double cpu_up_scaling = MAX2(1.0, memory_usage / cpu_usage);
+
+  log_info(gc)("memury_usage: %.3f, cpu_usage: %.3f, cpu_up_scaling: %.3f",
+               memory_usage, cpu_usage, cpu_up_scaling);
+
+  return cpu_up_scaling / memory_down_scaling;
 }

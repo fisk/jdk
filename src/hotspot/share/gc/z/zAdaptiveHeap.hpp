@@ -55,6 +55,8 @@ public:
 
   static void adapt(ZGenerationId generation);
   static double young_to_old_gc_time();
+
+  static double pressure(double cpu_usage);
 };
 
 #endif // SHARE_GC_Z_ZADAPTIVEHEAP_HPP

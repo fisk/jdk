@@ -329,7 +329,7 @@ void ZPageAllocator::set_target_capacity(size_t target_capacity) {
   _mapper->set_target_capacity(target_capacity);
 }
 
-void ZPageAllocator::resize_heap(double resize_factor) {
+void ZPageAllocator::resize_heap(double resize_factor, double pressure) {
   const size_t soft_max_capacity = Atomic::load(&SoftMaxHeapSize);
   const size_t current_max_capacity = Atomic::load(&_current_max_capacity);
   const size_t heuristic_max_capacity = Atomic::load(&_heuristic_max_capacity);
@@ -338,7 +338,7 @@ void ZPageAllocator::resize_heap(double resize_factor) {
   const size_t min_capacity = MIN2(_min_capacity, soft_max_capacity);
   // Since a GC cycle is obviously round, we can estimate the minimum bytes due to
   // a particular allocation rate and GC pressure by calculating GC pressure * pi
-  const double alloc_rate_scaling = ZGCPressure * M_PI;
+  const double alloc_rate_scaling = pressure * M_PI;
   const size_t heuristic_low = MAX2(size_t(used() * 1.1), size_t(ZStatMutatorAllocRate::stats()._avg / alloc_rate_scaling));
 
   const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
@@ -356,6 +356,8 @@ void ZPageAllocator::resize_heap(double resize_factor) {
     log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
                         selected_capacity / M, double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, current_capacity / M);
   }
+
+  _uncommitter->wake();
 }
 
 size_t ZPageAllocator::capacity() const {

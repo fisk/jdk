@@ -122,8 +122,8 @@ void ZHeap::set_target_capacity(size_t target_capacity) {
   _page_allocator.set_target_capacity(target_capacity);
 }
 
-void ZHeap::resize_heap(double resize_factor) {
-  _page_allocator.resize_heap(resize_factor);
+void ZHeap::resize_heap(double resize_factor, double pressure) {
+  _page_allocator.resize_heap(resize_factor, pressure);
 }
 
 size_t ZHeap::used_generation(ZGenerationId id) const {

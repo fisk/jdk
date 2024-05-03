@@ -278,18 +278,20 @@ class ZPageCacheFlushForUncommitClosure : public ZPageCacheFlushClosure {
 private:
   const uint64_t _now;
   uint64_t*      _timeout;
+  uint64_t       _scaled_delay;
 
 public:
-  ZPageCacheFlushForUncommitClosure(size_t requested, uint64_t now, uint64_t* timeout)
+  ZPageCacheFlushForUncommitClosure(size_t requested, uint64_t now, uint64_t* timeout, uint64_t scaled_delay)
     : ZPageCacheFlushClosure(requested),
       _now(now),
-      _timeout(timeout) {
+      _timeout(timeout),
+      _scaled_delay(scaled_delay) {
     // Set initial timeout
-    *_timeout = ZUncommitDelay;
+    *_timeout = scaled_delay;
   }
 
   virtual bool do_page(const ZPage* page) {
-    const uint64_t expires = page->last_used() + ZUncommitDelay;
+    const uint64_t expires = page->last_used() + _scaled_delay;
     if (expires > _now) {
       // Don't flush page, record shortest non-expired timeout
       *_timeout = MIN2(*_timeout, expires - _now);
@@ -309,7 +311,15 @@ public:
 
 size_t ZPageCache::flush_for_uncommit(size_t requested, ZList<ZPage>* to, uint64_t* timeout) {
   const uint64_t now = os::elapsedTime();
-  const uint64_t expires = _last_commit + ZUncommitDelay;
+
+  const double available_memory = (double)os::available_memory();
+  const double total_memory = (double)os::physical_memory();
+  const double memory_reserve_fraction = double(available_memory) / double(total_memory);
+  const double delay_factor = MIN2(0.2, memory_reserve_fraction) / 0.2;
+
+  const uint64_t scaled_delay = ZUncommitDelay * delay_factor;
+
+  const uint64_t expires = _last_commit + scaled_delay;
   if (expires > now) {
     // Delay uncommit, set next timeout
     *timeout = expires - now;
@@ -318,11 +328,11 @@ size_t ZPageCache::flush_for_uncommit(size_t requested, ZList<ZPage>* to, uint64
 
   if (requested == 0) {
     // Nothing to flush, set next timeout
-    *timeout = ZUncommitDelay;
+    *timeout = scaled_delay;
     return 0;
   }
 
-  ZPageCacheFlushForUncommitClosure cl(requested, now, timeout);
+  ZPageCacheFlushForUncommitClosure cl(requested, now, timeout, scaled_delay);
   flush(&cl, to);
 
   return cl._flushed;
