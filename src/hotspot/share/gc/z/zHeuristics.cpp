@@ -97,7 +97,7 @@ uint ZHeuristics::nconcurrent_workers() {
   // a negative impact on the application throughput, while using too few
   // threads will prolong the GC cycle and we then risk being out-run by the
   // application.
-  return MAX2(nworkers(75.0), 1u);
+  return MAX2(nworkers(75.0), 1u); // TODO: Add function with 25% for full GC etc
 }
 
 size_t ZHeuristics::significant_heap_overhead() {

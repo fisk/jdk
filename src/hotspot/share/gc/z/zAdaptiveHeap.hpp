@@ -49,6 +49,8 @@ private:
   static ZGenerationOverhead _young_data;
   static ZGenerationOverhead _old_data;
 
+  static double memory_pressure(double total_memory);
+
 public:
   static bool is_enabled();
   static void enable();
@@ -56,7 +58,9 @@ public:
   static void adapt(ZGenerationId generation);
   static double young_to_old_gc_time();
 
-  static double pressure(double cpu_usage);
+  static double gc_pressure(double cpu_usage);
+
+  static double uncommit_delay_factor();
 };
 
 #endif // SHARE_GC_Z_ZADAPTIVEHEAP_HPP

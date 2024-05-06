@@ -312,12 +312,7 @@ public:
 size_t ZPageCache::flush_for_uncommit(size_t requested, ZList<ZPage>* to, uint64_t* timeout) {
   const uint64_t now = os::elapsedTime();
 
-  const double available_memory = (double)os::available_memory();
-  const double total_memory = (double)os::physical_memory();
-  const double memory_reserve_fraction = double(available_memory) / double(total_memory);
-  const double delay_factor = MIN2(0.2, memory_reserve_fraction) / 0.2;
-
-  const uint64_t scaled_delay = ZUncommitDelay * delay_factor;
+  const uint64_t scaled_delay = ZUncommitDelay * ZAdaptiveHeap::uncommit_delay_factor();
 
   const uint64_t expires = _last_commit + scaled_delay;
   if (expires > now) {

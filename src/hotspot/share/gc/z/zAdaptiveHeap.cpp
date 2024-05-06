@@ -98,7 +98,7 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
   // the factor scales with the level of load induced on the machine.
   const double machine_load = (process_time / time_since_last) / double(os::active_processor_count());
 
-  const double p = pressure(machine_load);
+  const double p = gc_pressure(machine_load);
 
   // When GC pressure is 10, the implication is that we want 25% of the
   // process CPU to be spent on doing GC when the process uses 100% of the
@@ -125,7 +125,7 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
     double total_memory = (double)os::physical_memory();
     double memory_reserve_fraction = double(available_memory) / double(total_memory);
 
-    if (memory_reserve_fraction > 0.2) {
+    if (memory_reserve_fraction > ZMemoryHighThreshold) {
       correction_factor = MAX2(correction_factor, 1.0);
     }
   } else {
@@ -145,20 +145,31 @@ double ZAdaptiveHeap::young_to_old_gc_time() {
   return Atomic::load(&_young_to_old_gc_time);
 }
 
-double ZAdaptiveHeap::pressure(double cpu_usage) {
-  if (FLAG_IS_CMDLINE(ZGCPressure)) {
-    return ZGCPressure;
-  }
+// Returns 1.0 when there is more than ZMemoryHighThreshold memory
+// left on the machine, then gradually goes down to 0.0.
+double ZAdaptiveHeap::memory_pressure(double total_memory) {
+  const double available_memory = (double)os::available_memory();
+  const double memory_reserve_fraction = double(available_memory) / double(total_memory);
+  return MIN2(ZMemoryHighThreshold, memory_reserve_fraction) / ZMemoryHighThreshold;
+}
 
-  double available_memory = (double)os::available_memory();
+double ZAdaptiveHeap::gc_pressure(double cpu_usage) {
   double total_memory = (double)os::physical_memory();
+  double memory_down_scaling = memory_pressure(total_memory);
+
   double used_memory = (double)ZHeap::heap()->heuristic_max_capacity();
   double memory_usage = used_memory / total_memory;
 
-  double memory_reserve_fraction = double(available_memory) / double(total_memory);
+  double cpu_up_scaling = MAX2(1.0, memory_usage / cpu_usage / 2.0);
 
-  double memory_down_scaling = MIN2(memory_reserve_fraction, 0.2);
-  double cpu_up_scaling = MAX2(1.0, memory_usage / cpu_usage);
+  return ZGCPressure * cpu_up_scaling / memory_down_scaling;
+}
 
-  return cpu_up_scaling / memory_down_scaling;
+double ZAdaptiveHeap::uncommit_delay_factor() {
+  if (!is_enabled()) {
+    return 1.0;
+  }
+
+  const double total_memory = (double)os::physical_memory();
+  return memory_pressure(total_memory);
 }
