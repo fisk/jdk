@@ -160,8 +160,5 @@ double ZAdaptiveHeap::pressure(double cpu_usage) {
   double memory_down_scaling = MIN2(memory_reserve_fraction, 0.2);
   double cpu_up_scaling = MAX2(1.0, memory_usage / cpu_usage);
 
-  log_info(gc)("memury_usage: %.3f, cpu_usage: %.3f, cpu_up_scaling: %.3f",
-               memory_usage, cpu_usage, cpu_up_scaling);
-
   return cpu_up_scaling / memory_down_scaling;
 }
