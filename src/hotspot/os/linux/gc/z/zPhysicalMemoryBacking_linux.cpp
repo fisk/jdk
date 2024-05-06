@@ -364,6 +364,7 @@ void ZPhysicalMemoryBacking::warn_max_map_count(size_t max_capacity) const {
 }
 
 void ZPhysicalMemoryBacking::warn_commit_limits(size_t max_capacity) const {
+  // TODO: Find way of disabling this when xmx not specified
   // Warn if available space is too low
   warn_available_space(max_capacity);
 

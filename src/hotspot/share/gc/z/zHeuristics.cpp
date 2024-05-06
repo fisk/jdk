@@ -56,7 +56,7 @@ void ZHeuristics::set_medium_page_size() {
 size_t ZHeuristics::relocation_headroom() {
   // Calculate headroom needed to avoid in-place relocation. Each worker will try
   // to allocate a small page, and all workers will share a single medium page.
-  return (ConcGCThreads * ZPageSizeSmall) + ZPageSizeMedium;
+  return (nconcurrent_workers() * ZPageSizeSmall) + ZPageSizeMedium;
 }
 
 bool ZHeuristics::use_per_cpu_shared_small_pages() {
@@ -97,7 +97,14 @@ uint ZHeuristics::nconcurrent_workers() {
   // a negative impact on the application throughput, while using too few
   // threads will prolong the GC cycle and we then risk being out-run by the
   // application.
-  return MAX2(nworkers(75.0), 1u); // TODO: Add function with 25% for full GC etc
+  return MAX2(nworkers(25.0), 1u);
+}
+
+// TODO: ZYoungGCThreads etc
+uint ZHeuristics::max_nconcurrent_workers() {
+  // In critical situations, it is good to use most of the machine. It will
+  // not happen in a normal run where there is enough memory
+  return MAX2(nworkers(75.0), 1u);
 }
 
 size_t ZHeuristics::significant_heap_overhead() {

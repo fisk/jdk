@@ -154,13 +154,13 @@ double ZAdaptiveHeap::memory_pressure(double total_memory) {
 }
 
 double ZAdaptiveHeap::gc_pressure(double cpu_usage) {
-  double total_memory = (double)os::physical_memory();
-  double memory_down_scaling = memory_pressure(total_memory);
+  const double total_memory = (double)os::physical_memory();
+  const double memory_down_scaling = memory_pressure(total_memory);
 
-  double used_memory = (double)ZHeap::heap()->heuristic_max_capacity();
-  double memory_usage = used_memory / total_memory;
+  const double used_memory = (double)ZHeap::heap()->heuristic_max_capacity();
+  const double memory_usage = used_memory / total_memory;
 
-  double cpu_up_scaling = MAX2(1.0, memory_usage / cpu_usage / 2.0);
+  const double cpu_up_scaling = MAX2(1.0, memory_usage / cpu_usage / 2.0);
 
   return ZGCPressure * cpu_up_scaling / memory_down_scaling;
 }

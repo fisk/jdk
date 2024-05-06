@@ -99,7 +99,7 @@ void ZArguments::select_max_gc_threads() {
   uint max_nworkers_generation;
 
   if (FLAG_IS_DEFAULT(ConcGCThreads)) {
-    max_nworkers_generation = ZHeuristics::nconcurrent_workers();
+    max_nworkers_generation = ZHeuristics::max_nconcurrent_workers();
 
     // Computed max number of GC threads at a time in the machine
     uint max_nworkers = max_nworkers_generation;
