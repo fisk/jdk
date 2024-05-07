@@ -115,8 +115,8 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
   const double sigmoid_error = sigmoid_function(MAX2(cpu_overhead_error, gc_frequency_error));
   double correction_factor = sigmoid_error + 0.5;
 
-  log_debug(gc, heap)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f, Correction factor %.3f, Pressure: %.3f",
-                      cpu_overhead_error, gc_frequency_error, correction_factor, p);
+  log_info(gc, heap)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f, Correction factor %.3f, Pressure: %.3f",
+                     cpu_overhead_error, gc_frequency_error, correction_factor, p);
 
   if (is_young) {
     _accumulated_young_gc_time += gc_time;
@@ -145,12 +145,14 @@ double ZAdaptiveHeap::young_to_old_gc_time() {
   return Atomic::load(&_young_to_old_gc_time);
 }
 
-// Returns 1.0 when there is more than ZMemoryHighThreshold memory
-// left on the machine, then gradually goes down to 0.0.
+// Exponentially increases as the last 15% of memory on the machine gets eaten.
 double ZAdaptiveHeap::memory_pressure(double total_memory) {
   const double available_memory = (double)os::available_memory();
-  const double memory_reserve_fraction = double(available_memory) / double(total_memory);
-  return MIN2(ZMemoryHighThreshold, memory_reserve_fraction) / ZMemoryHighThreshold;
+  const double memory_reserve_fraction = double(2.0 * available_memory / 3.0) / double(total_memory);
+  const double linear_scaling = 1.0 - MIN2(ZMemoryHighThreshold, memory_reserve_fraction) / ZMemoryHighThreshold;
+
+  // The natural exponential function seemed like a... natural choice.
+  return pow(M_E, ZGCPressure * linear_scaling);
 }
 
 double ZAdaptiveHeap::gc_pressure(double cpu_usage) {
@@ -162,7 +164,7 @@ double ZAdaptiveHeap::gc_pressure(double cpu_usage) {
 
   const double cpu_up_scaling = MAX2(1.0, memory_usage / cpu_usage / 2.0);
 
-  return ZGCPressure * cpu_up_scaling / memory_down_scaling;
+  return ZGCPressure * cpu_up_scaling * memory_down_scaling;
 }
 
 double ZAdaptiveHeap::uncommit_delay_factor() {
@@ -171,5 +173,5 @@ double ZAdaptiveHeap::uncommit_delay_factor() {
   }
 
   const double total_memory = (double)os::physical_memory();
-  return memory_pressure(total_memory);
+  return 1.0 / memory_pressure(total_memory);
 }
