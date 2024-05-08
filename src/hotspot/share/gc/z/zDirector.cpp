@@ -546,14 +546,6 @@ static bool rule_major_proactive(const ZDirectorStats& stats) {
     return false;
   }
 
-  const double available_memory = (double)os::available_memory();
-  const double total_memory = (double)os::physical_memory();
-
-  if (available_memory / total_memory < ZMemoryCriticalThreshold) {
-    // Trigger proactive GCs when memory levels are critical
-    return true;
-  }
-
   if (!stats._old_stats._cycle._is_warm) {
     // Rule disabled
     return false;

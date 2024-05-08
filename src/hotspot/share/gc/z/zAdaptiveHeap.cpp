@@ -120,7 +120,9 @@ void ZAdaptiveHeap::adapt(ZGenerationId generation) {
 
   if (is_young) {
     _accumulated_young_gc_time += gc_time;
-    // Don't have enough data to shrink in minor collections
+    // Don't have enough data to shrink in young collections, so we try to
+    // avoid it if we can. But in desperate times, when the machine is running
+    // dry on memory, we will try to shrink even in young collections.
     double available_memory = (double)os::available_memory();
     double total_memory = (double)os::physical_memory();
     double memory_reserve_fraction = double(available_memory) / double(total_memory);
