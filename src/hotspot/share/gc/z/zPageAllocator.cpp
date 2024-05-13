@@ -356,8 +356,6 @@ void ZPageAllocator::resize_heap(double resize_factor, double pressure) {
     log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
                         selected_capacity / M, double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, current_capacity / M);
   }
-
-  _uncommitter->wake();
 }
 
 size_t ZPageAllocator::capacity() const {
@@ -918,6 +916,12 @@ void ZPageAllocator::free_pages_alloc_failed(ZPageAllocation* allocation) {
 
   // Try satisfy stalled allocations
   satisfy_stalled();
+}
+
+void ZPageAllocator::maybe_uncommit() {
+  if (_cache.may_uncommit()) {
+    _uncommitter->wake_up();
+  }
 }
 
 size_t ZPageAllocator::uncommit(uint64_t* timeout) {

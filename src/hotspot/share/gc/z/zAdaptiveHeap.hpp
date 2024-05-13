@@ -60,7 +60,7 @@ public:
 
   static double gc_pressure(double cpu_usage);
 
-  static double uncommit_delay_factor();
+  static uint64_t uncommit_delay();
 };
 
 #endif // SHARE_GC_Z_ZADAPTIVEHEAP_HPP

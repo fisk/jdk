@@ -79,6 +79,7 @@ public:
   size_t unused() const;
   void set_target_capacity(size_t target_capacity);
   void resize_heap(double resize_factor, double pressure);
+  void maybe_uncommit();
 
   size_t tlab_capacity() const;
   size_t tlab_used() const;

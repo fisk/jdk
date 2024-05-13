@@ -900,7 +900,7 @@ static ZDirectorStats sample_stats() {
   };
 }
 
-static void pre_commit(const ZDirectorStats& stats, double sampling_interval) {
+static void adjust_capacity(const ZDirectorStats& stats, double sampling_interval) {
   const size_t used = stats._heap._used;
   const size_t max_capacity = ZHeap::heap()->max_capacity();
 
@@ -914,6 +914,7 @@ static void pre_commit(const ZDirectorStats& stats, double sampling_interval) {
   const size_t used_soon = MAX3(used_next_time_sample, used_next_byte_sample, used_after_yc);
 
   ZHeap::heap()->set_target_capacity(used_soon);
+  ZHeap::heap()->maybe_uncommit();
 }
 
 void ZDirector::run_thread() {
@@ -923,7 +924,7 @@ void ZDirector::run_thread() {
     if (!start_gc(stats)) {
       adjust_gc(stats);
     }
-    pre_commit(stats, 1.0 / decision_hz);
+    adjust_capacity(stats, 1.0 / decision_hz);
   }
 }
 

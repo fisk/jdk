@@ -147,8 +147,11 @@ public:
   size_t used() const;
   size_t used_generation(ZGenerationId id) const;
   size_t unused() const;
+
+  // Automatic heap sizing
   void set_target_capacity(size_t target_capacity);
   void resize_heap(double resize_factor, double pressure);
+  void maybe_uncommit();
 
   void promote_used(size_t size);
 

@@ -169,11 +169,11 @@ double ZAdaptiveHeap::gc_pressure(double cpu_usage) {
   return ZGCPressure * cpu_up_scaling * memory_down_scaling;
 }
 
-double ZAdaptiveHeap::uncommit_delay_factor() {
+uint64_t ZAdaptiveHeap::uncommit_delay() {
   if (!is_enabled()) {
-    return 1.0;
+    return ZUncommitDelay;
   }
 
   const double total_memory = (double)os::physical_memory();
-  return 1.0 / memory_pressure(total_memory);
+  return uint64_t(ZUncommitDelay / memory_pressure(total_memory));
 }

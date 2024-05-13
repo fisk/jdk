@@ -279,20 +279,20 @@ class ZPageCacheFlushForUncommitClosure : public ZPageCacheFlushClosure {
 private:
   const uint64_t _now;
   uint64_t*      _timeout;
-  uint64_t       _scaled_delay;
+  uint64_t       _delay;
 
 public:
-  ZPageCacheFlushForUncommitClosure(size_t requested, uint64_t now, uint64_t* timeout, uint64_t scaled_delay)
+  ZPageCacheFlushForUncommitClosure(size_t requested, uint64_t now, uint64_t* timeout, uint64_t delay)
     : ZPageCacheFlushClosure(requested),
       _now(now),
       _timeout(timeout),
-      _scaled_delay(scaled_delay) {
+      _delay(delay) {
     // Set initial timeout
-    *_timeout = scaled_delay;
+    *_timeout = delay;
   }
 
   virtual bool do_page(const ZPage* page) {
-    const uint64_t expires = page->last_used() + _scaled_delay;
+    const uint64_t expires = page->last_used() + _delay;
     if (expires > _now) {
       // Don't flush page, record shortest non-expired timeout
       *_timeout = MIN2(*_timeout, expires - _now);
@@ -310,13 +310,20 @@ public:
   }
 };
 
+bool ZPageCache::may_uncommit() {
+  const uint64_t delay = ZAdaptiveHeap::uncommit_delay();
+  const uint64_t now = os::elapsedTime();
+  const uint64_t expires = Atomic::load(&_last_commit) + delay;
+
+  return now >= expires;
+}
+
 size_t ZPageCache::flush_for_uncommit(size_t requested, ZList<ZPage>* to, uint64_t* timeout) {
+  const uint64_t delay = ZAdaptiveHeap::uncommit_delay();
+  const uint64_t expires = Atomic::load(&_last_commit) + delay;
   const uint64_t now = os::elapsedTime();
 
-  const uint64_t scaled_delay = ZUncommitDelay * ZAdaptiveHeap::uncommit_delay_factor();
-
-  const uint64_t expires = _last_commit + scaled_delay;
-  if (expires > now) {
+  if (now < expires) {
     // Delay uncommit, set next timeout
     *timeout = expires - now;
     return 0;
@@ -324,16 +331,16 @@ size_t ZPageCache::flush_for_uncommit(size_t requested, ZList<ZPage>* to, uint64
 
   if (requested == 0) {
     // Nothing to flush, set next timeout
-    *timeout = scaled_delay;
+    *timeout = delay;
     return 0;
   }
 
-  ZPageCacheFlushForUncommitClosure cl(requested, now, timeout, scaled_delay);
+  ZPageCacheFlushForUncommitClosure cl(requested, now, timeout, delay);
   flush(&cl, to);
 
   return cl._flushed;
 }
 
 void ZPageCache::set_last_commit() {
-  _last_commit = ceil(os::elapsedTime());
+  Atomic::store(&_last_commit, (uint64_t)ceil(os::elapsedTime()));
 }
