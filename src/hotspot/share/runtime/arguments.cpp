@@ -1488,17 +1488,11 @@ void Arguments::set_heap_size() {
   // based on compressed oops addressability.
   // Also, memory limits will be calculated based on
   // available os physical memory, not our MaxRAM limit,
-  // unless MaxRAM is also specified. ZGC can't use
-  // compressed oops at all, so limiting the heap based
-  // on compressed oops makes little sense.
-#ifdef _LP64
+  // unless MaxRAM is also specified.
   bool override_coop_limit = (!FLAG_IS_DEFAULT(MaxRAMPercentage) ||
-                              !FLAG_IS_DEFAULT(MinRAMPercentage) ||
-                              !FLAG_IS_DEFAULT(InitialRAMPercentage) ||
-                              !FLAG_IS_DEFAULT(MaxRAM));
-#else
-  bool override_coop_limit = false;
-#endif
+                           !FLAG_IS_DEFAULT(MinRAMPercentage) ||
+                           !FLAG_IS_DEFAULT(InitialRAMPercentage) ||
+                           !FLAG_IS_DEFAULT(MaxRAM));
   if (override_coop_limit) {
     if (FLAG_IS_DEFAULT(MaxRAM)) {
       phys_mem = os::physical_memory();

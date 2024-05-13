@@ -33,6 +33,8 @@
 #include "runtime/globals_extension.hpp"
 #include "utilities/debug.hpp"
 
+#include <math.h>
+
 bool ZAdaptiveHeap::_enabled = false;
 volatile double ZAdaptiveHeap::_young_to_old_gc_time = 1.0;
 double ZAdaptiveHeap::_accumulated_young_gc_time = 0.0;

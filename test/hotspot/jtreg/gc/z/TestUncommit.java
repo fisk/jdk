@@ -37,7 +37,7 @@ import jdk.test.lib.Utils;
 public class TestUncommit {
     private static final int delay = 10 * 1000; // milliseconds
     private static final int allocSize = 200 * 1024 * 1024; // 200M
-    private static final int minCapacity = 128 * 1024 * 1024; // 200M
+    private static final int minCapacity = 128 * 1024 * 1024; // 128M
     private static final int smallObjectSize = 4 * 1024; // 4K
     private static final int mediumObjectSize = 2 * 1024 * 1024; // 2M
     private static final int largeObjectSize = allocSize;
