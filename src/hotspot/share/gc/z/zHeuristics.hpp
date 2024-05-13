@@ -37,7 +37,6 @@ public:
 
   static uint nparallel_workers();
   static uint nconcurrent_workers();
-  static uint max_nconcurrent_workers();
 
   static size_t significant_heap_overhead();
   static size_t significant_young_overhead();

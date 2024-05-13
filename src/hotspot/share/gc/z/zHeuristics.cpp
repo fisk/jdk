@@ -100,13 +100,6 @@ uint ZHeuristics::nconcurrent_workers() {
   return MAX2(nworkers(25.0), 1u);
 }
 
-// TODO: ZYoungGCThreads etc
-uint ZHeuristics::max_nconcurrent_workers() {
-  // In critical situations, it is good to use most of the machine. It will
-  // not happen in a normal run where there is enough memory
-  return MAX2(nworkers(75.0), 1u);
-}
-
 size_t ZHeuristics::significant_heap_overhead() {
   return MaxHeapSize * (ZFragmentationLimit / 100);
 }
