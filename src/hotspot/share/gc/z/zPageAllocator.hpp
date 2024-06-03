@@ -73,7 +73,6 @@ private:
   const size_t               _min_capacity;
   const size_t               _initial_capacity;
   const size_t               _max_capacity;
-  volatile size_t            _current_max_capacity;
   volatile size_t            _heuristic_max_capacity;
   volatile size_t            _capacity;
   volatile size_t            _claimed;
@@ -91,8 +90,8 @@ private:
   mutable ZSafePageRecycle   _safe_recycle;
   bool                       _initialized;
 
-  size_t increase_capacity(size_t size);
-  void decrease_capacity(size_t size, bool set_max_capacity);
+  size_t increase_capacity(size_t size, size_t curr_max_capacity);
+  void decrease_capacity(size_t size);
 
   void increase_used(size_t size);
   void decrease_used(size_t size);
@@ -110,9 +109,9 @@ private:
 
   void destroy_page(ZPage* page);
 
-  bool is_alloc_allowed(size_t size, bool use_cache) const;
+  bool is_alloc_allowed(size_t size, size_t curr_max_capacity, bool use_cache) const;
 
-  bool alloc_page_common_inner(ZPageType type, size_t size, ZList<ZPage>* pages, bool use_cache);
+  bool alloc_page_common_inner(ZPageType type, size_t size, size_t curr_max_capacity, ZList<ZPage>* pages, bool use_cache);
   bool alloc_page_common(ZPageAllocation* allocation);
   bool alloc_page_stall(ZPageAllocation* allocation);
   bool alloc_page_or_stall(ZPageAllocation* allocation);
@@ -142,6 +141,7 @@ public:
   size_t initial_capacity() const;
   size_t min_capacity() const;
   size_t max_capacity() const;
+  size_t current_max_capacity() const;
   size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;
@@ -149,9 +149,8 @@ public:
   size_t unused() const;
 
   // Automatic heap sizing
-  void set_target_capacity(size_t target_capacity); // TODO: Do we need both this and maybe_uncommit?!
   void adapt_heuristic_max_capacity(ZGenerationId generation);
-  void maybe_uncommit();
+  void adjust_capacity(size_t used_soon);
 
   void promote_used(size_t size);
 

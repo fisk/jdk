@@ -58,7 +58,7 @@ private:
   static ZGenerationOverhead _young_data;
   static ZGenerationOverhead _old_data;
 
-  static double memory_pressure(double total_memory);
+  static double memory_pressure(size_t available_memory, size_t total_memory);
 
 public:
   static bool is_enabled();

@@ -99,6 +99,12 @@ const size_t      ZMarkProactiveFlushMax        = 10;
 const uint64_t    ZMarkCompleteTimeout          = 200; // us
 
 // How much memory reserve do we try to keep as buffer zone on the machine
+const double      ZMemoryConcerningThreshold    = 0.1;
+
+// How much memory reserve do we try to keep as buffer zone on the machine
 const double      ZMemoryHighThreshold          = 0.05;
+
+// How much memory reserve do we enforce to keep as buffer zone on the machine
+const double      ZMemoryCriticalThreshold      = 0.015;
 
 #endif // SHARE_GC_Z_ZGLOBALS_HPP

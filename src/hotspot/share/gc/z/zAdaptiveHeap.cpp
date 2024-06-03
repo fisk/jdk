@@ -92,8 +92,7 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const size_t min_capacity = metrics->_min_capacity;
   const size_t used = metrics->_used;
 
-  // TODO: What if people fiddle with core count?
-  const double machine_load = (process_time / time_since_last) / double(os::active_processor_count());
+  const double machine_load = clamp((process_time / time_since_last) / double(os::active_processor_count()), 0.0, 1.0);
   const double pressure = gc_pressure(machine_load);
 
   // Since a GC cycle is obviously round, we can estimate the minimum bytes due to
@@ -137,9 +136,6 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const double sigmoid_error = sigmoid_function(MAX2(cpu_overhead_error, gc_frequency_error));
   double correction_factor = sigmoid_error + 0.5;
 
-  log_info(gc, heap)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f, Correction factor %.3f, Pressure: %.3f",
-                     cpu_overhead_error, gc_frequency_error, correction_factor, pressure);
-
   if (is_young) {
     _accumulated_young_gc_time += gc_time;
     // Don't have enough data to shrink in young collections, so we try to
@@ -158,16 +154,18 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
     _accumulated_young_gc_time = 0.0;
   }
 
-  const size_t suggested_capacity = heuristic_max_capacity * correction_factor;
+  const size_t suggested_capacity = align_up(size_t(heuristic_max_capacity * correction_factor), ZGranuleSize);
   const size_t selected_capacity = clamp(suggested_capacity, lower_bound, upper_bound);
 
   if (selected_capacity != heuristic_max_capacity) {
+    log_debug(gc, heap)("CPU Overhead Error: %.3f, GC Frequency Error: %.3f", cpu_overhead_error, gc_frequency_error);
     log_debug(gc, heap)("Target heap lower bound: " SIZE_FORMAT ", upper bound: " SIZE_FORMAT,
                         lower_bound / M, upper_bound / M);
     log_debug(gc, heap)("Suggested capacity: " SIZE_FORMAT ", selected capacity: " SIZE_FORMAT ", heuristic capacity: " SIZE_FORMAT,
                         suggested_capacity / M, selected_capacity / M, heuristic_max_capacity / M);
     log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
                         selected_capacity / M, double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, current_capacity / M);
+    log_info(gc, heap)("Heap Resize Percentage %.1f%%, GC Pressure: %.1f", double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, pressure);
   }
 
   return selected_capacity;
@@ -181,22 +179,40 @@ double ZAdaptiveHeap::young_to_old_gc_time() {
   return Atomic::load(&_young_to_old_gc_time);
 }
 
-// Exponentially increases as the last 15% of memory on the machine gets eaten.
-double ZAdaptiveHeap::memory_pressure(double total_memory) {
-  const double available_memory = (double)os::available_memory();
-  const double memory_reserve_fraction = double(2.0 * available_memory / 3.0) / double(total_memory);
-  const double linear_scaling = 1.0 - MIN2(ZMemoryHighThreshold, memory_reserve_fraction) / ZMemoryHighThreshold;
+// Exponentially increases as the last 5% of memory on the machine gets eaten.
+double ZAdaptiveHeap::memory_pressure(size_t available_memory, size_t total_memory) {
+  // The remaining memory reserve of the machine
+  const double memory_reserve_fraction = double(available_memory) / double(total_memory);
 
-  // The natural exponential function seemed like a... natural choice.
-  return pow(M_E, ZGCPressure * linear_scaling);
+  // Squared GC pressure is "high"
+  const double high_pressure = MIN2(ZGCPressure, 1.0);
+
+  if (memory_reserve_fraction < ZMemoryHighThreshold) {
+    // When memory pressure is "high", we exponentially scale up memory pressure,
+    // from the already "high" pressure induced by "concerning" memory pressure.
+    const double progression = 1.0 - memory_reserve_fraction / ZMemoryHighThreshold;
+
+    return high_pressure + pow(M_E, ZGCPressure * progression);
+  }
+
+  if (memory_reserve_fraction < ZMemoryConcerningThreshold) {
+    // When memory pressure is "concerning", we linearly scale up memory pressure to the
+    // "high" GC pressure (i.e. gc pressure squared).
+    const double progression = 1.0 - (ZMemoryHighThreshold - memory_reserve_fraction) / (ZMemoryConcerningThreshold - ZMemoryHighThreshold);
+
+    return high_pressure * progression;
+  }
+
+  return 1.0;
 }
 
 double ZAdaptiveHeap::gc_pressure(double cpu_usage) {
-  const double total_memory = (double)os::physical_memory();
-  const double mem_pressure = memory_pressure(total_memory);
+  const size_t available_memory = os::available_memory();
+  const size_t total_memory = os::physical_memory();
+  const double mem_pressure = memory_pressure(available_memory, total_memory);
 
-  const double used_memory = (double)ZHeap::heap()->heuristic_max_capacity();
-  const double memory_usage = used_memory / total_memory;
+  const size_t used_memory = ZHeap::heap()->heuristic_max_capacity();
+  const double memory_usage = double(used_memory) / double(total_memory);
 
   // The CPU overhead is scaled by what portion of CPU resources are being
   // used. As CPU utilization of the machine gets higher, there will be more
@@ -213,6 +229,13 @@ uint64_t ZAdaptiveHeap::uncommit_delay() {
     return ZUncommitDelay;
   }
 
-  const double total_memory = (double)os::physical_memory();
-  return uint64_t(ZUncommitDelay / memory_pressure(total_memory));
+  const size_t available_memory = os::available_memory();
+  const size_t total_memory = os::physical_memory();
+
+  // If we are critically low on memory, aggressively free up memory
+  if (double(available_memory) / double(total_memory) <= ZMemoryCriticalThreshold) {
+    return 0;
+  }
+
+  return uint64_t(ZUncommitDelay / memory_pressure(available_memory, total_memory));
 }

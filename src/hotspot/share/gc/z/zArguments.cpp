@@ -33,6 +33,21 @@
 #include "runtime/globals.hpp"
 #include "runtime/globals_extension.hpp"
 #include "runtime/java.hpp"
+#include "runtime/os.hpp"
+#ifdef LINUX
+#include "os_linux.hpp"
+#endif
+
+static size_t machine_memory() {
+  // We might need to scale up to most of the underlying machine memory. Note that
+  // container sizes may change, so we need to prepare for sizing up larger than
+  // the container size reported by os::physical_memory.
+#ifdef LINUX
+  return os::Linux::physical_memory();
+#else
+  return os::physical_memory();
+#endif
+}
 
 void ZArguments::initialize_alignments() {
   SpaceAlignment = ZGranuleSize;
@@ -46,19 +61,16 @@ void ZArguments::set_heap_size() {
   }
 
   const size_t default_min_heap_size_bytes = 16 * M;
-  const double default_max_heap_size_percent = 85.0;
+  const double default_max_heap_size_percent = 100.0 - ZMemoryConcerningThreshold * 100.0;
 
   const bool unspecified_max_heap_size =  !FLAG_IS_CMDLINE(MaxHeapSize) &&
-                                          !FLAG_IS_CMDLINE(MaxRAMPercentage) &&
-                                          !FLAG_IS_CMDLINE(MaxRAM) &&
-                                          !FLAG_IS_CMDLINE(ErgoHeapSizeLimit);
+                                          !FLAG_IS_CMDLINE(MaxRAMPercentage);
   const bool unspecified_min_heap_size =  !FLAG_IS_CMDLINE(MinHeapSize) &&
                                           !FLAG_IS_CMDLINE(MinRAMPercentage);
   const bool unspecified_init_heap_size = !FLAG_IS_CMDLINE(InitialHeapSize) &&
                                           !FLAG_IS_CMDLINE(InitialRAMPercentage);
   if (unspecified_max_heap_size) {
-    // We are really just guessing how much memory the program needs.
-    // Let's guess something high but try to keep it down adaptively.
+    FLAG_SET_ERGO(MaxRAM, machine_memory());
     FLAG_SET_ERGO(MaxRAMPercentage, default_max_heap_size_percent);
   }
   if (unspecified_min_heap_size) {
