@@ -291,7 +291,7 @@ bool ZPageAllocator::prime_cache(ZWorkers* workers, size_t size) {
   return true;
 }
 
-void ZPageAllocator::prime_alloc_page(size_t size) {
+bool ZPageAllocator::prime_alloc_page(size_t size) {
   ZAllocationFlags flags;
   flags.set_non_blocking();
   flags.set_low_address();
@@ -299,7 +299,7 @@ void ZPageAllocator::prime_alloc_page(size_t size) {
 
   ZPage* const page = alloc_page(ZPageType::large, size, flags, ZPageAge::eden);
   if (page == nullptr) {
-    return;
+    return false;
   }
 
   // Pre-touch page
@@ -307,6 +307,8 @@ void ZPageAllocator::prime_alloc_page(size_t size) {
 
   // Populate page cache
   free_page(page);
+
+  return true;
 }
 
 size_t ZPageAllocator::initial_capacity() const {
@@ -322,14 +324,20 @@ size_t ZPageAllocator::max_capacity() const {
 }
 
 size_t ZPageAllocator::current_max_capacity() const {
-  size_t max_capacity = _max_capacity;
-  size_t capacity = Atomic::load(&_capacity);
-  size_t unused_memory = os::available_memory();
-  size_t machine_memory = os::physical_memory();
-  size_t used_memory = machine_memory - unused_memory;
-  size_t hard_machine_memory_limit = machine_memory * (1.0 - ZMemoryCriticalThreshold);
-  size_t available_machine_memory = used_memory > hard_machine_memory_limit ? 0 : (hard_machine_memory_limit - used_memory);
-  size_t max_capacity_available = align_down(capacity + available_machine_memory, ZGranuleSize);
+  const size_t max_capacity = _max_capacity;
+  const size_t capacity = Atomic::load(&_capacity);
+  const size_t machine_memory = os::physical_memory();
+  const size_t unused_memory = MIN2(os::available_memory(), machine_memory);
+  const size_t used_memory = machine_memory - unused_memory;
+  const size_t hard_machine_memory_limit = machine_memory * (1.0 - ZMemoryCriticalThreshold);
+  const size_t available_machine_memory = used_memory > hard_machine_memory_limit ? 0 : (hard_machine_memory_limit - used_memory);
+  // It is a bit naive to assume all available memory can be directly turned
+  // into our own heap memory. We need auxiliary GC data structures, and other
+  // processes can also take the memory as we might not be alone. By scaling
+  // the available memory we stay on the pessimistic size, and let the estimated
+  // current max capacity grow gradually as we approach the limits instead.
+  const size_t scaled_available_machine_memory = available_machine_memory * 0.8;
+  const size_t max_capacity_available = align_down(capacity + scaled_available_machine_memory, ZGranuleSize);
 
   return MIN2(max_capacity_available, max_capacity);
 }
@@ -338,8 +346,7 @@ size_t ZPageAllocator::heuristic_max_capacity() const {
   // Note that SoftMaxHeapSize is a manageable flag
   const size_t soft_max_capacity = Atomic::load(&SoftMaxHeapSize);
   const size_t curr_max_capacity = current_max_capacity();
-  const size_t heuristic_max_capacity = ZAdaptiveHeap::is_enabled() ? Atomic::load(&_heuristic_max_capacity)
-                                                                    : soft_max_capacity;
+  const size_t heuristic_max_capacity = Atomic::load(&_heuristic_max_capacity);
   return MIN2(heuristic_max_capacity, curr_max_capacity);
 }
 
@@ -936,15 +943,14 @@ size_t ZPageAllocator::uncommit(uint64_t* timeout) {
   // used, to make sure GC safepoints will have a consistent view.
   ZList<ZPage> pages;
   size_t flushed;
+  const size_t heuristic_max = heuristic_max_capacity();
 
   {
     SuspendibleThreadSetJoiner sts_joiner;
     ZLocker<ZLock> locker(&_lock);
-
     // Never uncommit below min capacity. We flush out and uncommit chunks at
     // a time (~0.8% of the max capacity, but at least one granule and at most
     // 256M), in case demand for memory increases while we are uncommitting.
-    const size_t heuristic_max = heuristic_max_capacity();
     const size_t retain = clamp(size_t(_used * 1.05), _min_capacity, _max_capacity);
     const size_t release = align_down(_capacity - retain, ZGranuleSize);
     const size_t limit = MIN2(align_up(heuristic_max >> 7, ZGranuleSize), 256 * M);
@@ -957,12 +963,14 @@ size_t ZPageAllocator::uncommit(uint64_t* timeout) {
       return 0;
     }
 
-    if (heuristic_max > _capacity) {
+    size_t new_capacity = _capacity - flushed;
+
+    if (heuristic_max > new_capacity) {
       // The heap has shrunk; update heuristic heap size to reflect if necessary
       log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
-                          _capacity / M, double(_capacity) / double(heuristic_max) * 100.0 - 100.0, _capacity / M);
-      _mapper->set_target_capacity(_capacity);
-      Atomic::store(&_heuristic_max_capacity, _capacity);
+                          _capacity / M, double(new_capacity) / double(heuristic_max) * 100.0 - 100.0, new_capacity / M);
+      Atomic::store(&_heuristic_max_capacity, new_capacity);
+      _mapper->set_target_capacity(new_capacity);
     }
 
     // Record flushed pages as claimed

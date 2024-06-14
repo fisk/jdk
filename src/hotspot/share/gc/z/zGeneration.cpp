@@ -382,7 +382,7 @@ void ZGeneration::at_collection_start(ConcurrentGCTimer* gc_timer) {
 
 void ZGeneration::at_collection_end() {
   workers()->set_inactive();
-  if (should_record_stats() && ZAdaptiveHeap::is_enabled()) {
+  if (should_record_stats()) {
     ZHeap::heap()->adapt_heuristic_max_capacity(_id);
   }
   stat_cycle()->at_end(stat_workers(), should_record_stats());

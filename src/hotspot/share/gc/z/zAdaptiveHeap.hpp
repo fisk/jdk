@@ -58,16 +58,14 @@ private:
   static ZGenerationOverhead _young_data;
   static ZGenerationOverhead _old_data;
 
-  static double memory_pressure(size_t available_memory, size_t total_memory);
+  static double gc_pressure(double unscaled_pressure, double cpu_usage);
+  static double memory_pressure(double unscaled_pressure, size_t available_memory, size_t total_memory);
 
 public:
-  static bool is_enabled();
-  static void enable();
+  static void initialize();
 
   static size_t compute_heap_size(ZHeapResizeMetrics* metrics, ZGenerationId generation);
   static double young_to_old_gc_time();
-
-  static double gc_pressure(double cpu_usage);
 
   static uint64_t uncommit_delay();
 };

@@ -47,8 +47,8 @@
   product(bool, ZCollectionIntervalOnly, false,                             \
           "Only use timers for GC heuristics")                              \
                                                                             \
-  product(double, ZGCPressure, 5,                                           \
-          "Level of GC pressure, used for automatic heap sizing")           \
+  product(double, ZGCPressure, 5, MANAGEABLE,                               \
+          "Level of GC pressure, used for automatic heap sizing policies")  \
                                                                             \
   product(bool, ZBufferStoreBarriers, true, DIAGNOSTIC,                     \
           "Buffer store barriers")                                          \

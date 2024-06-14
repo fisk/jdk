@@ -67,6 +67,8 @@ void ZMapper::run_thread() {
       return;
     }
 
+    size_t committed = 0;
+
     for (;;) {
       const size_t target_capacity = Atomic::load(&_target_capacity);
       const size_t capacity = _page_allocator->capacity();
@@ -85,10 +87,14 @@ void ZMapper::run_thread() {
 
       const size_t size = available < granule ? ZPageSizeSmall : granule;
 
-      log_debug(gc, heap)("Mapping " SIZE_FORMAT "M page (" SIZE_FORMAT "M / " SIZE_FORMAT "M target)",
-                          size / M, capacity / M, target_capacity / M);
+      if (_page_allocator->prime_alloc_page(size)) {
+        committed += size;
+      }
+    }
 
-      _page_allocator->prime_alloc_page(size);
+    if (committed > 0) {
+      log_info(gc, heap)("Committed: " SIZE_FORMAT "M(%.0f%%)",
+                         committed / M, percent_of(committed, ZHeap::heap()->max_capacity()));
     }
   }
 }

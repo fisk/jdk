@@ -56,7 +56,8 @@ void ZArguments::initialize_alignments() {
 
 void ZArguments::set_heap_size() {
   if (ZGCPressure <= 0.0) {
-    // Don't set up adaptive heap when explicitly turned off
+    // Don't set up generous heap boundaries when automatic heap sizing is
+    // explicitly turned off
     return;
   }
 
@@ -92,9 +93,7 @@ void ZArguments::initialize_heap_flags_and_sizes() {
     FLAG_SET_ERGO(SoftMaxHeapSize, MaxHeapSize * 90 / 100);
   }
 
-  if (ZGCPressure > 0.0) {
-    ZAdaptiveHeap::enable();
-  }
+  ZAdaptiveHeap::initialize();
 };
 
 void ZArguments::select_max_gc_threads() {

@@ -35,17 +35,64 @@
 
 #include <math.h>
 
-bool ZAdaptiveHeap::_enabled = false;
 volatile double ZAdaptiveHeap::_young_to_old_gc_time = 1.0;
 double ZAdaptiveHeap::_accumulated_young_gc_time = 0.0;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_young_data;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_old_data;
 
-void ZAdaptiveHeap::enable() {
+void ZAdaptiveHeap::initialize() {
   double time_now = os::elapsed_process_vtime();
-  _enabled = true;
   _young_data._last_process_time = time_now;
   _old_data._last_process_time = time_now;
+}
+
+double ZAdaptiveHeap::young_to_old_gc_time() {
+  return Atomic::load(&_young_to_old_gc_time);
+}
+
+// Exponentially increases as the last 5% of memory on the machine gets eaten.
+double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t available_memory, size_t total_memory) {
+  // The remaining memory reserve of the machine
+  const double memory_reserve_fraction = double(available_memory) / double(total_memory);
+
+  // Squared GC pressure is "high"
+  const double high_pressure = MIN2(unscaled_pressure, 1.0);
+
+  if (memory_reserve_fraction < ZMemoryHighThreshold) {
+    // When memory pressure is "high", we exponentially scale up memory pressure,
+    // from the already "high" pressure induced by "concerning" memory pressure.
+    const double progression = 1.0 - memory_reserve_fraction / ZMemoryHighThreshold;
+
+    return high_pressure + pow(M_E, unscaled_pressure * progression);
+  }
+
+  if (memory_reserve_fraction < ZMemoryConcerningThreshold) {
+    // When memory pressure is "concerning", we linearly scale up memory pressure to the
+    // "high" GC pressure (i.e. gc pressure squared).
+    const double progression = 1.0 - (ZMemoryHighThreshold - memory_reserve_fraction) / (ZMemoryConcerningThreshold - ZMemoryHighThreshold);
+
+    return high_pressure * progression;
+  }
+
+  return 1.0;
+}
+
+double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
+  const size_t total_memory = os::physical_memory();
+  const size_t available_memory = MIN2(os::available_memory(), total_memory);
+  const double mem_pressure = memory_pressure(unscaled_pressure, available_memory, total_memory);
+
+  const size_t used_memory = ZHeap::heap()->heuristic_max_capacity();
+  const double memory_usage = double(used_memory) / double(total_memory);
+
+  // The CPU overhead is scaled by what portion of CPU resources are being
+  // used. As CPU utilization of the machine gets higher, there will be more
+  // fighting between mutator threads for CPU time, affecting latencies.
+  // Then we want to increasingly stay out of the way.
+  const double critical_cpu_usage = cpu_usage * 2.0;
+  const double cpu_scaling = MAX2(1.0, memory_usage / critical_cpu_usage);
+
+  return unscaled_pressure * cpu_scaling * mem_pressure;
 }
 
 // Produces values in the range 0 - 1 in an S shape
@@ -54,7 +101,12 @@ static double sigmoid_function(double value) {
 }
 
 size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGenerationId generation) {
-  assert(is_enabled(), "Adapting heap even though adaptation is disabled");
+  double unscaled_pressure = Atomic::load(&ZGCPressure);
+
+  if (unscaled_pressure <= 0.0) {
+    return ZHeap::heap()->max_capacity();
+  }
+
   const bool is_major = Thread::current() == ZDriver::major();
   const GCCause::Cause cause = is_major ? ZDriver::major()->gc_cause() : ZDriver::minor()->gc_cause();
   const bool is_heap_pressure_gc = cause == GCCause::_z_allocation_rate ||
@@ -93,11 +145,11 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const size_t used = metrics->_used;
 
   const double machine_load = clamp((process_time / time_since_last) / double(os::active_processor_count()), 0.0, 1.0);
-  const double pressure = gc_pressure(machine_load);
+  const double scaled_pressure = gc_pressure(unscaled_pressure, machine_load);
 
   // Since a GC cycle is obviously round, we can estimate the minimum bytes due to
   // a particular allocation rate and GC pressure by calculating GC pressure * pi
-  const double alloc_rate_scaling = pressure * M_PI;
+  const double alloc_rate_scaling = scaled_pressure * M_PI;
   const double alloc_rate = metrics->_alloc_rate;
   const size_t heuristic_low = MAX2(size_t(used * 1.1), size_t(alloc_rate / alloc_rate_scaling));
 
@@ -122,14 +174,14 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   // available CPU cores.. The ConcGCThreads sizing by default goes up to
   // a maximum of 25% of the available cores. So all ConcGCThreads would
   // be running back to back then.
-  const double target_cpu_overhead = pressure / 40.0;
+  const double target_cpu_overhead = scaled_pressure / 40.0;
   const double cpu_overhead_error = avg_cpu_overhead - target_cpu_overhead;
 
   // High GC frequencies lead to extra overheads such as barrier storms
   // Therefore, we add a factor that ensures there is at least some social
   // distancing between GCs, even when the GC overhead is small. The size of
   // the factor scales with the level of load induced on the machine.
-  const double min_fully_loaded_gc_interval = 5.0 / pressure;
+  const double min_fully_loaded_gc_interval = 5.0 / scaled_pressure;
   const double min_gc_interval = min_fully_loaded_gc_interval / 4.0;
   const double gc_frequency_error = MAX2(min_gc_interval, machine_load * min_fully_loaded_gc_interval) - cycle_stats._time_since_last;
 
@@ -141,8 +193,8 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
     // Don't have enough data to shrink in young collections, so we try to
     // avoid it if we can. But in desperate times, when the machine is running
     // dry on memory, we will try to shrink even in young collections.
-    double available_memory = (double)os::available_memory();
-    double total_memory = (double)os::physical_memory();
+    size_t total_memory = os::physical_memory();
+    size_t available_memory = MIN2(os::available_memory(), total_memory);
     double memory_reserve_fraction = double(available_memory) / double(total_memory);
 
     if (memory_reserve_fraction > ZMemoryHighThreshold) {
@@ -165,77 +217,22 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
                         suggested_capacity / M, selected_capacity / M, heuristic_max_capacity / M);
     log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
                         selected_capacity / M, double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, current_capacity / M);
-    log_info(gc, heap)("Heap Resize Percentage %.1f%%, GC Pressure: %.1f", double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, pressure);
+    log_info(gc, heap)("Heap Resize Percentage %.1f%%, GC Pressure: %.1f", double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, scaled_pressure);
   }
 
   return selected_capacity;
 }
 
-bool ZAdaptiveHeap::is_enabled() {
-  return _enabled;
-}
-
-double ZAdaptiveHeap::young_to_old_gc_time() {
-  return Atomic::load(&_young_to_old_gc_time);
-}
-
-// Exponentially increases as the last 5% of memory on the machine gets eaten.
-double ZAdaptiveHeap::memory_pressure(size_t available_memory, size_t total_memory) {
-  // The remaining memory reserve of the machine
-  const double memory_reserve_fraction = double(available_memory) / double(total_memory);
-
-  // Squared GC pressure is "high"
-  const double high_pressure = MIN2(ZGCPressure, 1.0);
-
-  if (memory_reserve_fraction < ZMemoryHighThreshold) {
-    // When memory pressure is "high", we exponentially scale up memory pressure,
-    // from the already "high" pressure induced by "concerning" memory pressure.
-    const double progression = 1.0 - memory_reserve_fraction / ZMemoryHighThreshold;
-
-    return high_pressure + pow(M_E, ZGCPressure * progression);
-  }
-
-  if (memory_reserve_fraction < ZMemoryConcerningThreshold) {
-    // When memory pressure is "concerning", we linearly scale up memory pressure to the
-    // "high" GC pressure (i.e. gc pressure squared).
-    const double progression = 1.0 - (ZMemoryHighThreshold - memory_reserve_fraction) / (ZMemoryConcerningThreshold - ZMemoryHighThreshold);
-
-    return high_pressure * progression;
-  }
-
-  return 1.0;
-}
-
-double ZAdaptiveHeap::gc_pressure(double cpu_usage) {
-  const size_t available_memory = os::available_memory();
-  const size_t total_memory = os::physical_memory();
-  const double mem_pressure = memory_pressure(available_memory, total_memory);
-
-  const size_t used_memory = ZHeap::heap()->heuristic_max_capacity();
-  const double memory_usage = double(used_memory) / double(total_memory);
-
-  // The CPU overhead is scaled by what portion of CPU resources are being
-  // used. As CPU utilization of the machine gets higher, there will be more
-  // fighting between mutator threads for CPU time, affecting latencies.
-  // Then we want to increasingly stay out of the way.
-  const double critical_cpu_usage = cpu_usage * 2.0;
-  const double cpu_scaling = MAX2(1.0, memory_usage / critical_cpu_usage);
-
-  return ZGCPressure * cpu_scaling * mem_pressure;
-}
-
 uint64_t ZAdaptiveHeap::uncommit_delay() {
-  if (!is_enabled()) {
-    return ZUncommitDelay;
-  }
-
-  const size_t available_memory = os::available_memory();
   const size_t total_memory = os::physical_memory();
+  const size_t available_memory = MIN2(os::available_memory(), total_memory);
 
   // If we are critically low on memory, aggressively free up memory
   if (double(available_memory) / double(total_memory) <= ZMemoryCriticalThreshold) {
     return 0;
   }
 
-  return uint64_t(ZUncommitDelay / memory_pressure(available_memory, total_memory));
+  const double unscaled_pressure = Atomic::load(&ZGCPressure);
+
+  return uint64_t(ZUncommitDelay / memory_pressure(unscaled_pressure, available_memory, total_memory));
 }

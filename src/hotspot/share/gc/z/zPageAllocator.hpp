@@ -105,7 +105,7 @@ private:
   void map_page(const ZPage* page) const;
   void unmap_page(const ZPage* page) const;
 
-  void prime_alloc_page(size_t size);
+  bool prime_alloc_page(size_t size);
 
   void destroy_page(ZPage* page);
 

@@ -35,6 +35,8 @@
 #include "hugepages.hpp"
 #include "logging/log.hpp"
 #include "os_linux.hpp"
+#include "runtime/globals.hpp"
+#include "runtime/globals_extension.hpp"
 #include "runtime/init.hpp"
 #include "runtime/os.hpp"
 #include "runtime/safefetch.hpp"
@@ -364,7 +366,13 @@ void ZPhysicalMemoryBacking::warn_max_map_count(size_t max_capacity) const {
 }
 
 void ZPhysicalMemoryBacking::warn_commit_limits(size_t max_capacity) const {
-  // TODO: Find way of disabling this when xmx not specified
+  const bool unspecified_max_heap_size = !FLAG_IS_CMDLINE(MaxHeapSize) &&
+                                         !FLAG_IS_CMDLINE(MaxRAMPercentage);
+
+  if (unspecified_max_heap_size) {
+    return;
+  }
+
   // Warn if available space is too low
   warn_available_space(max_capacity);
 
