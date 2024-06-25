@@ -189,7 +189,7 @@ julong os::Bsd::compressed_memory() {
   assert(kerr == KERN_SUCCESS,
          "host_statistics64 failed - check mach_host_self() and count");
   if (kerr == KERN_SUCCESS) {
-    compressed = vmstat.compressed_count * os::vm_page_size();
+    compressed = vmstat.compressor_page_count * os::vm_page_size();
   }
 #endif
   return compressed;

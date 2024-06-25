@@ -82,7 +82,7 @@ double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t available
 
 double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
   const size_t total_memory = os::physical_memory();
-  const size_t available_memory = MIN2(os::available_memory(), total_memory);
+  const size_t available_memory = MIN2(size_t(os::available_memory()), total_memory);
   const double mem_pressure = memory_pressure(unscaled_pressure, available_memory, total_memory);
 
   const size_t used_memory = ZHeap::heap()->heuristic_max_capacity();
@@ -229,7 +229,7 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
 
 uint64_t ZAdaptiveHeap::uncommit_delay() {
   const size_t total_memory = os::physical_memory();
-  const size_t available_memory = MIN2(os::available_memory(), total_memory);
+  const size_t available_memory = MIN2(size_t(os::available_memory()), total_memory);
 
   // If we are critically low on memory, aggressively free up memory
   if (double(available_memory) / double(total_memory) <= ZMemoryCriticalThreshold) {

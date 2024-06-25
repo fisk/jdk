@@ -78,6 +78,9 @@
 #include "utilities/macros.hpp"
 #include "utilities/powerOfTwo.hpp"
 
+#ifdef __APPLE__
+# include "os_bsd.hpp"
+#endif
 #ifndef _WINDOWS
 # include <poll.h>
 #endif
