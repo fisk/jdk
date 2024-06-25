@@ -338,6 +338,7 @@ class os: AllStatic {
   // aggressively (e.g. clear caches) so that it becomes available.
   static julong available_memory();
   static julong free_memory();
+  static julong compressed_memory();
 
   static jlong total_swap_space();
   static jlong free_swap_space();

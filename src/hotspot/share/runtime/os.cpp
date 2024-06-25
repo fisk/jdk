@@ -2064,6 +2064,14 @@ static void assert_nonempty_range(const char* addr, size_t bytes) {
          p2i(addr), p2i(addr) + bytes);
 }
 
+julong os::compressed_memory() {// TODO: Move somewhere better
+#ifdef __APPLE__
+  return os::Bsd::compressed_memory();
+#else
+  return 0;
+#endif
+}
+
 bool os::commit_memory(char* addr, size_t bytes, bool executable) {
   assert_nonempty_range(addr, bytes);
   bool res = pd_commit_memory(addr, bytes, executable);

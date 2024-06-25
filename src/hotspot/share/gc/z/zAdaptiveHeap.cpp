@@ -58,6 +58,9 @@ double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t available
   // Squared GC pressure is "high"
   const double high_pressure = MAX2(unscaled_pressure, 2.0);
 
+  const size_t used_memory = total_memory - available_memory; // TODO: Change this
+  const double concerning_threshold = MIN2(ZMemoryConcerningThreshold, double(os::compressed_memory()) / double(used_memory));
+
   if (memory_reserve_fraction < ZMemoryHighThreshold) {
     // When memory pressure is "high", we exponentially scale up memory pressure,
     // from the already "high" pressure induced by "concerning" memory pressure.
@@ -66,10 +69,10 @@ double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t available
     return high_pressure + pow(high_pressure, high_pressure * (1.0 + progression));
   }
 
-  if (memory_reserve_fraction < ZMemoryConcerningThreshold) {
+  if (memory_reserve_fraction < concerning_threshold) {
     // When memory pressure is "concerning", we linearly scale up memory pressure to the
     // "high" GC pressure (i.e. gc pressure squared).
-    const double progression = 1.0 - (memory_reserve_fraction - ZMemoryHighThreshold) / (ZMemoryConcerningThreshold - ZMemoryHighThreshold);
+    const double progression = 1.0 - (memory_reserve_fraction - ZMemoryHighThreshold) / (concerning_threshold - ZMemoryHighThreshold);
 
     return 1.0 + ((high_pressure - 1.0) * progression);
   }
