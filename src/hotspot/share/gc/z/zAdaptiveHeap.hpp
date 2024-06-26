@@ -63,7 +63,7 @@ private:
   static ZGenerationOverhead _old_data;
 
   static double gc_pressure(double unscaled_pressure, double cpu_usage);
-  static double memory_pressure(double unscaled_pressure, size_t available_memory, size_t total_memory);
+  static double memory_pressure(double unscaled_pressure, size_t used_memory, size_t total_memory);
 
 public:
   static void initialize();

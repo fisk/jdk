@@ -51,16 +51,28 @@ double ZAdaptiveHeap::young_to_old_gc_time() {
 }
 
 // Exponentially increases as the last 5% of memory on the machine gets eaten.
-double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t available_memory, size_t total_memory) {
+double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t used_memory, size_t total_memory) {
+  const size_t available_memory = total_memory - used_memory;
+
   // The remaining memory reserve of the machine
   const double memory_reserve_fraction = double(available_memory) / double(total_memory);
 
   // Squared GC pressure is "high"
   const double high_pressure = MAX2(unscaled_pressure, 2.0);
 
-  const size_t used_memory = total_memory - available_memory; // TODO: Change this
-  const size_t compressed_memory = os::compressed_memory(); // TODO: move this
-  const double concerning_threshold = ZMemoryConcerningThreshold + double(compressed_memory) / double(used_memory) * (1.0 - ZMemoryConcerningThreshold);
+  const size_t compressed_memory = os::compressed_memory(); // TODO: move this?
+
+  // The concerning threshold is after which memory utilization we start trying
+  // harder to keep the memory down. There are multiple reasons for letting the GC
+  // run hotter:
+  // 1) We want to maintain some headeroom on the machine so that we can deal with
+  //    spikes without getting allocation stalls.
+  // 2) It's good to let the OS keep some file system cache memory around
+  // 3) On systems that compress used memory, using compressed memory is not a
+  //    free lunch as it leads to page faults that compress and decompress memory.
+  //    This is extra painful for a tracing GC to traverse.
+  const double concerning_compressed_threshold = MIN2(double(compressed_memory) / double(used_memory), 1.0) * (1.0 - ZMemoryConcerningThreshold);
+  const double concerning_threshold = ZMemoryConcerningThreshold + concerning_compressed_threshold;
 
   if (memory_reserve_fraction < ZMemoryHighThreshold) {
     // When memory pressure is "high", we exponentially scale up memory pressure,
@@ -83,11 +95,11 @@ double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t available
 
 double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
   const size_t total_memory = os::physical_memory();
-  const size_t available_memory = MIN2(size_t(os::available_memory()), total_memory);
-  const double mem_pressure = memory_pressure(unscaled_pressure, available_memory, total_memory);
+  const size_t used_memory = os::used_memory();
+  const double mem_pressure = memory_pressure(unscaled_pressure, used_memory, total_memory);
 
-  const size_t used_memory = ZHeap::heap()->heuristic_max_capacity();
-  const double memory_usage = double(used_memory) / double(total_memory);
+  const size_t heuristic_max_capacity = ZHeap::heap()->heuristic_max_capacity();
+  const double memory_usage = double(heuristic_max_capacity) / double(total_memory);
 
   // The CPU overhead is scaled by what portion of CPU resources are being
   // used. As CPU utilization of the machine gets higher, there will be more
@@ -100,8 +112,8 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
 
   const double result = unscaled_pressure * cpu_scaling * mem_pressure;
 
-  log_info(gc, heap)("GC Pressure: %.1f, CPU: %.1f%%, CPU Scaling: %.1f, Available Memory: %.1f%%, Memory Scaling: %.1f",
-                     result, cpu_usage * 100.0, cpu_scaling, double(available_memory) / double(total_memory) * 100.0, mem_pressure);
+  log_info(gc, heap)("GC Pressure: %.1f, CPU Usage: %.1f%%, CPU Pressure: %.1f, Used Memory: %.1f%%, Memory Pressure: %.1f",
+                     result, cpu_usage * 100.0, cpu_scaling, double(used_memory) / double(total_memory) * 100.0, mem_pressure);
 
   return result;
 }
@@ -230,16 +242,16 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
 
 uint64_t ZAdaptiveHeap::uncommit_delay() {
   const size_t total_memory = os::physical_memory();
-  const size_t available_memory = MIN2(size_t(os::available_memory()), total_memory);
+  const size_t used_memory = os::used_memory();
 
   // If we are critically low on memory, aggressively free up memory
-  if (double(available_memory) / double(total_memory) <= ZMemoryCriticalThreshold) {
+  if (double(used_memory) / double(total_memory) >= 1.0 - ZMemoryCriticalThreshold) {
     return 0;
   }
 
   const double unscaled_pressure = Atomic::load(&ZGCPressure);
-  const double excess_pressure = memory_pressure(unscaled_pressure, available_memory, total_memory) - 1.0;
-  const double pressure = 1.0 + excess_pressure * 10;
+  const double excess_pressure = memory_pressure(unscaled_pressure, used_memory, total_memory) - 1.0;
+  const double pressure = 1.0 + excess_pressure * unscaled_pressure;
 
   return uint64_t(ZUncommitDelay / pressure);
 }

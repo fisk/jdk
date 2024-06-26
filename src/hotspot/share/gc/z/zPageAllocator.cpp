@@ -335,8 +335,7 @@ size_t ZPageAllocator::current_max_capacity() const {
   const size_t max_capacity = _max_capacity;
   const size_t capacity = Atomic::load(&_capacity);
   const size_t machine_memory = os::physical_memory();
-  const size_t unused_memory = MIN2(size_t(os::available_memory()), machine_memory);
-  const size_t used_memory = machine_memory - unused_memory;
+  const size_t used_memory = os::used_memory();
   const size_t hard_machine_memory_limit = machine_memory * (1.0 - ZMemoryCriticalThreshold);
   const size_t available_machine_memory = used_memory > hard_machine_memory_limit ? 0 : (hard_machine_memory_limit - used_memory);
   // It is a bit naive to assume all available memory can be directly turned
