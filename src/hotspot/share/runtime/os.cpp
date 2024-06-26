@@ -2075,7 +2075,7 @@ julong os::used_memory() {
   return os::physical_memory() - os::available_memory();
 }
 
-julong os::compressed_memory() {// TODO: Move somewhere better
+julong os::compressed_memory() {
 #ifdef __APPLE__
   return os::Bsd::compressed_memory();
 #else
