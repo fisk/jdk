@@ -59,7 +59,8 @@ double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t available
   const double high_pressure = MAX2(unscaled_pressure, 2.0);
 
   const size_t used_memory = total_memory - available_memory; // TODO: Change this
-  const double concerning_threshold = MIN2(ZMemoryConcerningThreshold, double(os::compressed_memory()) / double(used_memory));
+  const size_t compressed_memory = os::compressed_memory(); // TODO: move this
+  const double concerning_threshold = ZMemoryConcerningThreshold + double(compressed_memory) / double(used_memory) * (1.0 - ZMemoryConcerningThreshold);
 
   if (memory_reserve_fraction < ZMemoryHighThreshold) {
     // When memory pressure is "high", we exponentially scale up memory pressure,
