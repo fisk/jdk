@@ -38,6 +38,8 @@ private:
   volatile size_t       _target_capacity;
   bool                  _stop;
 
+  size_t commit_granule(size_t capacity, size_t target_capacity);
+  bool should_commit(size_t granule, size_t capacity, size_t target_capacity);
   bool dequeue();
 
 protected:

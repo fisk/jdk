@@ -36,6 +36,20 @@ ZCommitter::ZCommitter(ZPageAllocator* page_allocator)
   create_and_start();
 }
 
+size_t ZCommitter::commit_granule(size_t capacity, size_t target_capacity) {
+  const size_t smallest_granule = ZGranuleSize;
+  const size_t largest_granule = ZPageSizeMedium;
+
+  const size_t heuristic_max_capacity = _page_allocator->heuristic_max_capacity();
+
+  // Don't allocate things that are larger than the largest medium page size, in the lower address space
+  return clamp(round_down_power_of_2(heuristic_max_capacity / 64), smallest_granule, largest_granule);
+}
+
+bool ZCommitter::should_commit(size_t granule, size_t capacity, size_t target_capacity) {
+  return capacity + granule <= target_capacity;
+}
+
 bool ZCommitter::dequeue() {
   ZLocker<ZConditionLock> locker(&_lock);
 
@@ -44,7 +58,12 @@ bool ZCommitter::dequeue() {
       return false;
     }
 
-    if (_page_allocator->capacity() < _target_capacity) {
+    const size_t capacity = _page_allocator->capacity();
+    const size_t target_capacity = _target_capacity;
+    const size_t granule = commit_granule(capacity, target_capacity);
+
+    if (should_commit(granule, capacity, target_capacity)) {
+      // At least one granule to commit
       return true;
     }
 
@@ -55,7 +74,12 @@ bool ZCommitter::dequeue() {
 void ZCommitter::set_target_capacity(size_t target_capacity) {
   ZLocker<ZConditionLock> locker(&_lock);
   Atomic::store(&_target_capacity, target_capacity);
-  if (_page_allocator->capacity() < _target_capacity) {
+
+  const size_t capacity = _page_allocator->capacity();
+  const size_t granule = commit_granule(capacity, target_capacity);
+
+  if (should_commit(granule, capacity, target_capacity)) {
+    // At least one granule to commit
     _lock.notify_all();
   }
 }
@@ -72,23 +96,15 @@ void ZCommitter::run_thread() {
     for (;;) {
       const size_t target_capacity = Atomic::load(&_target_capacity);
       const size_t capacity = _page_allocator->capacity();
-      const size_t used = _page_allocator->used();
-      const size_t heuristic_max_capacity = _page_allocator->heuristic_max_capacity();
+      const size_t granule = commit_granule(capacity, target_capacity);
 
-      if (capacity >= target_capacity) {
+      if (!should_commit(granule, capacity, target_capacity)) {
+        // We are done with committing
         break;
       }
 
-      const size_t remaining = target_capacity - capacity;
-      const size_t available = used > capacity ? 0 : capacity - used;
-      // Don't allocate things that are larger than the largest medium page size, in the lower address space
-      const size_t granule_upper_bound = clamp(round_down_power_of_2(remaining), ZGranuleSize, ZGranuleSize * 16);
-      const size_t granule = clamp(round_down_power_of_2(heuristic_max_capacity / 64), ZGranuleSize, granule_upper_bound);
-
-      const size_t size = available < granule ? ZPageSizeSmall : granule;
-
-      if (_page_allocator->prime_alloc_page(size)) {
-        committed += size;
+      if (_page_allocator->prime_alloc_page(granule)) {
+        committed += granule;
       }
     }
 
