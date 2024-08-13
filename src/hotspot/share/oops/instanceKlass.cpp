@@ -98,6 +98,10 @@
 #include "utilities/macros.hpp"
 #include "utilities/nativeStackPrinter.hpp"
 #include "utilities/stringUtils.hpp"
+#include "utilities/pair.hpp"
+#if INCLUDE_CDS
+#include "cds/bootstrapCapture.hpp"
+#endif
 #ifdef COMPILER1
 #include "c1/c1_Compiler.hpp"
 #endif
@@ -535,6 +539,7 @@ InstanceKlass::InstanceKlass(const ClassFileParser& parser, KlassKind kind, Refe
   _nonstatic_oop_map_size(nonstatic_oop_map_size(parser.total_oop_map_count())),
   _itable_len(parser.itable_size()),
   _nest_host_index(0),
+  _runtime_dependence_diagnosis(nullptr),
   _init_state(allocated),
   _reference_type(reference_type),
   _init_thread(nullptr)
@@ -845,13 +850,25 @@ void InstanceKlass::initialize_preemptable(TRAPS) {
 // Note: implementation moved to static method to expose the this pointer.
 void InstanceKlass::initialize(TRAPS) {
   if (this->should_be_initialized()) {
-    initialize_impl(CHECK);
+    initialize_impl(THREAD);
     // Note: at this point the class may be initialized
     //       OR it may be in the state of being initialized
     //       in case of recursive initialization!
   } else {
     assert(is_initialized(), "sanity check");
   }
+
+  if (AnalyzeRuntimeIndependence) {
+    BootstrapCapture::track_class_use(JavaThread::cast(THREAD), this);
+  }
+}
+
+void* InstanceKlass::runtime_dependence_diagnosis() const {
+  return AtomicAccess::load(&_runtime_dependence_diagnosis);
+}
+
+void InstanceKlass::set_runtime_dependence_diagnosis(void* value) {
+  AtomicAccess::store(&_runtime_dependence_diagnosis, value);
 }
 
 #ifdef ASSERT
@@ -1263,6 +1280,9 @@ void InstanceKlass::initialize_impl(TRAPS) {
 
     // Step 3
     if (is_being_initialized() && is_reentrant_initialization(jt)) {
+      if (AnalyzeRuntimeIndependence) {
+        BootstrapCapture::track_cyclic_class_initialization(jt, this);
+      }
       if (debug_logging_enabled) {
         ResourceMark rm(jt);
         log_debug(class, init)("Thread \"%s\" recursively initializing %s",
@@ -1718,7 +1738,10 @@ void InstanceKlass::call_class_initializer(TRAPS) {
     return;
   }
 
+  JavaThread* jt = JavaThread::current();
+
 #if INCLUDE_CDS
+  ClassInitializerCaptureScope clinitc(this);
   // This is needed to ensure the consistency of the archived heap objects.
   if (has_aot_initialized_mirror() && CDSConfig::is_loading_heap()) {
     AOTClassInitializer::call_runtime_setup(THREAD, this);
@@ -2714,6 +2737,8 @@ void InstanceKlass::remove_unshareable_info() {
     // If the class has failed verification, there is nothing else to remove.
     return;
   }
+
+  set_runtime_dependence_diagnosis(nullptr);
 
   // Reset to the 'allocated' state to prevent any premature accessing to
   // a shared class at runtime while the class is still being loaded and

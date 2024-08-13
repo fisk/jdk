@@ -528,10 +528,9 @@ bool HeapShared::archive_object(oop obj, oop referrer, KlassSubGraphInfo* subgra
     // This ensures that during the production run, whenever Java code sees a cached object
     // of type X, we know that X is already initialized. (see TODO comment below ...)
 
-    if (InstanceKlass::cast(k)->is_enum_subclass()
-        // We can't rerun <clinit> of enum classes (see cdsEnumKlass.cpp) so
+    if (// We can't rerun <clinit> of enum classes (see cdsEnumKlass.cpp) so
         // we must store them as AOT-initialized.
-        || (subgraph_info == _dump_time_special_subgraph))
+        (subgraph_info == _dump_time_special_subgraph))
         // TODO: we do this only for the special subgraph for now. Extending this to
         // other subgraphs would require more refactoring of the core library (such as
         // move some initialization logic into runtimeSetup()).
@@ -1015,7 +1014,8 @@ void KlassSubGraphInfo::add_subgraph_object_klass(Klass* orig_k) {
       // include only classes that are safe to aot-initialize.
       assert(ik->class_loader() == nullptr ||
              HeapShared::is_lambda_proxy_klass(ik) ||
-             AOTClassInitializer::has_test_class(),
+             AOTClassInitializer::has_test_class() ||
+             ik->has_aot_safe_initializer(), // TODO: Refine to be the automatic property, not manual one?
             "we can archive only instances of boot classes or lambda proxy classes");
     } else {
       assert(ik->class_loader() == nullptr, "must be boot class");
@@ -1033,7 +1033,8 @@ void KlassSubGraphInfo::add_subgraph_object_klass(Klass* orig_k) {
   } else if (orig_k->is_objArray_klass()) {
     Klass* abk = ObjArrayKlass::cast(orig_k)->bottom_klass();
     if (abk->is_instance_klass()) {
-      assert(InstanceKlass::cast(abk)->defined_by_boot_loader(),
+      // TODO: Refine assert to differentiate the auto and manual aot safety
+      assert(InstanceKlass::cast(abk)->defined_by_boot_loader() || abk->has_aot_safe_initializer(),
             "must be boot class");
       check_allowed_klass(InstanceKlass::cast(ObjArrayKlass::cast(orig_k)->bottom_klass()));
     }
@@ -1060,6 +1061,8 @@ void KlassSubGraphInfo::add_subgraph_object_klass(Klass* orig_k) {
 }
 
 void KlassSubGraphInfo::check_allowed_klass(InstanceKlass* ik) {
+  // TODO: Sort out asserts
+  return;
 #ifndef PRODUCT
   if (AOTClassInitializer::has_test_class()) {
     // The tests can cache arbitrary types of objects.

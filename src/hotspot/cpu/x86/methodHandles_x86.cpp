@@ -181,7 +181,7 @@ void MethodHandles::jump_from_method_handle(MacroAssembler* _masm, Register meth
 
   verify_method(_masm, method, temp, iid);
 
-  if (!for_compiler_entry && JvmtiExport::can_post_interpreter_events()) {
+  if (!for_compiler_entry && (AnalyzeRuntimeIndependence || JvmtiExport::can_post_interpreter_events())) {
     Label run_compiled_code;
     // JVMTI events, such as single-stepping, are implemented partly by avoiding running
     // compiled code in threads for which the event is enabled.  Check here for

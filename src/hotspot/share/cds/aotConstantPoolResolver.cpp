@@ -50,7 +50,7 @@ bool AOTConstantPoolResolver::is_resolution_deterministic(ConstantPool* cp, int 
     Klass* resolved_klass = cp->resolved_klass_at(cp_index);
     return resolved_klass != nullptr && is_class_resolution_deterministic(cp->pool_holder(), resolved_klass);
   } else if (cp->tag_at(cp_index).is_invoke_dynamic()) {
-    return is_indy_resolution_deterministic(cp, cp_index);
+    return should_dump_indy_resolution(cp, cp_index);
   } else if (cp->tag_at(cp_index).is_field() ||
              cp->tag_at(cp_index).is_method() ||
              cp->tag_at(cp_index).is_interface_method()) {
@@ -381,7 +381,7 @@ void AOTConstantPoolResolver::preresolve_indy_cp_entries(JavaThread* current, In
     ResolvedIndyEntry* rie = indy_entries->adr_at(i);
     int cp_index = rie->constant_pool_index();
     if (preresolve_list->at(cp_index) == true) {
-      if (!rie->is_resolved() && is_indy_resolution_deterministic(cp(), cp_index)) {
+      if (!rie->is_resolved() && should_dump_indy_resolution(cp(), cp_index)) {
         InterpreterRuntime::cds_resolve_invokedynamic(i, cp, THREAD);
         if (HAS_PENDING_EXCEPTION) {
           CLEAR_PENDING_EXCEPTION; // just ignore
@@ -410,13 +410,14 @@ bool AOTConstantPoolResolver::check_methodtype_signature(ConstantPool* cp, Symbo
         return false;
       }
 
-      if (SystemDictionaryShared::should_be_excluded(k)) {
-        if (log_is_enabled(Warning, aot, resolve)) {
-          ResourceMark rm;
-          log_warning(aot, resolve)("Cannot aot-resolve Lambda proxy because %s is excluded", k->external_name());
-        }
-        return false;
-      }
+      // TODO: Code below doesn't work in new context - find out how to fix it
+      //if (SystemDictionaryShared::should_be_excluded(k)) {
+      //  if (log_is_enabled(Warning, aot, resolve)) {
+      //    ResourceMark rm;
+      //    log_warning(aot, resolve)("Cannot aot-resolve Lambda proxy because %s is excluded", k->external_name());
+      //  }
+      //  return false;
+      //}
 
       if (ss.at_return_type() && return_type_ret != nullptr) {
         *return_type_ret = k;
@@ -483,11 +484,16 @@ bool AOTConstantPoolResolver::check_lambda_metafactory_methodhandle_arg(Constant
   return check_methodtype_signature(cp, sig);
 }
 
-bool AOTConstantPoolResolver::is_indy_resolution_deterministic(ConstantPool* cp, int cp_index) {
-  assert(cp->tag_at(cp_index).is_invoke_dynamic(), "sanity");
+bool AOTConstantPoolResolver::should_dump_indy_resolution(ConstantPool* cp, int cp_index) {
   if (!CDSConfig::is_dumping_invokedynamic()) {
     return false;
   }
+
+  return is_indy_resolution_deterministic(cp, cp_index);
+}
+
+bool AOTConstantPoolResolver::is_indy_resolution_deterministic(ConstantPool* cp, int cp_index) {
+  assert(cp->tag_at(cp_index).is_invoke_dynamic(), "sanity");
 
   InstanceKlass* pool_holder = cp->pool_holder();
   if (!SystemDictionaryShared::is_builtin(pool_holder)) {

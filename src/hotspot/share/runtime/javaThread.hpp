@@ -54,6 +54,7 @@
 #endif
 
 class AsyncExceptionHandshakeClosure;
+class BootstrapNode;
 class DeoptResourceMark;
 class InternalOOMEMark;
 class JNIHandleBlock;
@@ -1193,11 +1194,14 @@ public:
   // This field is checked by the interpreter which expects it to be an integer.
   int               _interp_only_mode;
 
- public:
+public:
   // used by the interpreter for fullspeed debugging support (see above)
   static ByteSize interp_only_mode_offset() { return byte_offset_of(JavaThread, _interp_only_mode); }
   bool is_interp_only_mode()                { return (_interp_only_mode != 0); }
   void set_interp_only_mode(bool val)       { _interp_only_mode = val ? 1 : 0; }
+  // TODO: Is the setter above safe?
+  void increment_interp_only_mode()         { _interp_only_mode++; }
+  void decrement_interp_only_mode()         { _interp_only_mode--; }
 
   // support for cached flag that indicates whether exceptions need to be posted for this thread
   // if this is false, we can avoid deoptimizing when events are thrown
@@ -1257,6 +1261,15 @@ private:
   InstanceKlass* _class_to_be_initialized;
   InstanceKlass* _class_being_initialized;
 
+  BootstrapNode* _active_bootstrap;
+
+public:
+  static ByteSize active_bootstrap_offset() { return byte_offset_of(JavaThread, _active_bootstrap); }
+
+  BootstrapNode* active_bootstrap() { return _active_bootstrap; };
+  void set_active_bootstrap(BootstrapNode* node) { _active_bootstrap = node; };
+
+private:
   // java.lang.Thread.sleep support
   ParkEvent * _SleepEvent;
 

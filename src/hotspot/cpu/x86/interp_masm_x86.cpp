@@ -42,6 +42,9 @@
 #include "runtime/safepointMechanism.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "utilities/powerOfTwo.hpp"
+#if INCLUDE_CDS
+#include "cds/bootstrapCapture.hpp"
+#endif
 
 // Implementation of InterpreterMacroAssembler
 
@@ -711,7 +714,7 @@ void InterpreterMacroAssembler::prepare_to_jump_from_interpreted() {
 void InterpreterMacroAssembler::jump_from_interpreted(Register method, Register temp) {
   prepare_to_jump_from_interpreted();
 
-  if (JvmtiExport::can_post_interpreter_events()) {
+  if (AnalyzeRuntimeIndependence || JvmtiExport::can_post_interpreter_events()) {
     Label run_compiled_code;
     // JVMTI events, such as single-stepping, are implemented partly by avoiding running
     // compiled code in threads for which the event is enabled.  Check here for
@@ -1655,6 +1658,22 @@ void InterpreterMacroAssembler::load_resolved_indy_entry(Register cache, Registe
     imull(index, index, sizeof(ResolvedIndyEntry)); // Scale the index to be the entry index * sizeof(ResolvedIndyEntry)
   }
   lea(cache, Address(cache, index, Address::times_1, Array<ResolvedIndyEntry>::base_offset_in_bytes()));
+
+  if (AnalyzeRuntimeIndependence) {
+    // Assess currently executing clinit/indy BSM runtime dependence
+    Label noprof;
+    movptr(rscratch2, Address(r15, JavaThread::active_bootstrap_offset()));
+    cmpptr(rscratch2, 0);
+    je(noprof);
+    cmpptr(Address(cache, ResolvedIndyEntry::runtime_dependence_diagnosis_offset()), 0);
+    je(noprof);
+    cmpb(Address(rscratch2, BootstrapNode::runtime_dependent_offset()), 0);
+    jne(noprof);
+    push(cache);
+    call_VM(noreg, CAST_FROM_FN_PTR(address, InterpreterRuntime::assess_runtime_dependence_diagnosis));
+    pop(cache);
+    bind(noprof);
+  }
 }
 
 void InterpreterMacroAssembler::load_field_entry(Register cache, Register index, int bcp_offset) {

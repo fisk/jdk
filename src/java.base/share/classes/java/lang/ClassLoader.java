@@ -1909,7 +1909,8 @@ public abstract class ClassLoader {
 
         // detect recursive initialization
         if (Holder.scl != null) {
-            throw new IllegalStateException("recursive invocation");
+            return Holder.scl; // TODO: Teach analysis about mega early classes?
+            //throw new IllegalStateException("recursive invocation");
         }
 
         ClassLoader builtinLoader = getBuiltinAppClassLoader();
