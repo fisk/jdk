@@ -806,6 +806,9 @@ const int ObjectAlignmentInBytes = 8;
   product(bool, UseXMMForArrayCopy, false,                                  \
           "Use SSE2 MOVQ instruction for Arraycopy")                        \
                                                                             \
+  product(bool, AnalyzeRuntimeIndependence, false,                          \
+          "Profile runtime independence of clinit and BSMs")                \
+                                                                            \
   develop(bool, PrintFieldLayout, false,                                    \
           "Print field layout for each class")                              \
                                                                             \

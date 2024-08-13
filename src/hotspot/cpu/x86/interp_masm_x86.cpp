@@ -755,7 +755,7 @@ void InterpreterMacroAssembler::prepare_to_jump_from_interpreted() {
 void InterpreterMacroAssembler::jump_from_interpreted(Register method, Register temp) {
   prepare_to_jump_from_interpreted();
 
-  if (JvmtiExport::can_post_interpreter_events()) {
+  if (AnalyzeRuntimeIndependence || JvmtiExport::can_post_interpreter_events()) {
     Label run_compiled_code;
     // JVMTI events, such as single-stepping, are implemented partly by avoiding running
     // compiled code in threads for which the event is enabled.  Check here for

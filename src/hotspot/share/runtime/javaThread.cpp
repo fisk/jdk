@@ -505,6 +505,8 @@ JavaThread::JavaThread(MemTag mem_tag) :
   _class_to_be_initialized(nullptr),
   _class_being_initialized(nullptr),
 
+  _active_bootstrap(nullptr),
+
   _SleepEvent(ParkEvent::Allocate(this)),
 
   _lock_stack(this),

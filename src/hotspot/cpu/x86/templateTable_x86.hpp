@@ -36,8 +36,12 @@
   static void index_check(Register array, Register index);
   static void index_check_without_pop(Register array, Register index);
 
+  static void track_field_access(Register robj, Register roffset, Register rflags, Register rtos_state,
+                                 Register rtmp1, Register rtmp2, int obj_offset, bool is_static,
+                                 bool is_mutation, TosState tos_state);
+
   static void putfield_or_static_helper(int byte_no, bool is_static, RewriteControl rc,
-                                        Register obj, Register off, Register flags);
+                                        Register obj, Register off, Register tos_state, Register flags);
   static void fast_storefield_helper(Address field, Register rax);
 
 #endif // CPU_X86_TEMPLATETABLE_X86_HPP

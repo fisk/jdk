@@ -99,6 +99,9 @@
 #include "utilities/macros.hpp"
 #include "utilities/stringUtils.hpp"
 #include "utilities/pair.hpp"
+#if INCLUDE_CDS
+#include "cds/bootstrapCapture.hpp"
+#endif
 #ifdef COMPILER1
 #include "c1/c1_Compiler.hpp"
 #endif
@@ -522,6 +525,7 @@ InstanceKlass::InstanceKlass(const ClassFileParser& parser, KlassKind kind, Refe
   _nonstatic_oop_map_size(nonstatic_oop_map_size(parser.total_oop_map_count())),
   _itable_len(parser.itable_size()),
   _nest_host_index(0),
+  _runtime_dependence_diagnosis(nullptr),
   _init_state(allocated),
   _reference_type(reference_type),
   _init_thread(nullptr)
@@ -778,13 +782,27 @@ void InstanceKlass::fence_and_clear_init_lock() {
 // Note: implementation moved to static method to expose the this pointer.
 void InstanceKlass::initialize(TRAPS) {
   if (this->should_be_initialized()) {
-    initialize_impl(CHECK);
+    initialize_impl(THREAD);
     // Note: at this point the class may be initialized
     //       OR it may be in the state of being initialized
     //       in case of recursive initialization!
   } else {
     assert(is_initialized(), "sanity check");
   }
+
+  if (AnalyzeRuntimeIndependence) {
+    BootstrapCapture::track_class_use(JavaThread::cast(THREAD), this);
+  }
+}
+
+void* InstanceKlass::runtime_dependence_diagnosis() const {
+  assert(AnalyzeRuntimeIndependence, "why is this called?");
+  return Atomic::load(&_runtime_dependence_diagnosis);
+}
+
+void InstanceKlass::set_runtime_dependence_diagnosis(void* value) {
+  assert(AnalyzeRuntimeIndependence, "why is this called?");
+  Atomic::store(&_runtime_dependence_diagnosis, value);
 }
 
 static bool are_super_types_initialized(InstanceKlass* ik) {
@@ -1229,6 +1247,9 @@ void InstanceKlass::initialize_impl(TRAPS) {
 
     // Step 3
     if (is_being_initialized() && is_reentrant_initialization(jt)) {
+      if (AnalyzeRuntimeIndependence) {
+        BootstrapCapture::track_cyclic_class_initialization(jt, this);
+      }
       if (debug_logging_enabled) {
         ResourceMark rm(jt);
         log_debug(class, init)("Thread \"%s\" recursively initializing %s",
@@ -1697,6 +1718,8 @@ void InstanceKlass::call_class_initializer(TRAPS) {
     return;
   }
 
+  JavaThread* jt = JavaThread::current();
+
 #if INCLUDE_CDS
   // This is needed to ensure the consistency of the archived heap objects.
   if (has_archived_enum_objs()) {
@@ -1711,6 +1734,7 @@ void InstanceKlass::call_class_initializer(TRAPS) {
   }
 #endif
 
+  ClassInitializerCaptureScope clinitc(this);
   methodHandle h_method(THREAD, class_initializer());
   assert(!is_initialized(), "we cannot initialize twice");
   int init_id = log_class_init(THREAD, this);

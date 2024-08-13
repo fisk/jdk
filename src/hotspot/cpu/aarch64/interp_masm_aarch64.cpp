@@ -1755,6 +1755,22 @@ void InterpreterMacroAssembler::load_resolved_indy_entry(Register cache, Registe
   lsl(index, index, log2i_exact(sizeof(ResolvedIndyEntry)));
   add(cache, cache, Array<ResolvedIndyEntry>::base_offset_in_bytes());
   lea(cache, Address(cache, index));
+
+  if (AnalyzeRuntimeIndependence) {
+    // Assess currently executing clinit/indy BSM runtime independence
+    Label noprof;
+    __ movptr(rscratch2, Address(r15, JavaThread::active_bootstrap_offset()));
+    __ cmpptr(rscratch2, 0);
+    __ je(noprof);
+    __ cmpptr(Address(cache, ResolvedIndyEntry::runtime_dependence_diagnosis_offset()), 0);
+    __ je(noprof);
+    __ cmpb(Address(rscratch2, BootstrapNode::runtime_dependent_offset()), 0);
+    __ jne(noprof);
+    __ push(rcx);
+    __ call_VM(noreg, CAST_FROM_FN_PTR(address, InterpreterRuntime::assess_runtime_dependence_diagnosis));
+    __ pop(rcx);
+    __ bind(noprof);
+  }
 }
 
 void InterpreterMacroAssembler::load_field_entry(Register cache, Register index, int bcp_offset) {

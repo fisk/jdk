@@ -228,6 +228,8 @@ class InstanceKlass: public Klass {
 
   volatile u2     _idnum_allocated_count;   // JNI/JVMTI: increments with the addition of methods, old ids don't change
 
+  void* volatile  _runtime_dependence_diagnosis; // diagnosis pointer for analyzing clinit runtime independence
+
   // Class states are defined as ClassState (see above).
   // Place the _init_state here to utilize the unused 2-byte after
   // _idnum_allocated_count.
@@ -531,6 +533,11 @@ public:
   // marking
   bool is_marked_dependent() const         { return _misc_flags.is_marked_dependent(); }
   void set_is_marked_dependent(bool value) { _misc_flags.set_is_marked_dependent(value); }
+
+  // Runtime dependency analysis support
+  void* runtime_dependence_diagnosis() const;
+  void set_runtime_dependence_diagnosis(void* value);
+  static ByteSize runtime_dependence_diagnosis_offset() { return byte_offset_of(InstanceKlass, _runtime_dependence_diagnosis); }
 
   // initialization (virtuals from Klass)
   bool should_be_initialized() const;  // means that initialize should be called

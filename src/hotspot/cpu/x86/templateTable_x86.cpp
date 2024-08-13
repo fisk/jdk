@@ -48,6 +48,9 @@
 #include "runtime/stubRoutines.hpp"
 #include "runtime/synchronizer.hpp"
 #include "utilities/macros.hpp"
+#if INCLUDE_CDS
+#include "cds/bootstrapCapture.hpp"
+#endif
 
 #define __ Disassembler::hook<InterpreterMacroAssembler>(__FILE__, __LINE__, _masm)->
 
@@ -779,6 +782,7 @@ void TemplateTable::index_check_without_pop(Register array, Register index) {
 }
 
 void TemplateTable::iaload() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, 0 /* obj_offset */, false /* is_static */, false /* is_mutation */, itos);
   transition(itos, itos);
   // rax: index
   // rdx: array
@@ -790,6 +794,7 @@ void TemplateTable::iaload() {
 }
 
 void TemplateTable::laload() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, 0 /* obj_offset */, false /* is_static */, false /* is_mutation */, itos);
   transition(itos, ltos);
   // rax: index
   // rdx: array
@@ -805,6 +810,7 @@ void TemplateTable::laload() {
 
 
 void TemplateTable::faload() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, 0 /* obj_offset */, false /* is_static */, false /* is_mutation */, itos);
   transition(itos, ftos);
   // rax: index
   // rdx: array
@@ -817,6 +823,7 @@ void TemplateTable::faload() {
 }
 
 void TemplateTable::daload() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, 0 /* obj_offset */, false /* is_static */, false /* is_mutation */, itos);
   transition(itos, dtos);
   // rax: index
   // rdx: array
@@ -829,6 +836,7 @@ void TemplateTable::daload() {
 }
 
 void TemplateTable::aaload() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, 0 /* obj_offset */, false /* is_static */, false /* is_mutation */, itos);
   transition(itos, atos);
   // rax: index
   // rdx: array
@@ -842,6 +850,7 @@ void TemplateTable::aaload() {
 }
 
 void TemplateTable::baload() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, 0 /* obj_offset */, false /* is_static */, false /* is_mutation */, itos);
   transition(itos, itos);
   // rax: index
   // rdx: array
@@ -852,6 +861,7 @@ void TemplateTable::baload() {
 }
 
 void TemplateTable::caload() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, 0 /* obj_offset */, false /* is_static */, false /* is_mutation */, itos);
   transition(itos, itos);
   // rax: index
   // rdx: array
@@ -863,6 +873,7 @@ void TemplateTable::caload() {
 
 // iload followed by caload frequent pair
 void TemplateTable::fast_icaload() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, Interpreter::stackElementSize /* obj_offset */, false /* is_static */, false /* is_mutation */, vtos);
   transition(vtos, itos);
   // load index out of locals
   locals_index(rbx);
@@ -878,6 +889,7 @@ void TemplateTable::fast_icaload() {
 
 
 void TemplateTable::saload() {
+  track_field_access(rdx, rax, noreg, noreg, rscratch1, rscratch2, 0 /* obj_offset */, false /* is_static */, false /* is_mutation */, itos);
   transition(itos, itos);
   // rax: index
   // rdx: array
@@ -1070,6 +1082,7 @@ void TemplateTable::wide_astore() {
 }
 
 void TemplateTable::iastore() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, Interpreter::stackElementSize /* obj_offset */, false /* is_static */, true /* is_mutation */, itos);
   transition(itos, vtos);
   __ pop_i(rbx);
   // rax: value
@@ -1083,6 +1096,7 @@ void TemplateTable::iastore() {
 }
 
 void TemplateTable::lastore() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, Interpreter::stackElementSize /* obj_offset */, false /* is_static */, true /* is_mutation */, ltos);
   transition(ltos, vtos);
   __ pop_i(rbx);
   // rax,: low(value)
@@ -1098,6 +1112,7 @@ void TemplateTable::lastore() {
 
 
 void TemplateTable::fastore() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, Interpreter::stackElementSize /* obj_offset */, false /* is_static */, true /* is_mutation */, ftos);
   transition(ftos, vtos);
   __ pop_i(rbx);
   // value is in UseSSE >= 1 ? xmm0 : ST(0)
@@ -1111,6 +1126,7 @@ void TemplateTable::fastore() {
 }
 
 void TemplateTable::dastore() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, Interpreter::stackElementSize /* obj_offset */, false /* is_static */, true /* is_mutation */, dtos);
   transition(dtos, vtos);
   __ pop_i(rbx);
   // value is in UseSSE >= 2 ? xmm0 : ST(0)
@@ -1125,6 +1141,7 @@ void TemplateTable::dastore() {
 
 void TemplateTable::aastore() {
   Label is_null, ok_is_subtype, done;
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, 2 * Interpreter::stackElementSize /* obj_offset */, false /* is_static */, true /* is_mutation */, vtos);
   transition(vtos, vtos);
   // stack: ..., array, index, value
   __ movptr(rax, at_tos());    // value
@@ -1177,6 +1194,7 @@ void TemplateTable::aastore() {
 }
 
 void TemplateTable::bastore() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, Interpreter::stackElementSize /* obj_offset */, false /* is_static */, true /* is_mutation */, itos);
   transition(itos, vtos);
   __ pop_i(rbx);
   // rax: value
@@ -1200,6 +1218,7 @@ void TemplateTable::bastore() {
 }
 
 void TemplateTable::castore() {
+  track_field_access(rdx, noreg, noreg, noreg, rscratch1, rscratch2, Interpreter::stackElementSize /* obj_offset */, false /* is_static */, true /* is_mutation */, itos);
   transition(itos, vtos);
   __ pop_i(rbx);
   // rax: value
@@ -2701,6 +2720,21 @@ void TemplateTable::resolve_cache_and_index_for_method(int byte_no,
     __ movptr(method, Address(cache, in_bytes(ResolvedMethodEntry::method_offset())));
     __ load_method_holder(klass, method);
     __ clinit_barrier(klass, thread, nullptr /*L_fast_path*/, &L_clinit_barrier_slow);
+
+    if (AnalyzeRuntimeIndependence) {
+      // Assess currently executing clinit/indy BSM purity
+      Label noprof;
+      __ movptr(rscratch2, Address(r15, JavaThread::active_bootstrap_offset()));
+      __ cmpptr(rscratch2, 0);
+      __ je(noprof);
+      __ cmpptr(Address(klass, InstanceKlass::runtime_dependence_diagnosis_offset()), 0);
+      __ je(noprof);
+      __ cmpb(Address(rscratch2, BootstrapNode::runtime_dependent_offset()), 0);
+      __ jne(noprof);
+      __ call_VM(noreg, CAST_FROM_FN_PTR(address, InterpreterRuntime::assess_runtime_dependence_diagnosis));
+      __ load_method_entry(cache, index); // Reload cache and index which the runtime call kills
+      __ bind(noprof);
+    }
   }
 }
 
@@ -2772,11 +2806,11 @@ void TemplateTable::load_resolved_field_entry(Register obj,
   // Klass overwrite register
   if (is_static) {
     __ movptr(obj, Address(cache, ResolvedFieldEntry::field_holder_offset()));
+
     const int mirror_offset = in_bytes(Klass::java_mirror_offset());
     __ movptr(obj, Address(obj, mirror_offset));
     __ resolve_oop_handle(obj, rscratch2);
   }
-
 }
 
 void TemplateTable::load_invokedynamic_entry(Register method) {
@@ -2990,6 +3024,134 @@ void TemplateTable::pop_and_check_object(Register r) {
   __ verify_oop(r);
 }
 
+void TemplateTable::track_field_access(Register robj, Register roffset, Register rflags, Register rtos_state, Register rtmp1, Register rtmp2, int obj_offset, bool is_static, bool is_mutation, TosState tos_state) {
+  if (!AnalyzeRuntimeIndependence) {
+    return;
+  }
+
+  Label done;
+  // Check if there is an active bootstrap
+  __ movptr(rtmp1, Address(r15, JavaThread::active_bootstrap_offset()));
+  __ testptr(rtmp1, rtmp1);
+  __ jz(done);
+
+  // Already found to be runtime dependent?
+  __ cmpb(Address(rtmp1, BootstrapNode::runtime_dependent_offset()), 0);
+  __ jne(done);
+
+  if (is_static) {
+    // For static fields, check if we are accessing the static field of our own clinit
+    __ movptr(rtmp2, Address(robj, java_lang_Class::klass_offset()));
+    __ cmpptr(rtmp2, Address(rtmp1, BootstrapNode::allowed_statics_offset()));
+    __ je(done);
+
+    if (is_mutation) {
+      // Mutation of remote class; early diagnosis
+    } else {
+      Label mutable_field;
+      Label diagnose;
+
+      // As for static loads, we can only deal with acylic clinits and final static fields of RI classes.
+
+      // We first check if the dependent class is either RD or maybe RD - those are both no goes.
+      __ cmpptr(Address(rtmp2, InstanceKlass::runtime_dependence_diagnosis_offset()), 0);
+      __ jne(diagnose);
+
+      // As for RI loads, we can deal with trusted final loads but then need to track the used class to ensure it's RI
+      __ testl(rflags, 1 << ResolvedFieldEntry::is_trusted_final_shift);
+      __ jz(diagnose);
+
+      // We have a data dependency to an immutable static field of another acylic class; track the symptom and allow it
+      __ cmpb(Address(rtmp1, BootstrapNode::immutable_data_dependent_offset()), 0);
+      __ jne(done);
+
+      __ movb(Address(rtmp1, BootstrapNode::immutable_data_dependent_offset()), 1);
+      __ jmp(done);
+
+      __ bind(diagnose);
+    }
+  } else {
+    Label diagnose;
+
+    // For object fields, peek at the object and see if it was allocated by our own clinit
+    if (obj_offset != -1) {
+      __ movptr(rtmp2, Address(rsp, obj_offset));
+    } else {
+      __ movptr(rtmp2, robj);
+    }
+
+    // NPE: not runtime independent yet; catch that in exception handling.
+    __ testptr(rtmp2, rtmp2);
+    __ jz(done);
+
+    // Check for clinit-local object
+    __ movptr(rtmp2, Address(rtmp2, oopDesc::mark_offset_in_bytes()));
+    __ andq(rtmp2, markWord::hash_mask);
+    __ shrq(rtmp2, markWord::hash_shift);
+    __ cmpptr(rtmp2, 1);
+    __ je(done);
+
+    if (!is_mutation && rflags != noreg) {
+      // As for remote RI loads, we can deal with trusted final loads
+      __ testl(rflags, 1 << ResolvedFieldEntry::is_trusted_final_shift);
+      __ jz(diagnose);
+
+      // We have a data dependency to an immutable static field of another acylic class; track the symptom and allow it
+      __ cmpb(Address(rtmp1, BootstrapNode::immutable_data_dependent_offset()), 0);
+      __ jne(done);
+
+      __ movb(Address(rtmp1, BootstrapNode::immutable_data_dependent_offset()), 1);
+      __ jmp(done);
+    }
+
+    // Diagnosis
+    __ bind(diagnose);
+  }
+  if (tos_state != vtos) {
+    __ push(tos_state);
+  }
+
+  // Push live interpreter state before calling into the runtime
+  if (is_static) {
+    // Can't preserve the mirror: it's not in any oop map. Preserve the corresponding klass instead, and re-resolve
+    // the mirror when we get back
+    __ movptr(robj, Address(robj, java_lang_Class::klass_offset()));
+    __ push(robj);
+  }
+
+  if (roffset != noreg) {
+    __ push(roffset);
+  }
+  if (rflags != noreg) {
+    __ push(rflags);
+  }
+  if (rtos_state != noreg) {
+    __ push(rtos_state);
+  }
+  __ call_VM(noreg, CAST_FROM_FN_PTR(address, InterpreterRuntime::assess_runtime_dependence_diagnosis));
+  if (rtos_state != noreg) {
+    __ pop(rtos_state);
+  }
+  if (rflags != noreg) {
+    __ pop(rflags);
+  }
+  if (roffset != noreg) {
+    __ pop(roffset);
+  }
+
+  if (is_static) {
+    __ pop(robj);
+    __ movptr(robj, Address(robj, in_bytes(Klass::java_mirror_offset())));
+    __ resolve_oop_handle(robj, rtmp1);
+  }
+
+  if (tos_state != vtos) {
+    __ pop(tos_state);
+  }
+
+  __ bind(done);
+}
+
 void TemplateTable::getfield_or_static(int byte_no, bool is_static, RewriteControl rc) {
   transition(vtos, vtos);
 
@@ -3004,6 +3166,8 @@ void TemplateTable::getfield_or_static(int byte_no, bool is_static, RewriteContr
   resolve_cache_and_index_for_field(byte_no, cache, index);
   jvmti_post_field_access(cache, index, is_static, false);
   load_resolved_field_entry(obj, cache, tos_state, off, flags, is_static);
+
+  track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, 0, is_static, false /* is_mutation */, vtos);
 
   if (!is_static) pop_and_check_object(obj);
 
@@ -3245,23 +3409,22 @@ void TemplateTable::putfield_or_static(int byte_no, bool is_static, RewriteContr
   Label notVolatile, Done;
 
   // Check for volatile store
-  __ andl(flags, (1 << ResolvedFieldEntry::is_volatile_shift));
-  __ testl(flags, flags);
+  __ testl(flags, (1 << ResolvedFieldEntry::is_volatile_shift));
   __ jcc(Assembler::zero, notVolatile);
 
-  putfield_or_static_helper(byte_no, is_static, rc, obj, off, tos_state);
+  putfield_or_static_helper(byte_no, is_static, rc, obj, off, tos_state, flags);
   volatile_barrier(Assembler::Membar_mask_bits(Assembler::StoreLoad |
                                                Assembler::StoreStore));
   __ jmp(Done);
   __ bind(notVolatile);
 
-  putfield_or_static_helper(byte_no, is_static, rc, obj, off, tos_state);
+  putfield_or_static_helper(byte_no, is_static, rc, obj, off, tos_state, flags);
 
   __ bind(Done);
 }
 
 void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, RewriteControl rc,
-                                              Register obj, Register off, Register tos_state) {
+                                              Register obj, Register off, Register tos_state, Register flags) {
 
   // field addresses
   const Address field(obj, off, Address::times_1, 0*wordSize);
@@ -3279,6 +3442,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
 
   // btos
   {
+    track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, Interpreter::stackElementSize, is_static, true /* is_mutation */, vtos);
     __ pop(btos);
     if (!is_static) pop_and_check_object(obj);
     __ access_store_at(T_BYTE, IN_HEAP, field, rax, noreg, noreg, noreg);
@@ -3294,6 +3458,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
 
   // ztos
   {
+    track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, Interpreter::stackElementSize, is_static, true /* is_mutation */, vtos);
     __ pop(ztos);
     if (!is_static) pop_and_check_object(obj);
     __ access_store_at(T_BOOLEAN, IN_HEAP, field, rax, noreg, noreg, noreg);
@@ -3309,6 +3474,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
 
   // atos
   {
+    track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, Interpreter::stackElementSize, is_static, true /* is_mutation */, vtos);
     __ pop(atos);
     if (!is_static) pop_and_check_object(obj);
     // Store into the field
@@ -3325,6 +3491,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
 
   // itos
   {
+    track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, Interpreter::stackElementSize, is_static, true /* is_mutation */, vtos);
     __ pop(itos);
     if (!is_static) pop_and_check_object(obj);
     __ access_store_at(T_INT, IN_HEAP, field, rax, noreg, noreg, noreg);
@@ -3340,6 +3507,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
 
   // ctos
   {
+    track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, Interpreter::stackElementSize, is_static, true /* is_mutation */, vtos);
     __ pop(ctos);
     if (!is_static) pop_and_check_object(obj);
     __ access_store_at(T_CHAR, IN_HEAP, field, rax, noreg, noreg, noreg);
@@ -3355,6 +3523,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
 
   // stos
   {
+    track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, Interpreter::stackElementSize, is_static, true /* is_mutation */, vtos);
     __ pop(stos);
     if (!is_static) pop_and_check_object(obj);
     __ access_store_at(T_SHORT, IN_HEAP, field, rax, noreg, noreg, noreg);
@@ -3370,6 +3539,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
 
   // ltos
   {
+    track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, Interpreter::stackElementSize, is_static, true /* is_mutation */, vtos);
     __ pop(ltos);
     if (!is_static) pop_and_check_object(obj);
     // MO_RELAXED: generate atomic store for the case of volatile field (important for x86_32)
@@ -3388,6 +3558,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
 
   // ftos
   {
+    track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, Interpreter::stackElementSize, is_static, true /* is_mutation */, vtos);
     __ pop(ftos);
     if (!is_static) pop_and_check_object(obj);
     __ access_store_at(T_FLOAT, IN_HEAP, field, noreg /* ftos */, noreg, noreg, noreg);
@@ -3406,6 +3577,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
 
   // dtos
   {
+    track_field_access(obj, off, flags, tos_state, rscratch1, rscratch2, Interpreter::stackElementSize, is_static, true /* is_mutation */, vtos);
     __ pop(dtos);
     if (!is_static) pop_and_check_object(obj);
     // MO_RELAXED: for the case of volatile field, in fact it adds no extra work for the underlying implementation
@@ -3508,8 +3680,9 @@ void TemplateTable::fast_storefield(TosState state) {
   __ load_field_entry(rcx, rax);
   load_resolved_field_entry(noreg, cache, rax, rbx, rdx);
   // RBX: field offset, RAX: TOS, RDX: flags
-  __ andl(rdx, (1 << ResolvedFieldEntry::is_volatile_shift));
   __ pop(rax);
+
+  track_field_access(rdx, rbx, rdx, noreg, rscratch1, rscratch2, 0 /* obj_offset */, false /* is_static */, true /* is_mutation */, state);
 
   // Get object from stack
   pop_and_check_object(rcx);
@@ -3518,7 +3691,7 @@ void TemplateTable::fast_storefield(TosState state) {
   const Address field(rcx, rbx, Address::times_1);
 
   // Check for volatile store
-  __ testl(rdx, rdx);
+  __ testl(rdx, 1 << ResolvedFieldEntry::is_volatile_shift);
   __ jcc(Assembler::zero, notVolatile);
 
   fast_storefield_helper(field, rax);
@@ -3600,6 +3773,10 @@ void TemplateTable::fast_accessfield(TosState state) {
   // access constant pool cache
   __ load_field_entry(rcx, rbx);
   __ load_sized_value(rbx, Address(rcx, in_bytes(ResolvedFieldEntry::field_offset_offset())), sizeof(int), true /*is_signed*/);
+  if (AnalyzeRuntimeIndependence) {
+    __ load_unsigned_byte(rdx, Address(rcx, in_bytes(ResolvedFieldEntry::flags_offset())));
+    track_field_access(rax, rbx, rdx, noreg, rscratch1, rscratch2, -1 /* obj_offset */, false /* is_static */, false /* is_mutation */, atos);
+  }
 
   // rax: object
   __ verify_oop(rax);
@@ -3656,6 +3833,11 @@ void TemplateTable::fast_xaccess(TosState state) {
   // access constant pool cache
   __ load_field_entry(rcx, rdx, 2);
   __ load_sized_value(rbx, Address(rcx, in_bytes(ResolvedFieldEntry::field_offset_offset())), sizeof(int), true /*is_signed*/);
+  if (AnalyzeRuntimeIndependence) {
+    __ load_unsigned_byte(rdx, Address(rcx, in_bytes(ResolvedFieldEntry::flags_offset())));
+    track_field_access(rax, rbx, rdx, noreg, rscratch1, rscratch2, -1 /* obj_offset */, false /* is_static */, false /* is_mutation */, vtos);
+    __ movptr(rax, aaddress(0));
+  }
 
   // make sure exception is reported in correct bcp range (getfield is
   // next instruction)
@@ -4040,6 +4222,7 @@ void TemplateTable::invokedynamic(int byte_no) {
 // Allocation
 
 void TemplateTable::_new() {
+  Label redo;
   transition(vtos, atos);
   __ get_unsigned_2_byte_index_at_bcp(rdx, 1);
   Label slow_case;
@@ -4064,6 +4247,21 @@ void TemplateTable::_new() {
 #ifdef _LP64
   assert(VM_Version::supports_fast_class_init_checks(), "must support fast class initialization checks");
   __ clinit_barrier(rcx, r15_thread, nullptr /*L_fast_path*/, &slow_case);
+  if (AnalyzeRuntimeIndependence) {
+    // Assess currently executing clinit/indy BSM runtime independence
+    Label noprof;
+    __ movptr(rscratch2, Address(r15, JavaThread::active_bootstrap_offset()));
+    __ cmpptr(rscratch2, 0);
+    __ je(noprof);
+    __ cmpptr(Address(rcx, InstanceKlass::runtime_dependence_diagnosis_offset()), 0);
+    __ je(noprof);
+    __ cmpb(Address(rscratch2, BootstrapNode::runtime_dependent_offset()), 0);
+    __ jne(noprof);
+    __ push(rcx);
+    __ call_VM(noreg, CAST_FROM_FN_PTR(address, InterpreterRuntime::assess_runtime_dependence_diagnosis));
+    __ pop(rcx);
+    __ bind(noprof);
+  }
 #else
   __ cmpb(Address(rcx, InstanceKlass::init_state_offset()), InstanceKlass::fully_initialized);
   __ jcc(Assembler::notEqual, slow_case);
@@ -4126,8 +4324,31 @@ void TemplateTable::_new() {
 
     // initialize object header only.
     __ bind(initialize_header);
-    __ movptr(Address(rax, oopDesc::mark_offset_in_bytes()),
-              (intptr_t)markWord::prototype().value()); // header
+    if (AnalyzeRuntimeIndependence) {
+      // Assess currently executing clinit/indy BSM purity
+      Label noprof;
+      Label mark_done;
+      __ movptr(rscratch2, Address(r15, JavaThread::active_bootstrap_offset()));
+      __ cmpptr(rscratch2, 0);
+      __ je(noprof);
+      __ cmpb(Address(rscratch2, BootstrapNode::runtime_dependent_offset()), 0);
+      __ jne(noprof);
+
+      // We are currently doing runtime independence analysis; colour the
+      // hashCode value 1, meaning the object is runtime independent so far.
+      __ movptr(Address(rax, oopDesc::mark_offset_in_bytes()),
+                (intptr_t)markWord::prototype().copy_set_hash(1).value()); // header
+      __ jmp(mark_done);
+
+      // We are currently not doing runtime independence analysis
+      __ bind(noprof);
+      __ movptr(Address(rax, oopDesc::mark_offset_in_bytes()),
+                (intptr_t)markWord::prototype().value()); // header
+      __ bind(mark_done);
+    } else {
+      __ movptr(Address(rax, oopDesc::mark_offset_in_bytes()),
+                (intptr_t)markWord::prototype().value()); // header
+    }
     __ pop(rcx);   // get saved klass back in the register.
 #ifdef _LP64
     __ xorl(rsi, rsi); // use zero reg to clear memory (shorter code)

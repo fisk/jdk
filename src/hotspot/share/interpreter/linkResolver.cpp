@@ -64,6 +64,9 @@
 #include "runtime/signature.hpp"
 #include "runtime/vmThread.hpp"
 #include "utilities/macros.hpp"
+#if INCLUDE_CDS
+#include "cds/bootstrapCapture.hpp"
+#endif
 #if INCLUDE_JFR
 #include "jfr/jfr.hpp"
 #endif
@@ -1895,7 +1898,13 @@ void LinkResolver::resolve_dynamic_call(CallInfo& result,
   // It may also be a MethodHandle from an unwrapped ConstantCallSite,
   // or any other reference.  The resolved_method as well as the appendix
   // are both recorded together via CallInfo::set_handle.
-  SystemDictionary::invoke_bootstrap_method(bootstrap_specifier, THREAD);
+  {
+    IndyBootstrapCaptureScope ibc(bootstrap_specifier.pool()->resolved_indy_entry_at(bootstrap_specifier.indy_index()));
+    SystemDictionary::invoke_bootstrap_method(bootstrap_specifier, THREAD);
+    if (AnalyzeRuntimeIndependence && bootstrap_specifier.is_runtime_independent()) {
+      BootstrapCapture::whitelist_indy();
+    }
+  }
   Exceptions::wrap_dynamic_exception(/* is_indy */ true, THREAD);
 
   if (HAS_PENDING_EXCEPTION) {

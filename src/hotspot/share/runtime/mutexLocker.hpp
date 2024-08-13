@@ -137,6 +137,7 @@ extern Mutex*   UnregisteredClassesTable_lock;   // UnregisteredClassesTableTabl
 extern Mutex*   LambdaFormInvokers_lock;         // Protecting LambdaFormInvokers::_lambdaform_lines
 extern Mutex*   ScratchObjects_lock;             // Protecting _scratch_xxx_table in heapShared.cpp
 extern Mutex*   ArchivedObjectTables_lock;       // Protecting the table used by HeapShared::get_archived_object_permanent_index()
+extern Mutex*   RuntimeIndependenceAnalysis_lock;  // Protect bookkeeping for CDS to analyze clinit purity
 #endif // INCLUDE_CDS
 #if INCLUDE_JFR
 extern Mutex*   JfrStacktrace_lock;              // used to guard access to the JFR stacktrace table

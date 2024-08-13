@@ -73,6 +73,9 @@ class BootstrapInfo : public StackObj {
   methodHandle resolved_method() const  { assert(is_method_call(), "");  return _resolved_method; }
   Handle resolved_appendix() const      { assert(is_method_call(), "");  return _resolved_appendix; }
 
+  // Runtime independence analysis
+  bool is_runtime_independent() const;
+
   // derived accessors
   InstanceKlass* caller() const         { return _pool->pool_holder(); }
   oop caller_mirror() const             { return caller()->java_mirror(); }

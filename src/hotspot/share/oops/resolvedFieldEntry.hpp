@@ -92,8 +92,9 @@ public:
   // Bit shift to get flags
   // Note: Only two flags exists at the moment but more could be added
   enum {
-      is_volatile_shift     = 0,
-      is_final_shift        = 1, // unused
+      is_volatile_shift      = 0,
+      is_final_shift         = 1, // unused
+      is_trusted_final_shift = 2
   };
 
   // Getters
@@ -105,6 +106,7 @@ public:
   u1 get_code()                 const { return Atomic::load_acquire(&_get_code);      }
   u1 put_code()                 const { return Atomic::load_acquire(&_put_code);      }
   bool is_final()               const { return (_flags & (1 << is_final_shift))    != 0; }
+  bool is_trusted_final()       const { return (_flags & (1 << is_trusted_final_shift)) != 0; }
   bool is_volatile ()           const { return (_flags & (1 << is_volatile_shift)) != 0; }
   bool is_resolved(Bytecodes::Code code) const {
     switch(code) {
@@ -123,10 +125,13 @@ public:
   // Printing
   void print_on(outputStream* st) const;
 
-  void set_flags(bool is_final_flag, bool is_volatile_flag) {
-    int new_flags = (is_final_flag << is_final_shift) | static_cast<int>(is_volatile_flag);
+  void set_flags(bool is_final_flag, bool is_trusted_final_flag, bool is_volatile_flag) {
+    int new_flags = (static_cast<u1>(is_final_flag) << is_final_shift) |
+      (static_cast<u1>(is_trusted_final_flag) << is_trusted_final_shift) |
+      static_cast<u1>(is_volatile_flag);
     _flags = checked_cast<u1>(new_flags);
     assert(is_final() == is_final_flag, "Must be");
+    assert(is_trusted_final() == is_trusted_final_flag, "Must be");
     assert(is_volatile() == is_volatile_flag, "Must be");
   }
 

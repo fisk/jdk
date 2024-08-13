@@ -79,6 +79,9 @@
 #include "utilities/checkedCast.hpp"
 #include "utilities/copy.hpp"
 #include "utilities/events.hpp"
+#ifdef INCLUDE_CDS
+#include "cds/bootstrapCapture.hpp"
+#endif
 #ifdef COMPILER2
 #include "opto/runtime.hpp"
 #endif
@@ -343,12 +346,18 @@ JRT_ENTRY_PROF(void, InterpreterRuntime, new, InterpreterRuntime::_new(JavaThrea
   klass->initialize(CHECK);
 
   oop obj = klass->allocate_instance(CHECK);
+  if (AnalyzeRuntimeIndependence) {
+    BootstrapCapture::track_allocation(current, obj);
+  }
   current->set_vm_result(obj);
 JRT_END
 
 
 JRT_ENTRY_PROF(void, InterpreterRuntime, newarray, InterpreterRuntime::newarray(JavaThread* current, BasicType type, jint size))
   oop obj = oopFactory::new_typeArray(type, size, CHECK);
+  if (AnalyzeRuntimeIndependence) {
+    BootstrapCapture::track_allocation(current, obj);
+  }
   current->set_vm_result(obj);
 JRT_END
 
@@ -356,6 +365,9 @@ JRT_END
 JRT_ENTRY_PROF(void, InterpreterRuntime, anewarray, InterpreterRuntime::anewarray(JavaThread* current, ConstantPool* pool, int index, jint size))
   Klass*    klass = pool->klass_at(index, CHECK);
   objArrayOop obj = oopFactory::new_objArray(klass, size, CHECK);
+  if (AnalyzeRuntimeIndependence) {
+    BootstrapCapture::track_allocation(current, obj);
+  }
   current->set_vm_result(obj);
 JRT_END
 
@@ -384,9 +396,19 @@ JRT_ENTRY_PROF(void, InterpreterRuntime, multianewarray, InterpreterRuntime::mul
     dims[index] = first_size_address[n];
   }
   oop obj = ArrayKlass::cast(klass)->multi_allocate(nof_dims, dims, CHECK);
+  if (AnalyzeRuntimeIndependence) {
+    BootstrapCapture::track_allocation(current, obj);
+  }
   current->set_vm_result(obj);
 JRT_END
 
+JRT_ENTRY(void, InterpreterRuntime::assess_runtime_dependence_diagnosis(JavaThread* current))
+  BootstrapCapture::assess_runtime_dependence_diagnosis(current);
+JRT_END
+
+JRT_ENTRY(void, track_class_use(JavaThread* current, InstanceKlass* dependency))
+  BootstrapCapture::track_class_use(current, dependency);
+JRT_END
 
 JRT_ENTRY_PROF(void, InterpreterRuntime, register_finalizer, InterpreterRuntime::register_finalizer(JavaThread* current, oopDesc* obj))
   assert(oopDesc::is_oop(obj), "must be a valid oop");
@@ -578,6 +600,10 @@ JRT_ENTRY_PROF(address, InterpreterRuntime, exception_handler_for_exception,
   // into the interpreter. Any deferred stack processing is notified of
   // the event via the StackWatermarkSet.
   StackWatermarkSet::after_unwind(current);
+
+  if (AnalyzeRuntimeIndependence) {
+    BootstrapCapture::assess_runtime_dependence_diagnosis(JavaThread::current());
+  }
 
   LastFrameAccessor last_frame(current);
   Handle             h_exception(current, exception);
@@ -859,7 +885,7 @@ void InterpreterRuntime::resolve_get_put(Bytecodes::Code bytecode, int field_ind
   }
 
   ResolvedFieldEntry* entry = pool->resolved_field_entry_at(field_index);
-  entry->set_flags(info.access_flags().is_final(), info.access_flags().is_volatile());
+  entry->set_flags(info.access_flags().is_final(), info.is_trusted_final(), info.access_flags().is_volatile());
   entry->fill_in(info.field_holder(), info.offset(),
                  checked_cast<u2>(info.index()), checked_cast<u1>(state),
                  static_cast<u1>(get_code), static_cast<u1>(put_code));

@@ -50,6 +50,7 @@
 #endif
 
 class AsyncExceptionHandshake;
+class BootstrapNode;
 class ContinuationEntry;
 class DeoptResourceMark;
 class InternalOOMEMark;
@@ -1173,6 +1174,15 @@ private:
   InstanceKlass* _class_to_be_initialized;
   InstanceKlass* _class_being_initialized;
 
+  BootstrapNode* _active_bootstrap;
+
+public:
+  static ByteSize active_bootstrap_offset() { return byte_offset_of(JavaThread, _active_bootstrap); }
+
+  BootstrapNode* active_bootstrap() { return _active_bootstrap; };
+  void set_active_bootstrap(BootstrapNode* node) { _active_bootstrap = node; };
+
+private:
   // java.lang.Thread.sleep support
   ParkEvent * _SleepEvent;
 public:

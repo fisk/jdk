@@ -27,6 +27,7 @@
 #include "code/compressedStream.hpp"
 #include "oops/method.hpp"
 #include "oops/resolvedIndyEntry.hpp"
+#include "runtime/atomic.hpp"
 
 bool ResolvedIndyEntry::check_no_old_or_obsolete_entry() {
   // return false if m refers to a non-deleted old or obsolete method
@@ -39,6 +40,16 @@ bool ResolvedIndyEntry::check_no_old_or_obsolete_entry() {
 }
 
 #if INCLUDE_CDS
+void* ResolvedIndyEntry::runtime_dependence_diagnosis() const {
+  assert(AnalyzeRuntimeIndependence, "why is this called?");
+  return Atomic::load(&_runtime_dependence_diagnosis);
+}
+
+void ResolvedIndyEntry::set_runtime_dependence_diagnosis(void* value) {
+  assert(AnalyzeRuntimeIndependence, "why is this called?");
+  Atomic::store(&_runtime_dependence_diagnosis, value);
+}
+
 void ResolvedIndyEntry::remove_unshareable_info() {
   u2 saved_resolved_references_index = _resolved_references_index;
   u2 saved_cpool_index = _cpool_index;

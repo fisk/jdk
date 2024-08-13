@@ -137,6 +137,10 @@ private:
   static Bytecodes::Code get_original_bytecode_at(JavaThread* current, Method* method, address bcp);
   static void            set_original_bytecode_at(JavaThread* current, Method* method, address bcp, Bytecodes::Code new_code);
 
+  // Runtime dependence analysis support for AOTCache
+  static void assess_runtime_dependence_diagnosis(JavaThread* current);
+  static void track_class_use(JavaThread* current, InstanceKlass* dependency);
+
   // Safepoints
   static void    at_safepoint(JavaThread* current);
   static void    at_unwind(JavaThread* current);

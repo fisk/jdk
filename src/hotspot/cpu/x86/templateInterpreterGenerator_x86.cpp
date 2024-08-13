@@ -56,6 +56,9 @@
 #include "utilities/checkedCast.hpp"
 #include "utilities/debug.hpp"
 #include "utilities/macros.hpp"
+#if INCLUDE_CDS
+#include "cds/bootstrapCapture.hpp"
+#endif
 
 #define __ Disassembler::hook<InterpreterMacroAssembler>(__FILE__, __LINE__, _masm)->
 
@@ -878,6 +881,17 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
   // reset the _do_not_unlock_if_synchronized flag
   NOT_LP64(__ get_thread(thread1));
   __ movbool(do_not_unlock_if_synchronized, false);
+
+  if (AnalyzeRuntimeIndependence) {
+    Label noprof;
+    __ movptr(rscratch2, Address(r15, JavaThread::active_bootstrap_offset()));
+    __ cmpptr(rscratch2, 0);
+    __ je(noprof);
+    __ cmpb(Address(rscratch2, BootstrapNode::runtime_dependent_offset()), 0);
+    __ jne(noprof);
+    __ call_VM(noreg, CAST_FROM_FN_PTR(address, InterpreterRuntime::assess_runtime_dependence_diagnosis));
+    __ bind(noprof);
+  }
 
   // check for synchronized methods
   // Must happen AFTER invocation_counter check and stack overflow check,

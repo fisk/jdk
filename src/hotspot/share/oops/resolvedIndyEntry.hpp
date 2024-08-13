@@ -44,6 +44,7 @@ class Method;
 class ResolvedIndyEntry {
   friend class VMStructs;
 
+  void* _runtime_dependence_diagnosis; // Support for dynamic runtime dependency analysis
   Method* _method;               // Adapter method for indy call
   u2 _resolved_references_index; // Index of resolved references array that holds the appendix oop
   u2 _cpool_index;               // Constant pool index
@@ -53,6 +54,7 @@ class ResolvedIndyEntry {
 
 public:
   ResolvedIndyEntry() :
+    _runtime_dependence_diagnosis(nullptr),
     _method(nullptr),
     _resolved_references_index(0),
     _cpool_index(0),
@@ -60,6 +62,7 @@ public:
     _return_type(0),
     _flags(0) {}
   ResolvedIndyEntry(u2 resolved_references_index, u2 cpool_index) :
+    _runtime_dependence_diagnosis(nullptr),
     _method(nullptr),
     _resolved_references_index(resolved_references_index),
     _cpool_index(cpool_index),
@@ -85,6 +88,11 @@ public:
   bool is_vfinal()               const { return false; }
   bool is_final()                const { return false; }
   bool has_local_signature()     const { return true;  }
+
+  // Runtime dependency analysis support
+  void* runtime_dependence_diagnosis() const;
+  void set_runtime_dependence_diagnosis(void* value);
+  static ByteSize runtime_dependence_diagnosis_offset() { return byte_offset_of(ResolvedIndyEntry, _runtime_dependence_diagnosis); }
 
   // Printing
   void print_on(outputStream* st) const;
