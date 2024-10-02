@@ -129,6 +129,9 @@ bool AOTClassInitializer::has_default_static_fields(InstanceKlass* ik) {
 }
 
 bool AOTClassInitializer::can_be_preinited(InstanceKlass* ik) {
+  if (ik->runtime_dependence_diagnosis() != nullptr) {
+    return true;
+  }
   MutexLocker ml(DumpTimeTable_lock, Mutex::_no_safepoint_check_flag);
   return can_be_preinited_locked(ik);
 }
@@ -148,7 +151,7 @@ bool AOTClassInitializer::can_be_preinited_locked(InstanceKlass* ik) {
 
 // Initialize a class at dump time, if possible.
 void AOTClassInitializer::maybe_preinit_class(InstanceKlass* ik, TRAPS) {
-  if (!ik->is_initialized() && (AOTClassInitializer::can_be_preinited(ik) || ik->runtime_dependence_diagnosis() == ik)) {
+  if (!ik->is_initialized() && AOTClassInitializer::can_be_preinited(ik)) {
     if (log_is_enabled(Info, cds, init)) {
       ResourceMark rm;
       log_info(cds, init)("preinitializing %s", ik->external_name());
@@ -181,6 +184,11 @@ bool AOTClassInitializer::can_archive_initialized_mirror(InstanceKlass* ik) {
   assert(!ArchiveBuilder::current()->is_in_buffer_space(ik), "must be source klass");
   if (!CDSConfig::is_initing_classes_at_dump_time()) {
     return false;
+  }
+
+  if (ik->runtime_dependence_diagnosis() != nullptr) {
+    // Runtime dependence analysis decided this class is safe to AOT initialize
+    return true;
   }
 
   if (ik->is_hidden()) {
@@ -237,6 +245,10 @@ bool AOTClassInitializer::can_archive_initialized_mirror(InstanceKlass* ik) {
   }
 
   if (ik->runtime_dependence_diagnosis() == ik) {
+    if (!AOTClassInitializer::can_be_preinited_locked(ik)) {
+      ResourceMark rm;
+      log_info(cds, init)("packaging mirror due to analysis %s", ik->external_name());
+    }
     return true;
   }
 

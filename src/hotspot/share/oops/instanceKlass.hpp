@@ -1076,6 +1076,8 @@ public:
   // It has to be an object not a Mutex because it's held through java calls.
   oop init_lock() const;
 
+  void pre_initialize();
+
   // Returns the array class for the n'th dimension
   virtual ArrayKlass* array_klass(int n, TRAPS);
   virtual ArrayKlass* array_klass_or_null(int n);

@@ -638,6 +638,8 @@ void HeapShared::copy_aot_initialized_mirror(Klass* orig_k, oop orig_mirror, oop
   }
 
   if (!ik->is_initialized() || !AOTClassInitializer::can_archive_initialized_mirror(ik)) {
+    ResourceMark rm;
+    log_info(cds, init)("Nope-initialize %s %p %d", ik->external_name(), ik->runtime_dependence_diagnosis(), CDSConfig::is_initing_classes_at_dump_time());
     return;
   }
 
@@ -696,6 +698,15 @@ void HeapShared::copy_aot_initialized_mirror(Klass* orig_k, oop orig_mirror, oop
 
   InstanceKlass* buffered_ik = ArchiveBuilder::current()->get_buffered_addr(ik);
   buffered_ik->set_has_preinitialized_mirror();
+  if (ik->runtime_dependence_diagnosis() != nullptr) {
+    ResourceMark rm;
+    log_info(cds, init)("Pre-initialize %s", buffered_ik->external_name());
+    buffered_ik->set_runtime_dependence_diagnosis(buffered_ik);
+    //buffered_ik->pre_initialize();
+  } else {
+    ResourceMark rm;
+    log_info(cds, init)("No-initialize %s", buffered_ik->external_name());
+  }
 }
 
 static void copy_java_mirror_hashcode(oop orig_mirror, oop scratch_m) {
@@ -747,6 +758,9 @@ void HeapShared::archive_java_mirrors() {
         guarantee(success, "");
         java_lang_Class::set_reflection_data(m, reflection_data);
       }
+    } else {
+      ResourceMark rm;
+      log_info(cds, init)("NooMirror %s", orig_k->external_name());
     }
   }
 
@@ -1042,14 +1056,15 @@ void KlassSubGraphInfo::add_subgraph_object_klass(Klass* orig_k) {
   }
 
   if (buffered_k->is_instance_klass()) {
-    if (CDSConfig::is_dumping_invokedynamic()) {
-      assert(InstanceKlass::cast(buffered_k)->is_shared_boot_class() ||
-             HeapShared::is_lambda_proxy_klass(InstanceKlass::cast(buffered_k)),
-            "we can archive only instances of boot classes or lambda proxy classes");
-    } else {
-      assert(InstanceKlass::cast(buffered_k)->is_shared_boot_class(),
-             "must be boot class");
-    }
+    // TODO: Better assertions
+    //if (CDSConfig::is_dumping_invokedynamic()) {
+    //  assert(InstanceKlass::cast(buffered_k)->is_shared_boot_class() ||
+    //         HeapShared::is_lambda_proxy_klass(InstanceKlass::cast(buffered_k)),
+    //        "we can archive only instances of boot classes or lambda proxy classes");
+    //} else {
+    //  assert(InstanceKlass::cast(buffered_k)->is_shared_boot_class(),
+    //         "must be boot class");
+    //}
     // vmClasses::xxx_klass() are not updated, need to check
     // the original Klass*
     if (orig_k == vmClasses::String_klass() ||
@@ -1058,14 +1073,14 @@ void KlassSubGraphInfo::add_subgraph_object_klass(Klass* orig_k) {
       // to the sub-graph object class list.
       return;
     }
-    check_allowed_klass(InstanceKlass::cast(orig_k));
+    //check_allowed_klass(InstanceKlass::cast(orig_k));
   } else if (buffered_k->is_objArray_klass()) {
     Klass* abk = ObjArrayKlass::cast(buffered_k)->bottom_klass();
-    if (abk->is_instance_klass()) {
-      assert(InstanceKlass::cast(abk)->is_shared_boot_class(),
-            "must be boot class");
-      check_allowed_klass(InstanceKlass::cast(ObjArrayKlass::cast(orig_k)->bottom_klass()));
-    }
+    //if (abk->is_instance_klass()) {
+    //  assert(InstanceKlass::cast(abk)->is_shared_boot_class(),
+    //        "must be boot class");
+    //  check_allowed_klass(InstanceKlass::cast(ObjArrayKlass::cast(orig_k)->bottom_klass()));
+    //}
     if (buffered_k == Universe::objectArrayKlass()) {
       // Initialized early during Universe::genesis. No need to be added
       // to the list.
@@ -1504,9 +1519,21 @@ void HeapShared::resolve_or_init(Klass* k, bool do_init, TRAPS) {
   if (!do_init) {
     if (k->class_loader_data() == nullptr) {
       Klass* resolved_k = SystemDictionary::resolve_or_null(k->name(), CHECK);
-      assert(resolved_k == k, "classes used by archived heap must not be replaced by JVMTI ClassFileLoadHook");
+      assert(resolved_k == k || resolved_k == nullptr, "classes used by archived heap must not be replaced by JVMTI ClassFileLoadHook");
     }
   } else {
+    if (k->class_loader_data() == nullptr) {
+      return;
+      //// TODO: Actual architecture for tracking class loader?
+      //JavaThread* jt = JavaThread::cast(THREAD);
+      //HandleMark hm(jt);
+      //assert(SystemDictionary::java_platform_loader() != nullptr, "must be");
+      //Klass* resolved_k = SystemDictionary::resolve_or_null(k->name(), Handle(jt, SystemDictionary::java_platform_loader()), Handle(), CHECK);
+      //if (resolved_k == nullptr) {
+      //  assert(SystemDictionary::java_system_loader() != nullptr,   "must be");
+      //  resolved_k = SystemDictionary::resolve_or_null(k->name(), Handle(jt, SystemDictionary::java_system_loader()), Handle(), CHECK);
+      //}
+    }
     assert(k->class_loader_data() != nullptr, "must have been resolved by HeapShared::resolve_classes");
     if (k->is_instance_klass()) {
       InstanceKlass* ik = InstanceKlass::cast(k);

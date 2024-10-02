@@ -112,10 +112,12 @@ void AOTLinkedClassBulkLoader::load_non_javabase_boot_classes(JavaThread* curren
 }
 
 void AOTLinkedClassBulkLoader::load_platform_classes(JavaThread* current) {
+  assert(SystemDictionary::java_platform_loader() != nullptr, "Surely");
   load_classes_in_loader(current, LoaderKind::PLATFORM, SystemDictionary::java_platform_loader());
 }
 
 void AOTLinkedClassBulkLoader::load_app_classes(JavaThread* current) {
+  assert(SystemDictionary::java_system_loader() != nullptr, "Surely");
   load_classes_in_loader(current, LoaderKind::APP, SystemDictionary::java_system_loader());
 
   if (PrintTrainingInfo) {

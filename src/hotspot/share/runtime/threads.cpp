@@ -337,6 +337,14 @@ static void call_initPhase2(TRAPS) {
       assert(SystemDictionary::java_system_loader() != nullptr,   "must be");
       AOTLinkedClassBulkLoader::load_platform_classes(THREAD);
       AOTLinkedClassBulkLoader::load_app_classes(THREAD);
+      // TODO: Initialize RI classes here
+      if (CDSConfig::is_dumping_final_static_archive()) {
+        // TODO: copy the verification and loader constraints from preimage to final image
+        // TODO: load archived classes for custom loaders as well.
+        log_info(cds)("Dumping final image of CacheDataStore %s", CacheDataStore);
+        MetaspaceShared::preload_and_dump(THREAD);
+        vm_direct_exit(0, "CacheDataStore dumping is complete");
+      }
     } else {
       // Special case -- we assume that the final archive has the same module graph
       // as the training run.
@@ -902,12 +910,6 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   if (CDSConfig::is_dumping_classic_static_archive()) {
     // Classic -Xshare:dump, aka "old workflow"
     MetaspaceShared::preload_and_dump(CHECK_JNI_ERR);
-  } else if (CDSConfig::is_dumping_final_static_archive()) {
-    // TODO: copy the verification and loader constraints from preimage to final image
-    // TODO: load archived classes for custom loaders as well.
-    log_info(cds)("Dumping final image of CacheDataStore %s", CacheDataStore);
-    MetaspaceShared::preload_and_dump(CHECK_JNI_ERR);
-    vm_direct_exit(0, "CacheDataStore dumping is complete");
   }
 
   log_info(init)("At VM initialization completion:");

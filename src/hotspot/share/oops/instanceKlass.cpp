@@ -1204,6 +1204,23 @@ void InstanceKlass::initialize_impl(TRAPS) {
 
   JavaThread* jt = THREAD;
 
+  // TODO: ERIK WAS HERE
+  if (has_preinitialized_mirror() && CDSConfig::is_loading_heap() &&
+      !ForceProfiling &&
+      !RecordTraining &&
+      _runtime_dependence_diagnosis != nullptr) {
+    // FIXME: also check for events listeners such as JVMTI, JFR, etc
+    if (log_is_enabled(Info, cds, init)) {
+      ResourceMark rm;
+      log_info(cds, init)("%s (quickest)", external_name());
+    }
+
+    log_class_init(THREAD, this);
+    set_init_thread(THREAD);
+    set_initialization_state_and_notify(fully_initialized, CHECK); // TODO: Should not need
+    return;
+  }
+
   if (ForceProfiling) {
     // Preallocate MDOs.
     for (int i = 0; i < methods()->length(); i++) {
@@ -1389,6 +1406,10 @@ void InstanceKlass::initialize_impl(TRAPS) {
     }
   }
   DTRACE_CLASSINIT_PROBE_WAIT(end, -1, wait);
+}
+
+void InstanceKlass::pre_initialize() {
+  set_init_state(fully_initialized);
 }
 
 void InstanceKlass::set_initialization_state_and_notify(ClassState state, TRAPS) {

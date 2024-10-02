@@ -42,6 +42,9 @@
 #include "utilities/align.hpp"
 #include "utilities/copy.hpp"
 #include "utilities/globalDefinitions.hpp"
+#if INCLUDE_CDS
+#include "cds/bootstrapCapture.hpp"
+#endif
 
 class MemAllocator::Allocation: StackObj {
   friend class MemAllocator;
@@ -239,6 +242,10 @@ void MemAllocator::Allocation::notify_allocation() {
 
 HeapWord* MemAllocator::mem_allocate_outside_tlab(Allocation& allocation) const {
   allocation._allocated_outside_tlab = true;
+  if (AnalyzeRuntimeIndependence) {
+    // TODO: G1 problems with object dumping
+    BootstrapCapture::assess_runtime_dependence_diagnosis(JavaThread::current());
+  }
   HeapWord* mem = Universe::heap()->mem_allocate(_word_size, &allocation._overhead_limit_exceeded);
   if (mem == nullptr) {
     return mem;

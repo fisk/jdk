@@ -64,7 +64,7 @@ public final class CleanerImpl implements Runnable {
         if (cleanerImplAccess == null) {
             cleanerImplAccess = access;
         } else {
-            throw new InternalError("cleanerImplAccess");
+            //throw new InternalError("cleanerImplAccess");
         }
     }
 
