@@ -796,12 +796,10 @@ void InstanceKlass::initialize(TRAPS) {
 }
 
 void* InstanceKlass::runtime_dependence_diagnosis() const {
-  assert(AnalyzeRuntimeIndependence, "why is this called?");
   return Atomic::load(&_runtime_dependence_diagnosis);
 }
 
 void InstanceKlass::set_runtime_dependence_diagnosis(void* value) {
-  assert(AnalyzeRuntimeIndependence, "why is this called?");
   Atomic::store(&_runtime_dependence_diagnosis, value);
 }
 
@@ -3953,7 +3951,6 @@ const char* InstanceKlass::internal_name() const {
 void InstanceKlass::print_class_load_logging(ClassLoaderData* loader_data,
                                              const ModuleEntry* module_entry,
                                              const ClassFileStream* cfs) const {
-
   if (ClassListWriter::is_enabled()) {
     ClassListWriter::write(this, cfs);
   }

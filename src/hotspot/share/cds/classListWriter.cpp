@@ -216,6 +216,40 @@ public:
   }
 };
 
+class ClassListWriter::WriteRIClassesCLDClosure : public CLDClosure {
+public:
+  void do_cld(ClassLoaderData* cld) {
+    for (Klass* klass = cld->klasses(); klass != nullptr; klass = klass->next_link()) {
+      if (klass->is_instance_klass()) {
+        InstanceKlass* ik = InstanceKlass::cast(klass);
+        if (ik->is_initialized() && ik->runtime_dependence_diagnosis() == nullptr) {
+          // TODO: Abstract and check the following black listing code
+          if (!SystemDictionaryShared::is_builtin_loader(ik->class_loader_data()) ||
+              ik->is_hidden()) {
+            continue;
+          }
+          if (LambdaFormInvokers::may_be_regenerated_class(ik->name())) {
+            continue;
+          }
+          if (ik->name()->equals("jdk/internal/module/SystemModules$all")) {
+            // This class is regenerated during JDK build process, so the classlist
+            // may not match the version that's in the real jdk image.
+            continue;
+          }
+
+          if (!has_id(ik)) { // do not resolve CP for classes loaded by custom loaders.
+            continue;
+          }
+
+          outputStream* stream = _classlist_file;
+          ResourceMark rm;
+          stream->print_cr("@ri %s", ik->name()->as_C_string());
+        }
+      }
+    }
+  }
+};
+
 void ClassListWriter::write_array_info_for(InstanceKlass* ik) {
   ObjArrayKlass* oak = ik->array_klasses();
   if (oak != nullptr) {
@@ -226,6 +260,18 @@ void ClassListWriter::write_array_info_for(InstanceKlass* ik) {
     outputStream* stream = _classlist_file;
     stream->print_cr("%s %s %d", ClassListParser::ARRAY_TAG, ik->name()->as_C_string(), oak->dimension());
   }
+}
+
+void ClassListWriter::write_runtime_independent_classes() {
+  if (!is_enabled()) {
+    return;
+  }
+
+  MutexLocker lock(ClassLoaderDataGraph_lock);
+  MutexLocker lock2(ClassListFile_lock, Mutex::_no_safepoint_check_flag);
+
+  WriteRIClassesCLDClosure closure;
+  ClassLoaderDataGraph::loaded_cld_do(&closure);
 }
 
 void ClassListWriter::write_resolved_constants() {

@@ -531,6 +531,7 @@ void before_exit(JavaThread* thread, bool halt) {
 #endif
 
 #if INCLUDE_CDS
+  ClassListWriter::write_runtime_independent_classes();
   ClassListWriter::write_resolved_constants();
   ClassListWriter::write_reflection_data();
   ClassListWriter::write_loader_negative_lookup_cache();

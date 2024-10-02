@@ -58,6 +58,7 @@
 
 const char* ClassListParser::CLASS_REFLECTION_DATA_TAG = "@class-reflection-data";
 const char* ClassListParser::CONSTANT_POOL_TAG = "@cp";
+const char* ClassListParser::RUNTIME_INDEPENDENT_TAG = "@ri";
 const char* ClassListParser::DYNAMIC_PROXY_TAG = "@dynamic-proxy";
 const char* ClassListParser::LAMBDA_FORM_TAG = "@lambda-form-invoker";
 const char* ClassListParser::LAMBDA_PROXY_TAG = "@lambda-proxy";
@@ -318,6 +319,9 @@ void ClassListParser::parse_at_tags(TRAPS) {
   } else if (strcmp(_token, CONSTANT_POOL_TAG) == 0) {
     _token = _line + offset;
     parse_constant_pool_tag();
+  } else if (strcmp(_token, RUNTIME_INDEPENDENT_TAG) == 0) {
+    _token = _line + offset;
+    parse_runtime_independent_tag();
   } else if (strcmp(_token, ARRAY_TAG) == 0) {
     _token = _line + offset;
     parse_array_dimension_tag();
@@ -915,6 +919,28 @@ void ClassListParser::parse_constant_pool_tag() {
     AOTConstantPoolResolver::preresolve_indy_cp_entries(THREAD, ik, &preresolve_list);
   }
 }
+
+void ClassListParser::parse_runtime_independent_tag() {
+  if (parse_lambda_forms_invokers_only()) {
+    return;
+  }
+
+  JavaThread* THREAD = JavaThread::current();
+  skip_whitespaces();
+  char* class_name = _token;
+  skip_non_whitespaces();
+  *_token = '\0';
+  _token ++;
+
+  // Transfer knowledge about runtime dependence. Unless explicitly
+  // stated to be runtime independent, assume it is runtime dependent.
+  // We will explicitly whitelist the ones with an @ri tag
+  InstanceKlass* ik = find_builtin_class(THREAD, class_name);
+  if (ik != nullptr) {
+    ik->set_runtime_dependence_diagnosis(ik);
+  }
+}
+
 
 void ClassListParser::parse_class_reflection_data_tag() {
   if (parse_lambda_forms_invokers_only()) {

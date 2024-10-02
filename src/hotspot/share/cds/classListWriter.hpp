@@ -35,6 +35,7 @@ class ClassListWriter {
 #if INCLUDE_CDS
   class IDTable;
   class WriteResolveConstantsCLDClosure;
+  class WriteRIClassesCLDClosure;
 
   static fileStream* _classlist_file;
   static IDTable* _id_table;
@@ -72,6 +73,7 @@ public:
   static void init() NOT_CDS_RETURN;
   static void write(const InstanceKlass* k, const ClassFileStream* cfs) NOT_CDS_RETURN;
   static void write_to_stream(const InstanceKlass* k, outputStream* stream, const ClassFileStream* cfs = nullptr) NOT_CDS_RETURN;
+  static void write_runtime_independent_classes() NOT_CDS_RETURN;
   static void write_resolved_constants() NOT_CDS_RETURN;
   static void write_reflection_data() NOT_CDS_RETURN;
   static void write_loader_negative_lookup_cache() NOT_CDS_RETURN;

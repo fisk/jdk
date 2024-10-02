@@ -148,7 +148,7 @@ bool AOTClassInitializer::can_be_preinited_locked(InstanceKlass* ik) {
 
 // Initialize a class at dump time, if possible.
 void AOTClassInitializer::maybe_preinit_class(InstanceKlass* ik, TRAPS) {
-  if (!ik->is_initialized() && AOTClassInitializer::can_be_preinited(ik)) {
+  if (!ik->is_initialized() && (AOTClassInitializer::can_be_preinited(ik) || ik->runtime_dependence_diagnosis() == ik)) {
     if (log_is_enabled(Info, cds, init)) {
       ResourceMark rm;
       log_info(cds, init)("preinitializing %s", ik->external_name());
@@ -234,6 +234,10 @@ bool AOTClassInitializer::can_archive_initialized_mirror(InstanceKlass* ik) {
       assert(ik->is_initialized(), "must be");
       return true;
     }
+  }
+
+  if (ik->runtime_dependence_diagnosis() == ik) {
+    return true;
   }
 
   return AOTClassInitializer::can_be_preinited_locked(ik);

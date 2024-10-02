@@ -67,6 +67,7 @@ public:
 
 class ClassListParser : public StackObj {
   static const char* CONSTANT_POOL_TAG;
+  static const char* RUNTIME_INDEPENDENT_TAG;
   static const char* DYNAMIC_PROXY_TAG;
   static const char* LAMBDA_FORM_TAG;
   static const char* LAMBDA_PROXY_TAG;
@@ -135,6 +136,7 @@ private:
   void parse_class_name_and_attributes(TRAPS);
   Klass* load_current_class(Symbol* class_name_symbol, TRAPS);
   void parse_constant_pool_tag();
+  void parse_runtime_independent_tag();
   void parse_class_reflection_data_tag();
   void parse_dynamic_proxy_tag();
   void parse_loader_negative_cache_tag();
