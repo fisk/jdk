@@ -99,7 +99,7 @@ const size_t      ZMarkProactiveFlushMax        = 10;
 const uint64_t    ZMarkCompleteTimeout          = 200; // us
 
 // After what level of CPU load do we want to trade memory for lower latencies?
-const double      ZCPUConcerningThreshold       = 0.2;
+const double      ZCPUConcerningThreshold       = 0.4;
 
 // How much memory reserve do we try to keep as buffer zone on the machine
 const double      ZMemoryConcerningThreshold    = 0.2;

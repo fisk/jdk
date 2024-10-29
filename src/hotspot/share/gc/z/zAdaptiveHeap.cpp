@@ -109,7 +109,7 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
   // heap too much. In fact, then we can conversely increase the heap size
   // so that CPU can decrease a bit, avoiding latency issues due to too high
   // CPU utilization, to some reasonable limit.
-  const double responsive_cpu_usage = cpu_usage * 2.5;
+  const double responsive_cpu_usage = cpu_usage / ZCPUConcerningThreshold;
   const double cpu_memory_usage_ratio = memory_usage / (responsive_cpu_usage + memory_usage);
   const double cpu_pressure = cpu_memory_usage_ratio * 2.0;
 
