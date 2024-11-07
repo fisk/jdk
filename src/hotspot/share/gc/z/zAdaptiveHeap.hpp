@@ -74,7 +74,7 @@ public:
   static uint64_t uncommit_delay();
 
   static bool explicit_max_capacity() { return _explicit_max_capacity; }
-  static size_t current_max_capacity(size_t capacity, size_t max_capacity);
+  static size_t current_max_capacity(size_t capacity);
 };
 
 #endif // SHARE_GC_Z_ZADAPTIVEHEAP_HPP

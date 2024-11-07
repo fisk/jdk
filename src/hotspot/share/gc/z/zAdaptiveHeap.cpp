@@ -283,7 +283,7 @@ uint64_t ZAdaptiveHeap::uncommit_delay() {
   return uint64_t(ZUncommitDelay / pressure);
 }
 
-size_t ZAdaptiveHeap::current_max_capacity(size_t capacity, size_t max_capacity) {
+size_t ZAdaptiveHeap::current_max_capacity(size_t capacity) {
   const size_t machine_memory = os::physical_memory();
   const size_t used_memory = os::used_memory();
   const size_t hard_machine_memory_limit = machine_memory * (1.0 - ZMemoryCriticalThreshold);
@@ -296,5 +296,5 @@ size_t ZAdaptiveHeap::current_max_capacity(size_t capacity, size_t max_capacity)
   const size_t scaled_available_machine_memory = available_machine_memory * 0.2;
   const size_t max_capacity_available = align_down(capacity + scaled_available_machine_memory, ZGranuleSize);
 
-  return MIN2(max_capacity_available, max_capacity);
+  return MIN2(max_capacity_available, machine_memory);
 }

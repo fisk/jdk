@@ -341,11 +341,10 @@ size_t ZPageAllocator::current_max_capacity() const {
     return _max_capacity;
   }
 
-  const size_t max_capacity = _max_capacity;
   const size_t capacity = Atomic::load(&_capacity);
 
   // Calculate current max capacity based on machine usage
-  return ZAdaptiveHeap::current_max_capacity(capacity, max_capacity);
+  return ZAdaptiveHeap::current_max_capacity(capacity);
 }
 
 size_t ZPageAllocator::heuristic_max_capacity() const {

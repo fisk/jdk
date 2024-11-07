@@ -38,17 +38,6 @@
 #include "os_linux.hpp"
 #endif
 
-static size_t machine_memory() {
-  // We might need to scale up to most of the underlying machine memory. Note that
-  // container sizes may change, so we need to prepare for sizing up larger than
-  // the container size reported by os::physical_memory.
-#ifdef LINUX
-  return os::Linux::physical_memory();
-#else
-  return os::physical_memory();
-#endif
-}
-
 void ZArguments::initialize_alignments() {
   SpaceAlignment = ZGranuleSize;
   HeapAlignment = SpaceAlignment;
@@ -71,7 +60,6 @@ void ZArguments::set_heap_size() {
   const bool explicit_init_heap_size = FLAG_IS_CMDLINE(InitialHeapSize) ||
                                        FLAG_IS_CMDLINE(InitialRAMPercentage);
   if (!explicit_max_heap_size) {
-    FLAG_SET_ERGO(MaxRAM, machine_memory());
     FLAG_SET_ERGO(MaxRAMPercentage, default_max_heap_size_percent);
   }
   if (!explicit_min_heap_size) {
