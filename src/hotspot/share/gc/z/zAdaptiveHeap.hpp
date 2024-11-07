@@ -44,6 +44,7 @@ private:
 
   struct ZGenerationOverhead {
     double       _last_process_time;
+    double       _last_time;
     TruncatedSeq _process_time;
     TruncatedSeq _gc_time;
     TruncatedSeq _gc_time_since_last;

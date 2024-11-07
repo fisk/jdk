@@ -415,6 +415,7 @@ struct ZStatCycleStats {
   double _sd_parallelizable_time;
   double _avg_parallelizable_duration;
   double _sd_parallelizable_duration;
+  double _last_total_vtime;
 };
 
 //
@@ -431,6 +432,8 @@ private:
   NumberSeq _parallelizable_time;
   NumberSeq _parallelizable_duration;
   double    _last_active_workers;
+  double    _start_vtime;
+  double    _last_total_vtime;
 
   bool is_warm();
   bool is_time_trustable();
@@ -463,6 +466,8 @@ private:
   Tickspan _accumulated_duration;
   Tickspan _accumulated_time;
 
+  volatile double _accumulated_vtime;
+
   double accumulated_duration();
   double accumulated_time();
   uint active_workers();
@@ -475,6 +480,9 @@ public:
 
   double get_and_reset_duration();
   double get_and_reset_time();
+
+  void add_accumulated_vtime(double vtime);
+  double get_and_reset_vtime();
 
   ZStatWorkersStats stats();
 };

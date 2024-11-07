@@ -98,6 +98,7 @@ void ZWorkers::run(ZTask* task) {
     _stats->at_start(active_workers());
   }
 
+  task->set_workers(this);
   _workers.run_task(task->worker_task());
 
   {
@@ -164,4 +165,8 @@ void ZWorkers::request_resize_workers(uint nworkers) {
                      _generation_name, _workers.active_workers(), nworkers);
 
   _requested_nworkers = nworkers;
+}
+
+void ZWorkers::add_accumulated_vtime(double vtime) {
+  _stats->add_accumulated_vtime(vtime);
 }

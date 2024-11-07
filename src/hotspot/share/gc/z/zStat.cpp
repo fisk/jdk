@@ -1231,11 +1231,14 @@ ZStatCycle::ZStatCycle()
     _serial_time(0.7 /* alpha */),
     _parallelizable_time(0.7 /* alpha */),
     _parallelizable_duration(0.7 /* alpha */),
-    _last_active_workers(0.0) {}
+    _last_active_workers(0.0),
+    _start_vtime(),
+    _last_total_vtime() {}
 
 void ZStatCycle::at_start() {
   ZLocker<ZLock> locker(&_stat_lock);
   _start_of_last = Ticks::now();
+  _start_vtime = os::elapsedVTime();
 }
 
 void ZStatCycle::at_end(ZStatWorkers* stat_workers, bool record_stats) {
@@ -1251,6 +1254,7 @@ void ZStatCycle::at_end(ZStatWorkers* stat_workers, bool record_stats) {
   const double duration = (_end_of_last - _start_of_last).seconds();
   const double workers_duration = stat_workers->get_and_reset_duration();
   const double workers_time = stat_workers->get_and_reset_time();
+  const double workers_vtime = stat_workers->get_and_reset_vtime();
   const double serial_time = duration - workers_duration;
 
   _last_active_workers = workers_time / workers_duration;
@@ -1259,6 +1263,8 @@ void ZStatCycle::at_end(ZStatWorkers* stat_workers, bool record_stats) {
     _serial_time.add(serial_time);
     _parallelizable_time.add(workers_time);
     _parallelizable_duration.add(workers_duration);
+    const double elapsed_vtime = os::elapsedVTime() - _start_vtime;
+    _last_total_vtime = elapsed_vtime + workers_vtime;
     if (end_of_last.value() != 0) {
       const double cycle_interval = (_end_of_last - end_of_last).seconds();
       _cycle_intervals.add(cycle_interval);
@@ -1319,7 +1325,8 @@ ZStatCycleStats ZStatCycle::stats() {
     _parallelizable_time.davg(),
     _parallelizable_time.dsd(),
     _parallelizable_duration.davg(),
-    _parallelizable_duration.dsd()
+    _parallelizable_duration.dsd(),
+    _last_total_vtime
   };
 }
 
@@ -1393,6 +1400,23 @@ double ZStatWorkers::get_and_reset_time() {
   const Ticks now = Ticks::now();
   _accumulated_time = now - now;
   return time;
+}
+
+double ZStatWorkers::get_and_reset_vtime() {
+  ZLocker<ZLock> locker(&_stat_lock);
+  double result = _accumulated_vtime;
+  _accumulated_vtime = 0.0;
+  return result;
+}
+
+void ZStatWorkers::add_accumulated_vtime(double vtime) {
+  for (;;) {
+    double prev = Atomic::load(&_accumulated_vtime);
+    double new_val = prev + vtime;
+    if (Atomic::cmpxchg(&_accumulated_vtime, prev, new_val) == prev) {
+      return;
+    }
+  }
 }
 
 ZStatWorkersStats ZStatWorkers::stats() {

@@ -41,9 +41,12 @@ ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_young_data;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_old_data;
 
 void ZAdaptiveHeap::initialize(bool explicit_max_capacity) {
-  double time_now = os::elapsed_process_vtime();
-  _young_data._last_process_time = time_now;
-  _old_data._last_process_time = time_now;
+  double process_time_now = os::elapsed_process_vtime();
+  double time_now = os::elapsedTime();
+  _young_data._last_process_time = process_time_now;
+  _old_data._last_process_time = process_time_now;
+  _young_data._last_time = time_now;
+  _old_data._last_time = time_now;
   _explicit_max_capacity = explicit_max_capacity;
 }
 
@@ -166,17 +169,15 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const bool is_young = generation == ZGenerationId::young;
   ZGenerationOverhead& generation_data = is_young ? _young_data : _old_data;
 
-  // GC time metrics
-  const double parallel_gc_duration = worker_stats._accumulated_duration;
-  const double parallel_gc_time = worker_stats._accumulated_time;
-  const double serial_gc_time = cycle_stats._duration_since_start - parallel_gc_duration;
-  const double time_since_last = cycle_stats._time_since_last;
-
-  // Process time metrics
+  // Time metrics
   const double process_time_last = generation_data._last_process_time;
   const double process_time_now = os::elapsed_process_vtime();
   const double process_time = process_time_now - process_time_last;
+  const double time_now = os::elapsedTime();
+  const double time_last = generation_data._last_time;
+  const double time_since_last = time_now - time_last;
   generation_data._last_process_time = process_time_now;
+  generation_data._last_time = time_now;
 
   // Heap size metrics
   const size_t soft_max_capacity = metrics->_soft_max_capacity;
@@ -186,7 +187,8 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const size_t min_capacity = metrics->_min_capacity;
   const size_t used = metrics->_used;
 
-  const double machine_load = clamp((process_time / time_since_last) / double(os::active_processor_count()), 0.0, 1.0);
+  double ncpus = double(os::active_processor_count());
+  const double machine_load = clamp((process_time / time_since_last) / ncpus, 0.0, 1.0);
   const double scaled_pressure = gc_pressure(unscaled_pressure, machine_load);
   generation_data._gc_pressure.add(scaled_pressure);
   const double pressure = generation_data._gc_pressure.avg();
@@ -198,9 +200,9 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const size_t heuristic_low = MAX2(size_t(used * 1.1), size_t(alloc_rate / alloc_rate_scaling));
 
   const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
-  const size_t lower_bound = clamp(heuristic_low, min_capacity, upper_bound);
+  size_t lower_bound = clamp(heuristic_low, min_capacity, upper_bound);
 
-  const double gc_time = serial_gc_time + parallel_gc_time + (is_young ? 0.0 : _accumulated_young_gc_time);
+  const double gc_time = cycle_stats._last_total_vtime + (is_young ? 0.0 : _accumulated_young_gc_time);
 
   generation_data._process_time.add(process_time);
   generation_data._gc_time.add(gc_time);
@@ -228,18 +230,21 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const double target_gc_interval = MAX2(min_gc_interval, machine_load * min_fully_loaded_gc_interval);
   const double gc_interval_error = target_gc_interval - avg_time_since_last;
 
-  const double smoothened_error = smoothing_function(MAX2(cpu_overhead_error, gc_interval_error));
-  double correction_factor = smoothened_error + 0.5;
+  double error_signal = MAX2(cpu_overhead_error, gc_interval_error);
 
   if (is_young) {
     _accumulated_young_gc_time += gc_time;
+
     // Don't have enough data to shrink in young collections, so we don't do it.
-    correction_factor = MAX2(correction_factor, 1.0);
+    error_signal = MAX2(error_signal, 0.0);
   } else {
-    const double young_to_old_gc_time = _accumulated_young_gc_time / (_accumulated_young_gc_time + serial_gc_time + parallel_gc_time);
+    const double young_to_old_gc_time = _accumulated_young_gc_time / (_accumulated_young_gc_time + cycle_stats._last_total_vtime);
     Atomic::store(&_young_to_old_gc_time, young_to_old_gc_time);
     _accumulated_young_gc_time = 0.0;
   }
+
+  const double smoothened_error = smoothing_function(error_signal);
+  const double correction_factor = smoothened_error + 0.5;
 
   const size_t suggested_capacity = align_up(size_t(heuristic_max_capacity * correction_factor), ZGranuleSize);
   const size_t selected_capacity = clamp(suggested_capacity, lower_bound, upper_bound);
