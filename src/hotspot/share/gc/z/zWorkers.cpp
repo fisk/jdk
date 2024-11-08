@@ -132,6 +132,7 @@ void ZWorkers::run_all(ZTask* task) {
 
   // Execute task using all workers
   log_debug(gc, task)("Executing %s using %s with %u workers", task->name(), _workers.name(), active_workers());
+  task->set_workers(this);
   _workers.run_task(task->worker_task());
 
   // Restore number of active workers
