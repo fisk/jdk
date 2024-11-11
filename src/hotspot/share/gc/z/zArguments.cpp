@@ -44,12 +44,6 @@ void ZArguments::initialize_alignments() {
 }
 
 void ZArguments::set_heap_size() {
-  if (ZGCPressure <= 0.0) {
-    // Don't set up generous heap boundaries when automatic heap sizing is
-    // explicitly turned off
-    return;
-  }
-
   const size_t default_min_heap_size_bytes = 16 * M;
   const double default_max_heap_size_percent = 100.0;
 
@@ -68,20 +62,12 @@ void ZArguments::set_heap_size() {
   if (!explicit_init_heap_size) {
     FLAG_SET_ERGO(InitialHeapSize, default_min_heap_size_bytes);
   }
+
+  ZAdaptiveHeap::initialize(explicit_max_heap_size);
 }
 
 void ZArguments::initialize_heap_flags_and_sizes() {
-  const bool explicit_max_heap_size = FLAG_IS_CMDLINE(MaxHeapSize) ||
-                                      FLAG_IS_CMDLINE(MaxRAMPercentage);
-  if (!explicit_max_heap_size &&
-      !FLAG_IS_CMDLINE(SoftMaxHeapSize)) {
-    // For implicit heap sizes, we don't want the soft and hard limits to be the same
-    // as it can cause flakyness in the number of GC threads used, in order to keep
-    // to a random number we just pulled out of thin air.
-    FLAG_SET_ERGO(SoftMaxHeapSize, MaxHeapSize * 90 / 100);
-  }
-
-  ZAdaptiveHeap::initialize(explicit_max_heap_size);
+  // Such empty, so sad
 };
 
 void ZArguments::select_max_gc_threads() {

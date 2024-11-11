@@ -145,12 +145,7 @@ static double smoothing_function(double value) {
 }
 
 size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGenerationId generation) {
-  double unscaled_pressure = Atomic::load(&ZGCPressure);
-
-  if (unscaled_pressure <= 0.0) {
-    // Don't adapt anything when turned off
-    return metrics->_heuristic_max_capacity;
-  }
+  double unscaled_pressure = Atomic::load(&GCPressure);
 
   const bool is_major = Thread::current() == ZDriver::major();
   const GCCause::Cause cause = is_major ? ZDriver::major()->gc_cause() : ZDriver::minor()->gc_cause();
@@ -281,7 +276,7 @@ uint64_t ZAdaptiveHeap::uncommit_delay() {
     return 0;
   }
 
-  const double unscaled_pressure = Atomic::load(&ZGCPressure);
+  const double unscaled_pressure = Atomic::load(&GCPressure);
   const double excess_pressure = memory_pressure(unscaled_pressure, used_memory, compressed_memory, total_memory) - 1.0;
   const double pressure = 1.0 + excess_pressure * unscaled_pressure;
 
