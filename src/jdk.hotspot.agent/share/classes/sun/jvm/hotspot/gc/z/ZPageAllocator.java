@@ -46,7 +46,7 @@ public class ZPageAllocator extends VMObject {
     private static synchronized void initialize(TypeDataBase db) {
         Type type = db.lookupType("ZPageAllocator");
 
-        maxCapacityField = type.getCIntegerField("_max_capacity");
+        maxCapacityField = type.getCIntegerField("_static_max_capacity");
         capacityField = type.getCIntegerField("_capacity");
         usedField = type.getCIntegerField("_used");
     }

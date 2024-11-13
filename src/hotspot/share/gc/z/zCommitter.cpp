@@ -110,7 +110,7 @@ void ZCommitter::run_thread() {
 
     if (committed > 0) {
       log_info(gc, heap)("Committed: " SIZE_FORMAT "M(%.0f%%)",
-                         committed / M, percent_of(committed, ZHeap::heap()->max_capacity()));
+                         committed / M, percent_of(committed, ZHeap::heap()->dynamic_max_capacity()));
     }
   }
 }

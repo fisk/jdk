@@ -45,7 +45,7 @@ void ZArguments::initialize_alignments() {
 
 void ZArguments::set_heap_size() {
   const size_t default_min_heap_size_bytes = 16 * M;
-  const double default_max_heap_size_percent = 100.0;
+  const double default_max_heap_size_percent = (1.0 - ZMemoryCriticalThreshold) * 100.0;
 
   const bool explicit_max_heap_size =  FLAG_IS_CMDLINE(MaxHeapSize) ||
                                        FLAG_IS_CMDLINE(MaxRAMPercentage);
@@ -67,7 +67,10 @@ void ZArguments::set_heap_size() {
 }
 
 void ZArguments::initialize_heap_flags_and_sizes() {
-  // Such empty, so sad
+  if (!FLAG_IS_CMDLINE(SoftMaxHeapSize)) {
+    // This denotes there is no soft max heap size set.
+    FLAG_SET_ERGO(SoftMaxHeapSize, 0);
+  }
 };
 
 void ZArguments::select_max_gc_threads() {

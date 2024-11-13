@@ -82,7 +82,7 @@ void ZUncommitter::run_thread() {
       // Update statistics
       ZStatInc(ZCounterUncommit, uncommitted);
       log_info(gc, heap)("Uncommitted: " SIZE_FORMAT "M(%.0f%%)",
-                         uncommitted / M, percent_of(uncommitted, ZHeap::heap()->max_capacity()));
+                         uncommitted / M, percent_of(uncommitted, ZHeap::heap()->dynamic_max_capacity()));
 
       // Send event
       event.commit(uncommitted);

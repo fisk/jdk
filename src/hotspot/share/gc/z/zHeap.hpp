@@ -69,7 +69,8 @@ public:
   // Heap metrics
   size_t initial_capacity() const;
   size_t min_capacity() const;
-  size_t max_capacity() const;
+  size_t static_max_capacity() const;
+  size_t dynamic_max_capacity() const;
   size_t current_max_capacity() const;
   size_t heuristic_max_capacity() const;
   size_t capacity() const;

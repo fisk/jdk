@@ -72,7 +72,7 @@ private:
   ZPhysicalMemoryManager     _physical;
   const size_t               _min_capacity;
   const size_t               _initial_capacity;
-  const size_t               _max_capacity;
+  const size_t               _static_max_capacity;
   volatile size_t            _heuristic_max_capacity;
   volatile size_t            _capacity;
   volatile size_t            _claimed;
@@ -134,7 +134,8 @@ public:
   ZPageAllocator(size_t min_capacity,
                  size_t initial_capacity,
                  size_t soft_max_capacity,
-                 size_t max_capacity);
+                 size_t initial_max_capacity,
+                 size_t static_max_capacity);
 
   bool is_initialized() const;
 
@@ -142,7 +143,8 @@ public:
 
   size_t initial_capacity() const;
   size_t min_capacity() const;
-  size_t max_capacity() const;
+  size_t static_max_capacity() const;
+  size_t dynamic_max_capacity() const;
   size_t current_max_capacity() const;
   size_t heuristic_max_capacity() const;
   size_t capacity() const;
@@ -184,7 +186,6 @@ public:
 class ZPageAllocatorStats {
 private:
   size_t _min_capacity;
-  size_t _max_capacity;
   size_t _heuristic_max_capacity;
   size_t _capacity;
   size_t _used;
@@ -198,7 +199,6 @@ private:
 
 public:
   ZPageAllocatorStats(size_t min_capacity,
-                      size_t max_capacity,
                       size_t heuristic_max_capacity,
                       size_t capacity,
                       size_t used,
@@ -211,7 +211,6 @@ public:
                       size_t allocation_stalls);
 
   size_t min_capacity() const;
-  size_t max_capacity() const;
   size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;

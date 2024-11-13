@@ -234,6 +234,9 @@ private:
   void set_used_at_start(size_t used) const;
   size_t used_at_start() const;
 
+  void set_max_at_start(size_t max) const;
+  size_t max_at_start() const;
+
 public:
   ZStatPhaseCollection(const char* name, bool minor);
 
@@ -678,7 +681,7 @@ private:
 
   size_t capacity_high() const;
   size_t capacity_low() const;
-  size_t free(size_t used) const;
+  size_t free(size_t used, size_t capacity) const;
   size_t mutator_allocated(size_t used, size_t freed, size_t relocated) const;
   size_t garbage(size_t freed, size_t relocated, size_t promoted) const;
   size_t reclaimed(size_t freed, size_t relocated, size_t promoted) const;
@@ -694,7 +697,7 @@ public:
   void at_relocate_start(const ZPageAllocatorStats& stats);
   void at_relocate_end(const ZPageAllocatorStats& stats, bool record_stats);
 
-  static size_t max_capacity();
+  size_t max_at_collection_start() const;
   size_t used_at_collection_start() const;
   size_t used_at_mark_start() const;
   size_t used_generation_at_mark_start() const;

@@ -98,11 +98,15 @@ double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t used_memo
 double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
   const size_t total_memory = os::physical_memory();
   const size_t used_memory = os::used_memory();
+  const size_t capacity = ZHeap::heap()->capacity();
   const size_t compressed_memory = MIN2(os::compressed_memory(), used_memory);
   const double mem_pressure = memory_pressure(unscaled_pressure, used_memory, compressed_memory, total_memory);
 
   const size_t heuristic_max_capacity = ZHeap::heap()->heuristic_max_capacity();
-  const double memory_usage = double(heuristic_max_capacity) / double(total_memory);
+  const size_t rss = os::rss();
+  const size_t non_heap_memory = rss > capacity ? rss - capacity : 0;
+  const size_t jvm_memory = heuristic_max_capacity + non_heap_memory;
+  const double memory_usage = double(jvm_memory) / double(total_memory);
 
   // The CPU overhead is scaled by what portion of CPU resources are being
   // used. As CPU utilization of the machine gets higher, there will be more
@@ -120,8 +124,8 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
 
   const double result = MAX2(unscaled_pressure * scale, 1.0);
 
-  log_info(gc, heap)("Scaled GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f, CPU Load: %.1f%%, Heap Memory: %.1f%%",
-                     result, cpu_pressure, mem_pressure, cpu_usage * 100.0, memory_usage * 100.0);
+  log_info(gc, heap)("Scaled GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f, CPU Load: %.1f%%, Memory Load: %.1f%%, Heap Load: %.1f%%",
+                     result, cpu_pressure, mem_pressure, cpu_usage * 100.0, memory_usage * 100.0, double(heuristic_max_capacity) / double(total_memory) * 100.0);
 
   return result;
 }
@@ -283,18 +287,16 @@ uint64_t ZAdaptiveHeap::uncommit_delay() {
   return uint64_t(ZUncommitDelay / pressure);
 }
 
-size_t ZAdaptiveHeap::current_max_capacity(size_t capacity) {
-  const size_t machine_memory = os::physical_memory();
+size_t ZAdaptiveHeap::current_max_capacity(size_t capacity, size_t dynamic_max_capacity) {
   const size_t used_memory = os::used_memory();
-  const size_t hard_machine_memory_limit = machine_memory * (1.0 - ZMemoryCriticalThreshold);
-  const size_t available_machine_memory = used_memory > hard_machine_memory_limit ? 0 : (hard_machine_memory_limit - used_memory);
+  const size_t available_memory = used_memory > dynamic_max_capacity ? 0 : (dynamic_max_capacity - used_memory);
   // It is a bit naive to assume all available memory can be directly turned
   // into our own heap memory. We need auxiliary GC data structures, and other
   // processes can also take the memory as we might not be alone. By scaling
   // the available memory we stay on the pessimistic size, and let the estimated
   // current max capacity grow gradually as we approach the limits instead.
-  const size_t scaled_available_machine_memory = available_machine_memory * 0.2;
-  const size_t max_capacity_available = align_down(capacity + scaled_available_machine_memory, ZGranuleSize);
+  const size_t scaled_available_memory = available_memory * 0.2;
+  const size_t max_available = align_down(capacity + scaled_available_memory, ZGranuleSize);
 
-  return MIN2(max_capacity_available, machine_memory);
+  return MIN2(max_available, dynamic_max_capacity);
 }
