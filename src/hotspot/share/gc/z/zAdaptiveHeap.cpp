@@ -23,6 +23,7 @@
 
 #include "precompiled.hpp"
 #include "gc/shared/gc_globals.hpp"
+#include "gc/shared/gcLogPrecious.hpp"
 #include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zDriver.hpp"
 #include "gc/z/zHeap.inline.hpp"
@@ -30,6 +31,7 @@
 #include "logging/log.hpp"
 #include "runtime/os.hpp"
 #include "runtime/atomic.hpp"
+#include "runtime/globals_extension.hpp"
 #include "utilities/debug.hpp"
 
 #include <math.h>
@@ -39,6 +41,12 @@ volatile double ZAdaptiveHeap::_young_to_old_gc_time = 1.0;
 double ZAdaptiveHeap::_accumulated_young_gc_time = 0.0;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_young_data;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_old_data;
+
+bool ZAdaptiveHeap::can_adapt() {
+  ZHeap* heap = ZHeap::heap();
+  bool static_heap = ZAdaptiveHeap::explicit_max_capacity() && MinHeapSize == MaxHeapSize;
+  return !static_heap;
+}
 
 void ZAdaptiveHeap::initialize(bool explicit_max_capacity) {
   double process_time_now = os::elapsed_process_vtime();
@@ -124,8 +132,13 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
 
   const double result = MAX2(unscaled_pressure * scale, 1.0);
 
-  log_info(gc, heap)("Scaled GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f, CPU Load: %.1f%%, Memory Load: %.1f%%, Heap Load: %.1f%%",
-                     result, cpu_pressure, mem_pressure, cpu_usage * 100.0, memory_usage * 100.0, double(heuristic_max_capacity) / double(total_memory) * 100.0);
+  log_info(gc, heap)("CPU Load: %.1f%%, Memory Load: %.1f%%, Heap Load: %.1f%%",
+                     cpu_usage * 100.0, memory_usage * 100.0, double(heuristic_max_capacity) / double(total_memory) * 100.0);
+
+  if (can_adapt()) {
+    log_info(gc, heap)("Scaled GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f",
+                       result, cpu_pressure, mem_pressure);
+  }
 
   return result;
 }
@@ -249,17 +262,19 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const size_t selected_capacity = clamp(suggested_capacity, lower_bound, upper_bound);
   const ssize_t capacity_resize = ssize_t(selected_capacity) - ssize_t(heuristic_max_capacity);
 
-  log_info(gc, heap)("GC CPU Overhead: %.1f%% (%.1f%%), Target GC CPU Overhead: %.1f%% (%.1f%%)",
-                     avg_cpu_overhead * 100.0, avg_cpu_overhead * machine_load * 100.0,
-                     target_cpu_overhead * 100.0, target_cpu_overhead * machine_load * 100.0);
-  log_info(gc, heap)("GC Interval: %.3fs, Target Minimum: %.3fs",
-                     avg_time_since_last, target_gc_interval);
-  log_debug(gc, heap)("Target heap lower bound: " SIZE_FORMAT ", upper bound: " SIZE_FORMAT,
-                      lower_bound / M, upper_bound / M);
-  log_debug(gc, heap)("Suggested capacity: " SIZE_FORMAT ", selected capacity: " SIZE_FORMAT ", heuristic capacity: " SIZE_FORMAT,
-                      suggested_capacity / M, selected_capacity / M, heuristic_max_capacity / M);
-  log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
-                      selected_capacity / M, double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, capacity / M);
+  if (can_adapt()) {
+    log_info(gc, heap)("GC CPU Overhead: %.1f%% (%.1f%%), Target GC CPU Overhead: %.1f%% (%.1f%%)",
+                       avg_cpu_overhead * 100.0, avg_cpu_overhead * machine_load * 100.0,
+                       target_cpu_overhead * 100.0, target_cpu_overhead * machine_load * 100.0);
+    log_info(gc, heap)("GC Interval: %.3fs, Target Minimum: %.3fs",
+                       avg_time_since_last, target_gc_interval);
+    log_debug(gc, heap)("Target heap lower bound: " SIZE_FORMAT ", upper bound: " SIZE_FORMAT,
+                        lower_bound / M, upper_bound / M);
+    log_debug(gc, heap)("Suggested capacity: " SIZE_FORMAT ", selected capacity: " SIZE_FORMAT ", heuristic capacity: " SIZE_FORMAT,
+                        suggested_capacity / M, selected_capacity / M, heuristic_max_capacity / M);
+    log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
+                        selected_capacity / M, double(selected_capacity) / double(heuristic_max_capacity) * 100.0 - 100.0, capacity / M);
+  }
 
   if (capacity_resize > 0) {
     log_info(gc, heap)("Heap Increase " SIZE_FORMAT "M (%.1f%%)", capacity_resize / M, double(capacity_resize) / double(heuristic_max_capacity) * 100.0);
@@ -299,4 +314,17 @@ size_t ZAdaptiveHeap::current_max_capacity(size_t capacity, size_t dynamic_max_c
   const size_t max_available = align_down(capacity + scaled_available_memory, ZGranuleSize);
 
   return MIN2(max_available, dynamic_max_capacity);
+}
+
+void ZAdaptiveHeap::print() {
+  const char* status;
+  if (!can_adapt()) {
+    status = "Manual";
+  } else if (explicit_max_capacity() ||
+             FLAG_IS_CMDLINE(MinHeapSize)) {
+    status = "Bounded Automatic";
+  } else {
+    status = "Automatic";
+  }
+  log_info_p(gc, init)("Heap Sizing: %s", status);
 }

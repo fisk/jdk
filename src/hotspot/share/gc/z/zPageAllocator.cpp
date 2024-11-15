@@ -239,6 +239,9 @@ ZPageAllocator::ZPageAllocator(size_t min_capacity,
   // Check if uncommit should and can be enabled
   _physical.try_enable_uncommit(min_capacity, static_max_capacity);
 
+  // Print heap adaptation status
+  ZAdaptiveHeap::print();
+
   // Successfully initialized
   _initialized = true;
 }
