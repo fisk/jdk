@@ -48,6 +48,7 @@ struct ZWorkerResizeStats {
 
 struct ZDirectorHeapStats {
   size_t _current_max_capacity;
+  size_t _capacity;
   size_t _heuristic_max_capacity;
   size_t _used;
   uint   _total_collections;
@@ -227,6 +228,18 @@ static ZDriverRequest rule_soft_minor_allocation_rate_dynamic(const ZDirectorSta
                                               stats._heap._heuristic_max_capacity /* capacity */);
 }
 
+static size_t heuristic_hard_capacity(const ZDirectorStats& stats) {
+  if (ZAdaptiveHeap::explicit_max_capacity()) {
+    return stats._heap._current_max_capacity;
+  }
+
+  const size_t used_memory = stats._heap._capacity;
+  const size_t max_capacity = stats._heap._current_max_capacity;
+  const size_t available_memory = max_capacity - used_memory;
+  const size_t scaled_available_memory = available_memory * 0.2;
+  return align_down(used_memory + scaled_available_memory, ZGranuleSize);
+}
+
 static ZDriverRequest rule_semi_hard_minor_allocation_rate_dynamic(const ZDirectorStats& stats,
                                                                    double serial_gc_time_passed,
                                                                    double parallel_gc_time_passed) {
@@ -234,7 +247,7 @@ static ZDriverRequest rule_semi_hard_minor_allocation_rate_dynamic(const ZDirect
                                             0.0 /* serial_gc_time_passed */,
                                             0.0 /* parallel_gc_time_passed */,
                                             false /* conservative_alloc_rate */,
-                                            stats._heap._current_max_capacity /* capacity */);
+                                            heuristic_hard_capacity(stats) /* capacity */);
 }
 
 static ZDriverRequest rule_hard_minor_allocation_rate_dynamic(const ZDirectorStats& stats,
@@ -244,7 +257,7 @@ static ZDriverRequest rule_hard_minor_allocation_rate_dynamic(const ZDirectorSta
                                             0.0 /* serial_gc_time_passed */,
                                             0.0 /* parallel_gc_time_passed */,
                                             true /* conservative_alloc_rate */,
-                                            stats._heap._current_max_capacity /* capacity */);
+                                            heuristic_hard_capacity(stats) /* capacity */);
 }
 
 static bool rule_minor_allocation_rate_static(const ZDirectorStats& stats) {
@@ -872,10 +885,15 @@ bool ZDirector::wait_for_tick() {
 static ZDirectorHeapStats sample_heap_stats() {
   const ZHeap* const heap = ZHeap::heap();
   const ZCollectedHeap* const collected_heap = ZCollectedHeap::heap();
+  const size_t current_max_capacity = heap->current_max_capacity();
+  const size_t capacity = MIN2(heap->capacity(), current_max_capacity);
+  const size_t heuristic_max_capacity = MIN2(heap->heuristic_max_capacity(), current_max_capacity);
+  const size_t used = MIN2(heap->used(), capacity);
   return {
-    heap->current_max_capacity(),
-    heap->heuristic_max_capacity(),
-    heap->used(),
+    current_max_capacity,
+    capacity,
+    heuristic_max_capacity,
+    used,
     collected_heap->total_collections()
   };
 }

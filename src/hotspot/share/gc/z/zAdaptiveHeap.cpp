@@ -43,7 +43,6 @@ ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_young_data;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_old_data;
 
 bool ZAdaptiveHeap::can_adapt() {
-  ZHeap* heap = ZHeap::heap();
   bool static_heap = ZAdaptiveHeap::explicit_max_capacity() && MinHeapSize == MaxHeapSize;
   return !static_heap;
 }
@@ -310,7 +309,7 @@ size_t ZAdaptiveHeap::current_max_capacity(size_t capacity, size_t dynamic_max_c
   // processes can also take the memory as we might not be alone. By scaling
   // the available memory we stay on the pessimistic size, and let the estimated
   // current max capacity grow gradually as we approach the limits instead.
-  const size_t scaled_available_memory = available_memory * 0.2;
+  const size_t scaled_available_memory = available_memory * (1.0 - ZMemoryCriticalThreshold);
   const size_t max_available = align_down(capacity + scaled_available_memory, ZGranuleSize);
 
   return MIN2(max_available, dynamic_max_capacity);
