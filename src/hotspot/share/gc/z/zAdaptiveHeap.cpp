@@ -113,7 +113,7 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
   const size_t rss = os::rss();
   const size_t non_heap_memory = rss > capacity ? rss - capacity : 0;
   const size_t jvm_memory = heuristic_max_capacity + non_heap_memory;
-  const double memory_usage = double(jvm_memory) / double(total_memory);
+  const double jvm_memory_usage = double(jvm_memory) / double(total_memory);
 
   // The CPU overhead is scaled by what portion of CPU resources are being
   // used. As CPU utilization of the machine gets higher, there will be more
@@ -124,15 +124,18 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
   // so that CPU can decrease a bit, avoiding latency issues due to too high
   // CPU utilization, to some reasonable limit.
   const double responsive_cpu_usage = cpu_usage / ZCPUConcerningThreshold;
-  const double cpu_memory_usage_ratio = memory_usage / (responsive_cpu_usage + memory_usage);
+  const double cpu_memory_usage_ratio = jvm_memory_usage / (responsive_cpu_usage + jvm_memory_usage);
   const double cpu_pressure = cpu_memory_usage_ratio * 2.0;
 
   const double scale = mem_pressure * cpu_pressure;
 
   const double result = MAX2(unscaled_pressure * scale, 1.0);
 
-  log_info(gc, heap)("CPU Load: %.1f%%, Memory Load: %.1f%%, Heap Load: %.1f%%",
-                     cpu_usage * 100.0, memory_usage * 100.0, double(heuristic_max_capacity) / double(total_memory) * 100.0);
+  log_info(gc, heap)("System CPU Load: %.1f%%, System Memory Load: %.1f%%, JVM Memory Load: %.1f%%, Heap Load: %.1f%%",
+                     cpu_usage * 100.0,
+                     double(used_memory) / double(total_memory) * 100.0,
+                     jvm_memory_usage * 100.0,
+                     double(heuristic_max_capacity) / double(total_memory) * 100.0);
 
   if (can_adapt()) {
     log_info(gc, heap)("Scaled GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f",
