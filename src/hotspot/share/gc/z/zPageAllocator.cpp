@@ -441,7 +441,13 @@ void ZPageAllocator::reset_statistics(ZGenerationId id) {
 }
 
 size_t ZPageAllocator::increase_capacity(size_t size, size_t curr_max_capacity) {
-  const size_t increased = MIN2(size, curr_max_capacity - _capacity);
+  const size_t capacity = _capacity;
+
+  if (curr_max_capacity < capacity) {
+    return 0;
+  }
+
+  const size_t increased = MIN2(size, curr_max_capacity - capacity);
 
   if (increased > 0) {
     // Update atomically since we have concurrent readers
@@ -583,8 +589,14 @@ ZPage* ZPageAllocator::defragment_page(ZPage* page) {
 }
 
 bool ZPageAllocator::is_alloc_allowed(size_t size, size_t curr_max_capacity, bool use_cache) const {
-  const size_t unavailable = use_cache ? _used : _capacity;
-  const size_t available = curr_max_capacity - unavailable - _claimed;
+  const size_t unavailable = (use_cache ? _used : _capacity) + _claimed;
+
+  if (curr_max_capacity < unavailable) {
+    return false;
+  }
+
+  const size_t available = curr_max_capacity - unavailable;
+
   return available >= size;
 }
 
@@ -620,7 +632,6 @@ bool ZPageAllocator::alloc_page_common(ZPageAllocation* allocation) {
   const size_t size = allocation->size();
   const ZAllocationFlags flags = allocation->flags();
   const size_t curr_max_capacity = allocation->current_max_capacity();
-  assert(curr_max_capacity >= _capacity, "invariant");
 
   ZList<ZPage>* const pages = allocation->pages();
 
@@ -1004,9 +1015,10 @@ void ZPageAllocator::free_pages_alloc_failed(ZPageAllocation* allocation) {
 }
 
 void ZPageAllocator::adjust_capacity(size_t used_soon) {
-  _committer->set_target_capacity(used_soon);
   if (_cache.may_uncommit()) {
     _uncommitter->wake_up();
+  } else {
+    _committer->set_target_capacity(used_soon);
   }
 }
 
@@ -1024,7 +1036,8 @@ size_t ZPageAllocator::uncommit(uint64_t* timeout) {
     // Never uncommit below min capacity. We flush out and uncommit chunks at
     // a time (~0.8% of the max capacity, but at least one granule and at most
     // 256M), in case demand for memory increases while we are uncommitting.
-    const size_t retain = clamp(size_t(_used * 1.05), _min_capacity, curr_max_capacity);
+    const size_t used = _used;
+    const size_t retain = MAX2(used, _min_capacity);
     const size_t release = align_down(_capacity - retain, ZGranuleSize);
     const size_t limit = MIN2(align_up(heuristic_max >> 7, ZGranuleSize), 256 * M);
     const size_t flush = MIN2(release, limit);
@@ -1043,6 +1056,10 @@ size_t ZPageAllocator::uncommit(uint64_t* timeout) {
       log_debug(gc, heap)("Updated heuristic max capacity: " SIZE_FORMAT "M (%.3f%%), current capacity: " SIZE_FORMAT "M",
                           new_capacity / M, double(new_capacity) / double(heuristic_max) * 100.0 - 100.0, _capacity / M);
       Atomic::store(&_heuristic_max_capacity, new_capacity);
+      _committer->set_target_capacity(new_capacity);
+    }
+
+    if (_committer->target_capacity() > new_capacity) {
       _committer->set_target_capacity(new_capacity);
     }
 

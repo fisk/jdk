@@ -885,10 +885,11 @@ bool ZDirector::wait_for_tick() {
 static ZDirectorHeapStats sample_heap_stats() {
   const ZHeap* const heap = ZHeap::heap();
   const ZCollectedHeap* const collected_heap = ZCollectedHeap::heap();
-  const size_t current_max_capacity = heap->current_max_capacity();
-  const size_t capacity = MIN2(heap->capacity(), current_max_capacity);
+  const size_t curr_max_capacity_sample = heap->current_max_capacity();
+  const size_t used = heap->used();
+  const size_t capacity = MAX2(heap->capacity(), used);
+  const size_t current_max_capacity = MAX2(capacity, curr_max_capacity_sample);
   const size_t heuristic_max_capacity = MIN2(heap->heuristic_max_capacity(), current_max_capacity);
-  const size_t used = MIN2(heap->used(), capacity);
   return {
     current_max_capacity,
     capacity,

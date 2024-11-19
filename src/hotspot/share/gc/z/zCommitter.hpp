@@ -39,7 +39,7 @@ private:
   bool                  _stop;
 
   size_t commit_granule(size_t capacity, size_t target_capacity);
-  bool should_commit(size_t granule, size_t capacity, size_t target_capacity);
+  bool should_commit(size_t granule, size_t capacity, size_t target_capacity, size_t curr_max_capacity);
   bool dequeue();
 
 protected:
@@ -50,6 +50,7 @@ public:
   ZCommitter(ZPageAllocator* page_allocator);
 
   void set_target_capacity(size_t target_capacity);
+  size_t target_capacity();
 };
 
 #endif // SHARE_GC_Z_ZCOMMITTER_HPP

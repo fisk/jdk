@@ -293,7 +293,7 @@ public:
 
   virtual bool do_page(const ZPage* page) {
     const uint64_t expires = page->last_used() + _delay;
-    if (expires > _now) {
+    if (_delay > 0 && expires > _now) {
       // Don't flush page, record shortest non-expired timeout
       *_timeout = MIN2(*_timeout, expires - _now);
       return false;
@@ -311,19 +311,28 @@ public:
 };
 
 bool ZPageCache::may_uncommit() {
-  const uint64_t delay = ZAdaptiveHeap::uncommit_delay();
-  const uint64_t now = os::elapsedTime();
+  const size_t total_memory = os::physical_memory();
+  const size_t used_memory = os::used_memory();
+
+  if (double(used_memory) > double(total_memory) * (1.0 - ZMemoryCriticalThreshold)) {
+    return true;
+  }
+
+  const uint64_t delay = ZAdaptiveHeap::uncommit_delay(used_memory, total_memory);
   const uint64_t expires = Atomic::load(&_last_commit) + delay;
+  const uint64_t now = os::elapsedTime();
 
   return now >= expires;
 }
 
 size_t ZPageCache::flush_for_uncommit(size_t requested, ZList<ZPage>* to, uint64_t* timeout) {
-  const uint64_t delay = ZAdaptiveHeap::uncommit_delay();
+  const size_t total_memory = os::physical_memory();
+  const size_t used_memory = os::used_memory();
+  const uint64_t delay = ZAdaptiveHeap::uncommit_delay(used_memory, total_memory);
   const uint64_t expires = Atomic::load(&_last_commit) + delay;
   const uint64_t now = os::elapsedTime();
 
-  if (now < expires) {
+  if (delay > 0 && now < expires) {
     // Delay uncommit, set next timeout
     *timeout = expires - now;
     return 0;

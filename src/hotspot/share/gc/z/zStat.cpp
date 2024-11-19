@@ -1876,7 +1876,7 @@ void ZStatHeap::at_relocate_end(const ZPageAllocatorStats& stats, bool record_st
   _at_relocate_end.capacity_low = capacity_low();
   _at_relocate_end.free = free(stats.used(), stats.capacity());
   _at_relocate_end.free_high = free(stats.used_low(), stats.capacity());
-  _at_relocate_end.free_low = free(stats.used_high(), stats.capacity());
+  _at_relocate_end.free_low = free(stats.used_high(), MAX2(stats.used_high(), stats.capacity()));
   _at_relocate_end.used = stats.used();
   _at_relocate_end.used_high = stats.used_high();
   _at_relocate_end.used_low = stats.used_low();
@@ -1971,7 +1971,7 @@ void ZStatHeap::print(const ZGeneration* generation) const {
 
   log_info(gc, heap)("Min Capacity: " ZSIZE_FMT, ZSIZE_ARGS(_at_initialize.min_capacity, dynamic_max));
   log_info(gc, heap)("Max Capacity: " ZSIZE_FMT, ZSIZE_ARGS(dynamic_max, dynamic_max));
-  log_info(gc, heap)("Target Max Capacity: " ZSIZE_FMT, ZSIZE_ARGS(_at_mark_start.heuristic_max_capacity, dynamic_max));
+  log_info(gc, heap)("Target Capacity: " ZSIZE_FMT, ZSIZE_ARGS(_at_mark_start.heuristic_max_capacity, dynamic_max));
 
   log_info(gc, heap)("Heap Statistics:");
   ZStatTablePrinter heap_table(10, 18);

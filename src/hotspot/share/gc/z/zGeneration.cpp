@@ -181,10 +181,21 @@ void ZGeneration::flip_age_pages(const ZRelocationSetSelector* selector) {
 }
 
 static double fragmentation_limit(ZGenerationId generation) {
+  double min_fragmentation = 0.0;
+  if (!ZAdaptiveHeap::explicit_max_capacity() &&
+      ZHeap::heap()->is_alloc_stalling()) {
+    // It can be dangerous to defragment too much when the critical
+    // reserve of machine memory is used.  When
+    // stalling starts, there should be very limited amounts of
+    // external fragmentation in the system. If we can't easily
+    // recover memory after this point, rather consider throwing
+    // OOME and calling it a day.
+    min_fragmentation = 25;
+  }
   if (generation == ZGenerationId::old) {
-    return ZFragmentationLimit;
+    return MAX2(ZFragmentationLimit, min_fragmentation);
   } else {
-    return ZYoungCompactionLimit;
+    return MAX2(ZYoungCompactionLimit, min_fragmentation);
   }
 }
 

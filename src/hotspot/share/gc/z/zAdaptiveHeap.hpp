@@ -73,7 +73,7 @@ public:
   static size_t compute_heap_size(ZHeapResizeMetrics* metrics, ZGenerationId generation);
   static double young_to_old_gc_time();
 
-  static uint64_t uncommit_delay();
+  static uint64_t uncommit_delay(size_t used_memory, size_t total_memory);
 
   static bool explicit_max_capacity() { return _explicit_max_capacity; }
   static bool can_adapt();

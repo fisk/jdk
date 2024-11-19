@@ -287,9 +287,7 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   return selected_capacity;
 }
 
-uint64_t ZAdaptiveHeap::uncommit_delay() {
-  const size_t total_memory = os::physical_memory();
-  const size_t used_memory = os::used_memory();
+uint64_t ZAdaptiveHeap::uncommit_delay(size_t used_memory, size_t total_memory) {
   const size_t compressed_memory = MIN2(os::compressed_memory(), used_memory);
 
   // If we are critically low on memory, aggressively free up memory
@@ -306,13 +304,14 @@ uint64_t ZAdaptiveHeap::uncommit_delay() {
 
 size_t ZAdaptiveHeap::current_max_capacity(size_t capacity, size_t dynamic_max_capacity) {
   const size_t used_memory = os::used_memory();
-  const size_t available_memory = used_memory > dynamic_max_capacity ? 0 : (dynamic_max_capacity - used_memory);
+  const ssize_t available_memory = ssize_t(dynamic_max_capacity) - ssize_t(used_memory);
   // It is a bit naive to assume all available memory can be directly turned
   // into our own heap memory. We need auxiliary GC data structures, and other
   // processes can also take the memory as we might not be alone. By scaling
   // the available memory we stay on the pessimistic size, and let the estimated
   // current max capacity grow gradually as we approach the limits instead.
-  const size_t scaled_available_memory = available_memory * (1.0 - ZMemoryCriticalThreshold);
+  const size_t scaled_available_memory = available_memory >= 0 ? (available_memory * (1.0 - ZMemoryCriticalThreshold))
+                                                               : (-ssize_t(capacity * ZMemoryCriticalThreshold));
   const size_t max_available = align_down(capacity + scaled_available_memory, ZGranuleSize);
 
   return MIN2(max_available, dynamic_max_capacity);
