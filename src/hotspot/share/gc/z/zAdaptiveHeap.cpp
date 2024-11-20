@@ -168,6 +168,7 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
 
   const bool is_major = Thread::current() == ZDriver::major();
   const GCCause::Cause cause = is_major ? ZDriver::major()->gc_cause() : ZDriver::minor()->gc_cause();
+  const bool is_heap_anti_pressure_gc = cause == GCCause::_z_proactive;
   const bool is_heap_pressure_gc = cause == GCCause::_z_allocation_rate ||
                                    cause == GCCause::_z_high_usage ||
                                    cause == GCCause::_z_warmup;
@@ -200,6 +201,13 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const size_t capacity = metrics->_capacity;
   const size_t min_capacity = metrics->_min_capacity;
   const size_t used = metrics->_used;
+
+  if (is_heap_anti_pressure_gc) {
+    // The GC is bored. The impact of shrinking should not cost a considerable amount of
+    // CPU, or we would not get here.
+    const size_t selected_capacity = MAX2(size_t(metrics->_heuristic_max_capacity * 0.95), used);
+    return clamp(align_down(selected_capacity, ZGranuleSize), min_capacity, current_max_capacity);
+  }
 
   double ncpus = double(os::active_processor_count());
   const double machine_load = clamp((process_time / time_since_last) / ncpus, 0.0, 1.0);
