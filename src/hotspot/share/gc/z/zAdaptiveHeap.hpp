@@ -42,21 +42,20 @@ struct ZHeapResizeMetrics {
 class ZAdaptiveHeap : public AllStatic {
 private:
   static bool _explicit_max_capacity;
+  static TruncatedSeq _gc_pressures;
 
   struct ZGenerationOverhead {
     double       _last_process_time;
     double       _last_time;
-    TruncatedSeq _process_time;
-    TruncatedSeq _gc_time;
-    TruncatedSeq _gc_time_since_last;
-    TruncatedSeq _gc_pressure;
+    TruncatedSeq _process_times;
+    TruncatedSeq _gc_times;
+    TruncatedSeq _gc_times_since_last;
 
     ZGenerationOverhead() :
         _last_process_time(),
-        _process_time(),
-        _gc_time(),
-        _gc_time_since_last(),
-        _gc_pressure() {}
+        _process_times(),
+        _gc_times(),
+        _gc_times_since_last() {}
   };
 
   static volatile double _young_to_old_gc_time;

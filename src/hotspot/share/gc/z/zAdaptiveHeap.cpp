@@ -27,6 +27,7 @@
 #include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zDriver.hpp"
 #include "gc/z/zHeap.inline.hpp"
+#include "gc/z/zLock.inline.hpp"
 #include "gc/z/zStat.hpp"
 #include "logging/log.hpp"
 #include "runtime/os.hpp"
@@ -37,10 +38,14 @@
 #include <math.h>
 
 bool ZAdaptiveHeap::_explicit_max_capacity;
+TruncatedSeq ZAdaptiveHeap::_gc_pressures;
+
 volatile double ZAdaptiveHeap::_young_to_old_gc_time = 1.0;
 double ZAdaptiveHeap::_accumulated_young_gc_time = 0.0;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_young_data;
 ZAdaptiveHeap::ZGenerationOverhead ZAdaptiveHeap::_old_data;
+
+static ZLock* _stat_lock;
 
 bool ZAdaptiveHeap::can_adapt() {
   bool static_heap = ZAdaptiveHeap::explicit_max_capacity() && MinHeapSize == MaxHeapSize;
@@ -55,6 +60,7 @@ void ZAdaptiveHeap::initialize(bool explicit_max_capacity) {
   _young_data._last_time = time_now;
   _old_data._last_time = time_now;
   _explicit_max_capacity = explicit_max_capacity;
+  _stat_lock = new ZLock();
 }
 
 double ZAdaptiveHeap::young_to_old_gc_time() {
@@ -129,7 +135,14 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
 
   const double scale = mem_pressure * cpu_pressure;
 
-  const double result = MAX2(unscaled_pressure * scale, 1.0);
+  const double scaled_pressure = MAX2(unscaled_pressure * scale, 1.0);
+  double gc_pressure;
+
+  {
+    ZLocker<ZLock> locker(_stat_lock);
+    _gc_pressures.add(scaled_pressure);
+    gc_pressure = MAX2(_gc_pressures.avg(), scaled_pressure);
+  }
 
   log_info(gc, heap)("System CPU Load: %.1f%%, System Memory Load: %.1f%%, JVM Memory Load: %.1f%%, Heap Load: %.1f%%",
                      cpu_usage * 100.0,
@@ -137,12 +150,13 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
                      jvm_memory_usage * 100.0,
                      double(heuristic_max_capacity) / double(total_memory) * 100.0);
 
+
   if (can_adapt()) {
-    log_info(gc, heap)("Scaled GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f",
-                       result, cpu_pressure, mem_pressure);
+    log_info(gc, heap)("Selected GC Pressure: %.1f, Scaled GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f",
+                       gc_pressure, scaled_pressure, cpu_pressure, mem_pressure);
   }
 
-  return result;
+  return gc_pressure;
 }
 
 // Logistic function, produces values in the range 0 - 1 in an S shape
@@ -211,9 +225,7 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
 
   double ncpus = double(os::active_processor_count());
   const double machine_load = clamp((process_time / time_since_last) / ncpus, 0.0, 1.0);
-  const double scaled_pressure = gc_pressure(unscaled_pressure, machine_load);
-  generation_data._gc_pressure.add(scaled_pressure);
-  const double pressure = generation_data._gc_pressure.avg();
+  const double pressure = gc_pressure(unscaled_pressure, machine_load);
 
   // Since a GC cycle is obviously round, we can estimate the minimum bytes due to
   // a particular allocation rate and GC pressure by calculating GC pressure * pi
@@ -226,13 +238,13 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
 
   const double gc_time = cycle_stats._last_total_vtime + (is_young ? 0.0 : _accumulated_young_gc_time);
 
-  generation_data._process_time.add(process_time);
-  generation_data._gc_time.add(gc_time);
-  generation_data._gc_time_since_last.add(time_since_last);
+  generation_data._process_times.add(process_time);
+  generation_data._gc_times.add(gc_time);
+  generation_data._gc_times_since_last.add(time_since_last);
 
-  const double avg_gc_time = generation_data._gc_time.avg();
-  const double avg_time_since_last = generation_data._gc_time_since_last.avg();
-  const double avg_process_time = generation_data._process_time.avg();
+  const double avg_gc_time = generation_data._gc_times.avg();
+  const double avg_time_since_last = generation_data._gc_times_since_last.avg();
+  const double avg_process_time = generation_data._process_times.avg();
   const double avg_cpu_overhead = avg_gc_time / avg_process_time;
 
   // When GC pressure is 10, the implication is that we want 25% of the
@@ -304,8 +316,7 @@ uint64_t ZAdaptiveHeap::uncommit_delay(size_t used_memory, size_t total_memory) 
   }
 
   const double unscaled_pressure = Atomic::load(&GCPressure);
-  const double excess_pressure = memory_pressure(unscaled_pressure, used_memory, compressed_memory, total_memory) - 1.0;
-  const double pressure = 1.0 + excess_pressure * unscaled_pressure;
+  const double pressure = memory_pressure(unscaled_pressure, used_memory, compressed_memory, total_memory);
 
   return uint64_t(ZUncommitDelay / pressure);
 }
