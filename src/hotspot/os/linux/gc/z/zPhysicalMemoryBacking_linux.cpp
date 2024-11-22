@@ -721,6 +721,10 @@ void ZPhysicalMemoryBacking::map(zaddress_unsafe addr, size_t size, zoffset offs
     ZErrno err;
     fatal("Failed to map memory (%s)", err.to_string());
   }
+
+  if (ZLargePages::is_collapse()) {
+    os::Linux::madvise_collapse_transparent_huge_pages((void*)res, size);
+  }
 }
 
 void ZPhysicalMemoryBacking::unmap(zaddress_unsafe addr, size_t size) const {
