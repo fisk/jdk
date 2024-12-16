@@ -484,19 +484,43 @@ inline void ZBarrierSet::AccessBarrier<decorators, BarrierSetT>::value_copy_in_h
   if (md->contains_oops()) {
     // src/dst aren't oops, need offset to adjust oop map offset
     const address src_oop_addr_offset = ((address) src) - md->first_field_offset();
-
     OopMapBlock* map = md->start_of_nonstatic_oop_maps();
     const OopMapBlock* const end = map + md->nonstatic_oop_map_count();
+    size_t size_in_bytes = md->layout_size_in_bytes(lk);
+    size_t copied_bytes = 0;
     while (map != end) {
-      const address soop_address = src_oop_addr_offset + map->offset();
-      zpointer *p = (zpointer*) soop_address;
-      for (const zpointer* const end = p + map->count(); p < end; p++) {
-        ZBarrier::load_barrier_on_oop_field(p);
+      zpointer *src_p = (zpointer*)(src_oop_addr_offset + map->offset());
+      const uintptr_t oop_offset = uintptr_t(src_p) - uintptr_t(src);
+      zpointer *dst_p = (zpointer*)(uintptr_t(dst) + oop_offset);
+
+      // Copy any leading primitive payload before every cluster of oops
+      if (copied_bytes < oop_offset) {
+        void* src_payload = (void*)(address(src) + copied_bytes);
+        void* dst_payload = (void*)(address(dst) + copied_bytes);
+        size_t payload_size_bytes = oop_offset - copied_bytes;
+
+        Copy::copy_value_content(src_payload, dst_payload, payload_size_bytes);
+        copied_bytes += payload_size_bytes;
+      }
+
+      // Copy a cluster of oops
+      for (const zpointer* const src_end = src_p + map->count(); src_p < src_end; src_p++, dst_p++) {
+        oop_copy_one(dst_p, src_p);
+        copied_bytes += sizeof(zpointer);
       }
       map++;
     }
+
+    // Copy trailing primitive payload after potential oops
+    if (copied_bytes < size_in_bytes) {
+      void* src_payload = (void*)(address(src) + copied_bytes);
+      void* dst_payload = (void*)(address(dst) + copied_bytes);
+      size_t payload_size_bytes = size_in_bytes - copied_bytes;
+      Copy::copy_value_content(src_payload, dst_payload, payload_size_bytes);
+    }
+  } else {
+    Raw::value_copy_in_heap(src, dst, md, lk);
   }
-  Raw::value_copy_in_heap(src, dst, md, lk);
 }
 
 //
