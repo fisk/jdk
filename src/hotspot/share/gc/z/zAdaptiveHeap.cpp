@@ -445,7 +445,7 @@ uint64_t ZAdaptiveHeap::soft_ref_delay() {
     ls.print_cr("Soft ref time to old generation OOM: %.3fs", time_to_old_oom);
     ls.print_cr("Soft ref explicit timeout: %.3fs", double(explicit_delay) / 1000);
     ls.print_cr("Soft ref implicit timeout: %.3fs", double(implicit_delay) / 1000);
-    ls.print_cr("Soft ref memory pressure: %.3fs", mem_pressure);
+    ls.print_cr("Soft ref memory pressure: %.3f", mem_pressure);
   }
 
   return delay;
