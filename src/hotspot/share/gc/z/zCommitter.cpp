@@ -105,6 +105,12 @@ bool ZCommitter::peek() {
       return false;
     }
 
+    if (!is_init_completed()) {
+      // Don't start working until JVM is bootstrapped
+      _lock.wait();
+      continue;
+    }
+
     if (should_commit(granule, capacity, target_capacity, curr_max_capacity)) {
       // At least one granule to commit
       return true;

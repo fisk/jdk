@@ -56,7 +56,7 @@ bool ZUncommitter::wait(uint64_t timeout) const {
 
 bool ZUncommitter::should_continue() const {
   ZLocker<ZConditionLock> locker(&_lock);
-  return !_stop;
+  return is_init_completed() && !_stop;
 }
 
 void ZUncommitter::run_thread() {
