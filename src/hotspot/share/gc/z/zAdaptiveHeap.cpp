@@ -248,7 +248,7 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const size_t heuristic_low = MAX2(size_t(used * 1.1), size_t(alloc_rate / alloc_rate_scaling));
 
   const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
-  size_t lower_bound = clamp(heuristic_low, min_capacity, upper_bound);
+  const size_t lower_bound = clamp(heuristic_low, min_capacity, upper_bound);
 
   const double current_cpu_overhead = gc_time / process_time;
 
@@ -274,13 +274,14 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   // Therefore, we add a factor that ensures there is at least some social
   // distancing between GCs, even when the GC overhead is small. The size of
   // the factor scales with the level of load induced on the machine.
-  const double min_fully_loaded_gc_interval = 5.0 / pressure;
+  const double min_fully_loaded_gc_interval = 5.0 / unscaled_pressure;
   const double min_gc_interval = min_fully_loaded_gc_interval / 4.0;
   const double target_gc_interval = MAX2(min_gc_interval, machine_load * min_fully_loaded_gc_interval);
-  const double gc_interval_error = target_gc_interval - avg_time_since_last;
+  const double upper_gc_interval_error = MAX2(target_gc_interval - avg_time_since_last, target_gc_interval - time_since_last);
+  const double lower_gc_interval_error = MIN2(target_gc_interval - avg_time_since_last, target_gc_interval - time_since_last);
 
-  double upper_error_signal = MAX2(upper_cpu_overhead_error, gc_interval_error);
-  double lower_error_signal = MAX2(lower_cpu_overhead_error, gc_interval_error);
+  const double upper_error_signal = MAX2(upper_cpu_overhead_error, upper_gc_interval_error);
+  const double lower_error_signal = MAX2(lower_cpu_overhead_error, lower_gc_interval_error);
 
   if (is_young) {
     _accumulated_young_gc_time += gc_time;
