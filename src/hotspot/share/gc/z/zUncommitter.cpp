@@ -29,6 +29,7 @@
 #include "gc/z/zUncommitter.hpp"
 #include "jfr/jfrEvents.hpp"
 #include "logging/log.hpp"
+#include "runtime/init.hpp"
 
 static const ZStatCounter ZCounterUncommit("Memory", "Uncommit", ZStatUnitBytesPerSecond);
 

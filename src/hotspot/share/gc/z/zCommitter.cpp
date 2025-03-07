@@ -26,6 +26,7 @@
 #include "gc/z/zPage.inline.hpp"
 #include "gc/z/zPageAllocator.hpp"
 #include "gc/z/zCommitter.hpp"
+#include "runtime/init.hpp"
 #include "utilities/rbTree.inline.hpp"
 
 ZCommitter::ZCommitter(ZPageAllocator* page_allocator)
