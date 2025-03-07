@@ -355,7 +355,7 @@ uint64_t ZAdaptiveHeap::uncommit_delay(size_t used_memory, size_t total_memory) 
     return ZUncommitDelay;
   }
 
-  const size_t compressed_memory = MIN2(os::compressed_memory(), used_memory);
+  const size_t compressed_memory = MIN2(size_t(os::compressed_memory()), used_memory);
 
   // If we are critically low on memory, aggressively free up memory
   if (double(used_memory) / double(total_memory) >= 1.0 - ZMemoryCriticalThreshold) {
