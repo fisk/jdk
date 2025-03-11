@@ -33,6 +33,8 @@
 #include "runtime/globals.hpp"
 #include "runtime/os.hpp"
 
+#include <limits>
+
 static const ZStatCounter ZCounterPageCacheHitL1("Memory", "Page Cache Hit L1", ZStatUnitOpsPerSecond);
 static const ZStatCounter ZCounterPageCacheHitL2("Memory", "Page Cache Hit L2", ZStatUnitOpsPerSecond);
 static const ZStatCounter ZCounterPageCacheHitL3("Memory", "Page Cache Hit L3", ZStatUnitOpsPerSecond);
@@ -328,11 +330,19 @@ bool ZPageCache::may_uncommit() {
   const size_t total_memory = os::physical_memory();
   const size_t used_memory = os::used_memory();
 
-  if (double(used_memory) > double(total_memory) * (1.0 - ZMemoryCriticalThreshold)) {
+  const uint64_t delay = ZAdaptiveHeap::uncommit_delay(used_memory, total_memory);
+
+  if (delay == 0) {
+    // Zero means critically low on memory
     return true;
   }
 
-  const uint64_t delay = ZAdaptiveHeap::uncommit_delay(used_memory, total_memory);
+  if (delay == std::numeric_limits<uint64_t>::max()) {
+    // Max delay means uncommitting is currently disabled
+    return false;
+  }
+
+  // Otherwise uncommitting should be done after "long enough" time
   const uint64_t expires = Atomic::load(&_last_commit) + delay;
   const uint64_t now = os::elapsedTime();
 
@@ -355,10 +365,17 @@ size_t ZPageCache::flush_for_uncommit(size_t requested, ZList<ZPage>* to, uint64
   const size_t total_memory = os::physical_memory();
   const size_t used_memory = os::used_memory();
   const uint64_t delay = ZAdaptiveHeap::uncommit_delay(used_memory, total_memory);
+
+  if (delay == std::numeric_limits<uint64_t>::max()) {
+    // Max delay means uncommitting is essentially disabled
+    *timeout = delay;
+    return 0;
+  }
+
   const uint64_t expires = Atomic::load(&_last_commit) + delay;
   const uint64_t now = os::elapsedTime();
 
-  if (delay > 0 && now < expires) {
+  if (now < expires) {
     // Delay uncommit, set next timeout
     *timeout = expires - now;
     return 0;
@@ -370,10 +387,8 @@ size_t ZPageCache::flush_for_uncommit(size_t requested, ZList<ZPage>* to, uint64
     return 0;
   }
 
-  if (timeout != nullptr) {
-    // Set initial timeout
-    *timeout = delay;
-  }
+  // Set initial timeout
+  *timeout = delay;
 
   ZPageCacheFlushForTimedUncommitClosure cl(requested, now, timeout, delay);
   flush(&cl, to);

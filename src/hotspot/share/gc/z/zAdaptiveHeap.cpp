@@ -35,6 +35,7 @@
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
 
+#include <limits>
 #include <math.h>
 
 bool ZAdaptiveHeap::_explicit_max_capacity;
@@ -357,24 +358,37 @@ uint64_t ZAdaptiveHeap::uncommit_delay(size_t used_memory, size_t total_memory) 
     return ZUncommitDelay;
   }
 
-  const size_t compressed_memory = MIN2(size_t(os::compressed_memory()), used_memory);
+  const size_t available_memory = total_memory - used_memory;
 
   // If we are critically low on memory, aggressively free up memory
   if (double(used_memory) / double(total_memory) >= 1.0 - ZMemoryCriticalThreshold) {
     return 0;
   }
 
-  // If we are low on memory, start the clocks free up memory
-  if (double(used_memory) / double(total_memory) >= 1.0 - ZMemoryHighThreshold) {
-    const double unscaled_pressure = Atomic::load(&ZGCPressure);
-    const double pressure = memory_pressure(unscaled_pressure, used_memory, compressed_memory, total_memory);
-
-    return uint64_t(ZUncommitDelay / pressure);
+  // If we aren't low on memory, disable timer based uncommit; let
+  // the GC heuristics guide the heap down instead, as part of the
+  // natural control system.
+  if (double(used_memory) / double(total_memory) < 1.0 - ZMemoryHighThreshold) {
+    return std::numeric_limits<uint64_t>::max();
   }
 
-  // If we are not low on memory, be very reluctant to uncommit memory
-  // based on timers, rather than GC performance. I'll give it a year though.
-  return 60 * 60 * 24 * 365;
+  // If we are low on memory, start the clocks for uncommitting memory
+  // We use a policy where the uncommit delay drops off farily quickly
+  // as the memory pressure gets "high" to let uncommitting react before
+  // the next GC, but still without being brutal.
+  // When the memory availability becomes critical, more brutal uncommitting
+  // will commence.
+
+  // The remaining memory reserve of the machine
+  const double available_fraction = double(available_memory) / double(total_memory);
+
+  // Progression until critical uncommitting starts
+  const double progression = 1.0 - (available_fraction - ZMemoryCriticalThreshold) / (ZMemoryHighThreshold - ZMemoryCriticalThreshold);
+
+  // Select an nth root based on the progression
+  const double root = 1.0 / (1.0 + progression);
+
+  return (uint64_t)pow(ZUncommitDelay, root);
 }
 
 uint64_t ZAdaptiveHeap::soft_ref_delay() {

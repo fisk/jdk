@@ -31,6 +31,8 @@
 #include "logging/log.hpp"
 #include "runtime/init.hpp"
 
+#include <limits>
+
 static const ZStatCounter ZCounterUncommit("Memory", "Uncommit", ZStatUnitBytesPerSecond);
 
 ZUncommitter::ZUncommitter(ZPageAllocator* page_allocator)
@@ -47,7 +49,15 @@ bool ZUncommitter::wait(uint64_t timeout) const {
     _lock.wait();
   }
 
-  if (!_stop && timeout > 0) {
+  if (_stop) {
+    // Stop
+    return false;
+  }
+
+  if (timeout == std::numeric_limits<uint64_t>::max()) {
+    log_debug(gc, heap)("Uncommit Timeout: infinity");
+    _lock.wait();
+  } else if (timeout > 0) {
     log_debug(gc, heap)("Uncommit Timeout: " UINT64_FORMAT "s", timeout);
     _lock.wait(timeout * MILLIUNITS);
   }
