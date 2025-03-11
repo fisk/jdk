@@ -108,12 +108,12 @@ double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t used_memo
   return 1.0;
 }
 
-double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage) {
+double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage, double& mem_pressure) {
   const size_t total_memory = os::physical_memory();
   const size_t used_memory = os::used_memory();
   const size_t capacity = ZHeap::heap()->capacity();
   const size_t compressed_memory = MIN2(size_t(os::compressed_memory()), used_memory);
-  const double mem_pressure = memory_pressure(unscaled_pressure, used_memory, compressed_memory, total_memory);
+  mem_pressure = memory_pressure(unscaled_pressure, used_memory, compressed_memory, total_memory);
 
   const size_t heuristic_max_capacity = ZHeap::heap()->heuristic_max_capacity();
   const size_t rss = os::rss();
@@ -239,7 +239,8 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   const double avg_machine_load = clamp((avg_process_time / avg_time_since_last) / ncpus, 0.0, 1.0);
 
   // Calculate the GC pressure that scales the rest of the heuristics
-  const double pressure = gc_pressure(unscaled_pressure, avg_machine_load);
+  double mem_pressure = 1.0;
+  const double pressure = gc_pressure(unscaled_pressure, avg_machine_load, mem_pressure);
 
   // Since a GC cycle is obviously round, we can estimate the minimum bytes due to
   // a particular allocation rate and GC pressure by calculating GC pressure * pi
@@ -275,7 +276,7 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   // distancing between GCs, even when the GC overhead is small. The size of
   // the factor scales with the level of load induced on the machine.
   const double min_fully_loaded_gc_interval = 5.0 / unscaled_pressure;
-  const double min_gc_interval = min_fully_loaded_gc_interval / 4.0;
+  const double min_gc_interval = min_fully_loaded_gc_interval / 4.0 / mem_pressure;
   const double target_gc_interval = MAX2(min_gc_interval, machine_load * min_fully_loaded_gc_interval);
   const double upper_gc_interval_error = MAX2(target_gc_interval - avg_time_since_last, target_gc_interval - time_since_last);
   const double lower_gc_interval_error = MIN2(target_gc_interval - avg_time_since_last, target_gc_interval - time_since_last);
