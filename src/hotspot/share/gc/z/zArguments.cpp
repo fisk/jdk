@@ -53,6 +53,17 @@ void ZArguments::set_heap_size() {
                                        FLAG_IS_CMDLINE(MinRAMPercentage);
   const bool explicit_init_heap_size = FLAG_IS_CMDLINE(InitialHeapSize) ||
                                        FLAG_IS_CMDLINE(InitialRAMPercentage);
+
+  ZAdaptiveHeap::initialize(explicit_max_heap_size);
+
+  if (Atomic::load(&ZGCPressure) == 0.0) {
+    // When automatic heap sizing is disabled, don't try to prepare the default
+    // heap size in the automatic heap sizing friendly way.
+    return;
+  }
+
+  // If automatic heap sizing is not explicitly turned off, adjust the default
+  // heap ergonomics to be less constraining; the constraints are dynamic.
   if (!explicit_max_heap_size) {
     FLAG_SET_ERGO(MaxRAMPercentage, default_max_heap_size_percent);
   }
@@ -62,8 +73,6 @@ void ZArguments::set_heap_size() {
   if (!explicit_init_heap_size) {
     FLAG_SET_ERGO(InitialHeapSize, default_min_heap_size_bytes);
   }
-
-  ZAdaptiveHeap::initialize(explicit_max_heap_size);
 }
 
 void ZArguments::initialize_heap_flags_and_sizes() {

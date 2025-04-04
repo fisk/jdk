@@ -366,10 +366,18 @@ size_t ZPageAllocator::heuristic_max_capacity() const {
   // Note that SoftMaxHeapSize is a manageable flag
   const size_t soft_max_capacity = Atomic::load(&SoftMaxHeapSize);
   const size_t heuristic_max_capacity = Atomic::load(&_heuristic_max_capacity);
-  const size_t lowest_soft_capacity = soft_max_capacity == 0 ? heuristic_max_capacity
-                                                             : MIN2(soft_max_capacity, heuristic_max_capacity);
   const size_t curr_max_capacity = current_max_capacity();
-  return MIN2(lowest_soft_capacity, curr_max_capacity);
+  if (ZAdaptiveHeap::can_adapt()) {
+    const size_t lowest_soft_capacity = soft_max_capacity == 0 ? heuristic_max_capacity
+                                                               : MIN2(soft_max_capacity, heuristic_max_capacity);
+    return MIN2(lowest_soft_capacity, curr_max_capacity);
+  }
+
+  if (soft_max_capacity != 0) {
+    return MIN2(soft_max_capacity, curr_max_capacity);
+  }
+
+  return curr_max_capacity;
 }
 
 void ZPageAllocator::adapt_heuristic_max_capacity(ZGenerationId generation) {
@@ -397,10 +405,12 @@ void ZPageAllocator::adapt_heuristic_max_capacity(ZGenerationId generation) {
 
   Atomic::store(&_heuristic_max_capacity, selected_capacity);
 
-  // Complain about misconfigurations
-  _physical.warn_commit_limits(selected_capacity, dynamic_max_capacity());
+  if (ZAdaptiveHeap::can_adapt()) {
+    // Complain about misconfigurations
+    _physical.warn_commit_limits(selected_capacity, dynamic_max_capacity());
 
-  _committer->heap_resized(capacity, selected_capacity);
+    _committer->heap_resized(capacity, selected_capacity);
+  }
 }
 
 size_t ZPageAllocator::capacity() const {

@@ -50,7 +50,7 @@ static ZLock* _stat_lock;
 
 bool ZAdaptiveHeap::can_adapt() {
   bool static_heap = ZAdaptiveHeap::explicit_max_capacity() && MinHeapSize == MaxHeapSize;
-  return !static_heap;
+  return !static_heap && Atomic::load(&ZGCPressure) != 0.0;
 }
 
 void ZAdaptiveHeap::initialize(bool explicit_max_capacity) {

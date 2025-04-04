@@ -106,7 +106,7 @@ bool ZCommitter::peek() {
       return false;
     }
 
-    if (!is_init_completed()) {
+    if (!is_init_completed() || !ZAdaptiveHeap::can_adapt()) {
       // Don't start working until JVM is bootstrapped
       _lock.wait();
       continue;
