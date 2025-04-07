@@ -172,13 +172,11 @@ static double sigmoid_function(double value) {
 // sizing converge better. During an initial warmup period, a more aggressive function
 // is used, which doesn't try to reduce the error signals. This reduces the number of
 // early GCs before the system has had any chance to converge to a stable heap size.
-static double smoothing_function(double value) {
-  const double warmup_time_seconds = 3.0;
+static double smoothing_function(double value, double warmness) {
   const double sigmoid = sigmoid_function(value);
   const double aggressive = MAX2(sigmoid, 0.5 + value);
-  const double heat = MIN2(os::elapsedTime(), warmup_time_seconds) / warmup_time_seconds;
 
-  return sigmoid * heat + aggressive * (1.0 - heat);
+  return sigmoid * warmness + aggressive * (1.0 - warmness);
 }
 
 size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGenerationId generation) {
@@ -246,11 +244,14 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   double mem_pressure = 1.0;
   const double pressure = gc_pressure(unscaled_pressure, avg_machine_load, mem_pressure);
 
-  // Since a GC cycle is obviously round, we can estimate the minimum bytes due to
-  // a particular allocation rate and GC pressure by calculating GC pressure * pi
-  const double alloc_rate_scaling = pressure * M_PI;
+  // Calculate the heuristic lower bound for the heuristic heap
   const double alloc_rate = metrics->_alloc_rate;
-  const size_t heuristic_low = MAX2(size_t(used * 1.1), size_t(alloc_rate / alloc_rate_scaling));
+  const double warmup_time_seconds = 3.0;
+  const double warmness = MIN2(os::elapsedTime(), warmup_time_seconds) / warmup_time_seconds;
+  // Since a GC cycle is obviously round, we can estimate the minimum bytes due to
+  // a particular allocation rate and GC pressure by calculating GC pressure * pi.
+  const double alloc_rate_scaling = warmness / (pressure * M_PI);
+  const size_t heuristic_low = MAX2(size_t(used * 1.1), size_t(alloc_rate * alloc_rate_scaling)) / mem_pressure;
 
   const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
   const size_t lower_bound = clamp(heuristic_low, min_capacity, upper_bound);
@@ -296,10 +297,10 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
     _accumulated_young_gc_time = 0.0;
   }
 
-  const double upper_smoothened_error = smoothing_function(upper_error_signal);
+  const double upper_smoothened_error = smoothing_function(upper_error_signal, warmness);
   const double upper_correction_factor = upper_smoothened_error + 0.5;
 
-  const double lower_smoothened_error = smoothing_function(lower_error_signal);
+  const double lower_smoothened_error = smoothing_function(lower_error_signal, warmness);
   const double lower_correction_factor = lower_smoothened_error + 0.5;
 
   const size_t upper_suggested_capacity = align_up(size_t(heuristic_max_capacity * upper_correction_factor), ZGranuleSize);

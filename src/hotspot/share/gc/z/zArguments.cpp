@@ -44,7 +44,7 @@ void ZArguments::initialize_alignments() {
 }
 
 void ZArguments::set_heap_size() {
-  const size_t default_min_heap_size_bytes = 16 * M;
+  const size_t default_min_heap_size_bytes = 2 * M;
   const double default_max_heap_size_percent = (1.0 - ZMemoryCriticalThreshold) * 100.0;
 
   const bool explicit_max_heap_size =  FLAG_IS_CMDLINE(MaxHeapSize) ||
