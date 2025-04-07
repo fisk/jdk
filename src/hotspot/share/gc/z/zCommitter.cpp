@@ -150,10 +150,12 @@ void ZCommitter::heap_resized(size_t capacity, size_t heuristic_max_capacity) {
   // Set up direct uncommit to shrink the heap
   const size_t target_capacity = Atomic::load(&_target_capacity);
   const size_t surplus_capacity = capacity - heuristic_max_capacity;
+
+  // Uncommit 5% of the surplus at a time for a smooth capacity decline
   const size_t uncommit_fraction = 20;
   const size_t uncommit_request = align_up(surplus_capacity / uncommit_fraction, ZGranuleSize);
 
-  if (target_capacity < uncommit_request) {
+  if (target_capacity != 0 && target_capacity < uncommit_request) {
     // Race; ignore uncommitting
     return;
   }
@@ -161,7 +163,7 @@ void ZCommitter::heap_resized(size_t capacity, size_t heuristic_max_capacity) {
   // If the surplus capacity isn't over 5% of the capacity, the point of
   // uncommitting heuristically seems questionable and might just cause
   // pointless fluctuation.
-  if (surplus_capacity > capacity / uncommit_fraction) {
+  if (surplus_capacity < capacity / uncommit_fraction) {
     return;
   }
 

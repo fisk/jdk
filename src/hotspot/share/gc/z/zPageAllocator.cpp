@@ -382,19 +382,19 @@ size_t ZPageAllocator::heuristic_max_capacity() const {
 
 void ZPageAllocator::adapt_heuristic_max_capacity(ZGenerationId generation) {
   const size_t soft_max_capacity = Atomic::load(&SoftMaxHeapSize);
-  const size_t heuristic_max_capacity = Atomic::load(&_heuristic_max_capacity);
   const size_t min_capacity = _min_capacity;
   const size_t used = Atomic::load(&_used);
   const size_t capacity = MAX2(Atomic::load(&_capacity), used);
   const size_t curr_max_capacity = MAX2(capacity, current_max_capacity());
   const size_t highest_soft_capacity = soft_max_capacity == 0 ? curr_max_capacity
                                                               : MIN2(soft_max_capacity, curr_max_capacity);
+  const size_t heuristic_max_heap = MIN2(heuristic_max_capacity(), highest_soft_capacity);
   const double alloc_rate = ZStatMutatorAllocRate::stats()._avg;
 
   ZHeapResizeMetrics metrics = {
     highest_soft_capacity,
     curr_max_capacity,
-    heuristic_max_capacity,
+    heuristic_max_heap,
     min_capacity,
     capacity,
     used,

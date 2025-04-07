@@ -139,7 +139,7 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage, do
 
   const double scale = mem_pressure * cpu_pressure;
 
-  const double scaled_pressure = MAX2(unscaled_pressure * scale, 1.0);
+  const double scaled_pressure = unscaled_pressure * scale;
   double gc_pressure;
 
   {
