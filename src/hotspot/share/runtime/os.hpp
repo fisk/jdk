@@ -300,6 +300,7 @@ class os: AllStatic {
   static bool supports_vtime();
   static double elapsedVTime();
   static double elapsed_process_vtime();
+  static double elapsed_system_vtime();
 
   // Return current local time in a string (YYYY-MM-DD HH:MM:SS).
   // It is MT safe, but not async-safe, as reading time zone

@@ -477,6 +477,13 @@ bool os::Linux::get_tick_information(CPUPerfTicks* pticks, int which_logical_cpu
   return true;
 }
 
+double os::elapsed_system_vtime() {
+  os::Linux::CPUPerfTicks ticks;
+  os::Linux::get_tick_information(&ticks, -1);
+  uint64_t sum = ticks.used + ticks.usedKernel;
+  return double(sum) / clock_tics_per_sec;
+}
+
 #ifndef SYS_gettid
 // i386: 224, amd64: 186, sparc: 143
   #if defined(__i386__)

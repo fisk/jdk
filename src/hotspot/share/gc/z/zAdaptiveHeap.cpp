@@ -55,7 +55,10 @@ bool ZAdaptiveHeap::can_adapt() {
 
 void ZAdaptiveHeap::initialize(bool explicit_max_capacity) {
   double process_time_now = os::elapsed_process_vtime();
+  double system_time_now = os::elapsed_system_vtime();
   double time_now = os::elapsedTime();
+  _young_data._last_system_time = process_time_now;
+  _old_data._last_system_time = process_time_now;
   _young_data._last_process_time = process_time_now;
   _old_data._last_process_time = process_time_now;
   _young_data._last_time = time_now;
@@ -112,32 +115,43 @@ double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t used_memo
   return 1.0;
 }
 
-double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage, double& mem_pressure) {
-  const size_t total_memory = os::physical_memory();
-  const size_t used_memory = os::used_memory();
-  const size_t capacity = ZHeap::heap()->capacity();
-  const size_t compressed_memory = MIN2(size_t(os::compressed_memory()), used_memory);
-  mem_pressure = memory_pressure(unscaled_pressure, used_memory, compressed_memory, total_memory);
+double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double process_cpu_usage, double system_cpu_usage, double& mem_pressure) {
+  const size_t system_total_memory = os::physical_memory();
+  const size_t system_used_memory = os::used_memory();
+  const double system_memory_usage = double(system_used_memory) / double(system_total_memory);
+  const size_t heap_capacity = ZHeap::heap()->capacity();
+  const size_t compressed_memory = MIN2(size_t(os::compressed_memory()), system_used_memory);
+  mem_pressure = memory_pressure(unscaled_pressure, system_used_memory, compressed_memory, system_total_memory);
 
   const size_t heuristic_max_capacity = ZHeap::heap()->heuristic_max_capacity();
-  const size_t rss = os::rss();
-  const size_t non_heap_memory = rss > capacity ? rss - capacity : 0;
-  const size_t jvm_memory = heuristic_max_capacity + non_heap_memory;
-  const double jvm_memory_usage = double(jvm_memory) / double(total_memory);
+  const size_t process_used_memory = os::rss();
+  const size_t process_non_heap_memory = process_used_memory > heap_capacity ? process_used_memory - heap_capacity : 0;
+  const size_t projected_process_used_memory = heuristic_max_capacity + process_non_heap_memory;
 
-  // The CPU overhead is scaled by what portion of CPU resources are being
+  const double process_memory_usage_ratio = double(projected_process_used_memory) / double(system_used_memory);
+  const double process_cpu_usage_ratio = process_cpu_usage / system_cpu_usage;
+
+  // The GC pressure is scaled by the relationship of how many of the system's
+  // used bytes belong to this process compared to how many of the used system
+  // CPU ticks belong to this process. For a single application deployment this
+  // has effectively no effect, while for a multi process deployment, processes
+  // that are unproportionally memory bloated compared to other processes will
+  // rebalance themselves better to provide more memory for other processes.
+  const double cpu_pressure = process_memory_usage_ratio / (process_memory_usage_ratio + process_cpu_usage_ratio) * 2.0;
+
+  // The GC pressure is scaled by what portion of system CPU resources are being
   // used. As CPU utilization of the machine gets higher, there will be more
   // fighting between mutator threads for CPU time, affecting latencies.
-  // Then we want to increasingly stay out of the way. If the process is
-  // using over much of the CPU resources, don't bother trying to squish the
+  // Then we want GC to increasingly stay out of the way. If the process is
+  // using much of the CPU resources, don't bother trying to squish the
   // heap too much. In fact, then we can conversely increase the heap size
   // so that CPU can decrease a bit, avoiding latency issues due to too high
   // CPU utilization, to some reasonable limit.
-  const double responsive_cpu_usage = cpu_usage / ZCPUConcerningThreshold;
-  const double cpu_memory_usage_ratio = jvm_memory_usage / (responsive_cpu_usage + jvm_memory_usage);
-  const double cpu_pressure = cpu_memory_usage_ratio * 2.0;
+  const double responsive_system_cpu_usage = system_cpu_usage / ZCPUConcerningThreshold;
+  const double latency_pressure = system_memory_usage / (responsive_system_cpu_usage + system_memory_usage) * 2.0;
 
-  const double scale = mem_pressure * cpu_pressure;
+  // The combined environment forces of memory, CPU and latency pressures.
+  const double scale = mem_pressure * cpu_pressure * latency_pressure;
 
   const double scaled_pressure = unscaled_pressure * scale;
   double gc_pressure;
@@ -148,17 +162,15 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double cpu_usage, do
     gc_pressure = MAX2(_gc_pressures.avg(), scaled_pressure);
   }
 
-  log_info(gc, heap)("System CPU Load: %.1f%%, System Memory Load: %.1f%%, JVM Memory Load: %.1f%%, Heap Load: %.1f%%",
-                     cpu_usage * 100.0,
-                     double(used_memory) / double(total_memory) * 100.0,
-                     jvm_memory_usage * 100.0,
-                     double(heuristic_max_capacity) / double(total_memory) * 100.0);
-
-
   if (can_adapt()) {
-    log_info(gc, heap)("Selected GC Pressure: %.1f, Scaled GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f",
-                       gc_pressure, scaled_pressure, cpu_pressure, mem_pressure);
+    log_debug(gc, heap)("GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f, Latency Pressure: %.1f",
+                        scaled_pressure, cpu_pressure, mem_pressure, latency_pressure);
   }
+
+  log_info(gc, load)("System Memory Load: %.1f%%, JVM Memory Load: %.1f%%, Heap Memory Load: %.1f%%",
+                     double(system_used_memory) / double(system_total_memory) * 100.0,
+                     double(projected_process_used_memory) / double(system_total_memory) * 100.0,
+                     double(heuristic_max_capacity) / double(system_total_memory) * 100.0);
 
   return gc_pressure;
 }
@@ -202,12 +214,18 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
 
   // Time metrics
   const double process_time_last = generation_data._last_process_time;
+  const double system_time_last = generation_data._last_system_time;
   const double process_time_now = os::elapsed_process_vtime();
+  // Note that the system time might have poor accuracy early on; it typically
+  // has 100 ms granularity. So take it with a large grain of salt early on...
+  const double system_time_now = os::elapsed_system_vtime();
   const double process_time = process_time_now - process_time_last;
+  const double system_time = system_time_now - system_time_last;
   const double time_now = os::elapsedTime();
   const double time_last = generation_data._last_time;
   const double time_since_last = time_now - time_last;
   generation_data._last_process_time = process_time_now;
+  generation_data._last_system_time = system_time_now;
   generation_data._last_time = time_now;
 
   // Heap size metrics
@@ -226,31 +244,38 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   }
 
   double ncpus = double(os::active_processor_count());
-  const double machine_load = clamp((process_time / time_since_last) / ncpus, 0.0, 1.0);
+  const double warmup_time_seconds = 3.0;
+  const double warmness = MIN2(os::elapsedTime(), warmup_time_seconds) / warmup_time_seconds;
+  const double warmness_squared = warmness * warmness;
 
   const double gc_time = cycle_stats._last_total_vtime + (is_young ? 0.0 : _accumulated_young_gc_time);
 
+  const double gc_cpu_load = clamp((gc_time / time_since_last) / ncpus, 0.0, 1.0);
+  const double process_cpu_load = clamp((process_time / time_since_last) / ncpus, 0.0, 1.0);
+  const double system_cpu_load = clamp((system_time / time_since_last) / ncpus, 0.0, 1.0);
+
   generation_data._process_times.add(process_time);
+  generation_data._system_times.add(system_time);
   generation_data._gc_times.add(gc_time);
   generation_data._gc_times_since_last.add(time_since_last);
 
   const double avg_gc_time = generation_data._gc_times.avg();
   const double avg_time_since_last = generation_data._gc_times_since_last.avg();
   const double avg_process_time = generation_data._process_times.avg();
+  const double avg_system_time = generation_data._system_times.avg();
   const double avg_cpu_overhead = avg_gc_time / avg_process_time;
-  const double avg_machine_load = clamp((avg_process_time / avg_time_since_last) / ncpus, 0.0, 1.0);
+  const double avg_process_cpu_load = clamp((avg_process_time / avg_time_since_last) / ncpus, 0.0, 1.0);
+  const double avg_system_cpu_load = clamp((avg_system_time / avg_time_since_last) / ncpus, 0.0, 1.0);
 
   // Calculate the GC pressure that scales the rest of the heuristics
   double mem_pressure = 1.0;
-  const double pressure = gc_pressure(unscaled_pressure, avg_machine_load, mem_pressure);
+  const double pressure = gc_pressure(unscaled_pressure, avg_process_cpu_load, avg_system_cpu_load, mem_pressure);
 
   // Calculate the heuristic lower bound for the heuristic heap
   const double alloc_rate = metrics->_alloc_rate;
-  const double warmup_time_seconds = 3.0;
-  const double warmness = MIN2(os::elapsedTime(), warmup_time_seconds) / warmup_time_seconds;
   // Since a GC cycle is obviously round, we can estimate the minimum bytes due to
   // a particular allocation rate and GC pressure by calculating GC pressure * pi.
-  const double alloc_rate_scaling = warmness / (pressure * M_PI);
+  const double alloc_rate_scaling = warmness_squared / (pressure * M_PI);
   const size_t heuristic_low = MAX2(size_t(used * 1.1), size_t(alloc_rate * alloc_rate_scaling)) / mem_pressure;
 
   const size_t upper_bound = MIN2(soft_max_capacity, current_max_capacity);
@@ -282,7 +307,7 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   // the factor scales with the level of load induced on the machine.
   const double min_fully_loaded_gc_interval = 5.0 / unscaled_pressure;
   const double min_gc_interval = min_fully_loaded_gc_interval / 4.0 / mem_pressure;
-  const double target_gc_interval = MAX2(min_gc_interval, machine_load * min_fully_loaded_gc_interval);
+  const double target_gc_interval = MAX2(min_gc_interval, process_cpu_load * min_fully_loaded_gc_interval);
   const double upper_gc_interval_error = MAX2(target_gc_interval - avg_time_since_last, target_gc_interval - time_since_last);
   const double lower_gc_interval_error = MIN2(target_gc_interval - avg_time_since_last, target_gc_interval - time_since_last);
 
@@ -314,11 +339,12 @@ size_t ZAdaptiveHeap::compute_heap_size(ZHeapResizeMetrics* metrics, ZGeneration
   // Grow if we experience short term *and* long term reverse pressure on the heap
   const bool should_shrink = lower_bounded_capacity < heuristic_max_capacity && upper_bounded_capacity < heuristic_max_capacity;
 
+  log_info(gc, load)("System CPU Load: %.1f%%, Process CPU Load: %.1f%%, GC CPU Load: %.1f%%",
+                     avg_system_cpu_load * 100.0, avg_process_cpu_load * 100.0, avg_cpu_overhead_conservative * avg_process_cpu_load * 100.0);
+
   if (can_adapt()) {
-    log_info(gc, heap)("GC CPU Overhead: %.1f%% (%.1f%%), Projected GC CPU Overhead: %.1f%% (%.1f%%), Target GC CPU Overhead: %.1f%% (%.1f%%)",
-                       avg_cpu_overhead * 100.0, avg_cpu_overhead * machine_load * 100.0,
-                       avg_cpu_overhead_conservative * 100.0, avg_cpu_overhead_conservative * machine_load * 100.0,
-                       target_cpu_overhead * 100.0, target_cpu_overhead * machine_load * 100.0);
+    log_info(gc, heap)("Process GC CPU Overhead: %.1f%%, Target Process GC CPU Overhead: %.1f%%",
+                       avg_cpu_overhead_conservative * 100.0, target_cpu_overhead * 100.0);
     log_debug(gc, heap)("GC Interval: %.3fs, Target Minimum: %.3fs",
                         avg_time_since_last, target_gc_interval);
     log_debug(gc, heap)("Target heap lower bound: %zuM, upper bound: %zuM",
