@@ -137,7 +137,7 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double process_cpu_u
   // has effectively no effect, while for a multi process deployment, processes
   // that are unproportionally memory bloated compared to other processes will
   // rebalance themselves better to provide more memory for other processes.
-  const double cpu_pressure = process_memory_usage_ratio / (process_memory_usage_ratio + process_cpu_usage_ratio) * 2.0;
+  const double process_cpu_pressure = 1.0 / (1.0 + clamp(process_cpu_usage_ratio - process_memory_usage_ratio, -0.1, 1.0));
 
   // The GC pressure is scaled by what portion of system CPU resources are being
   // used. As CPU utilization of the machine gets higher, there will be more
@@ -148,10 +148,14 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double process_cpu_u
   // so that CPU can decrease a bit, avoiding latency issues due to too high
   // CPU utilization, to some reasonable limit.
   const double responsive_system_cpu_usage = system_cpu_usage / ZCPUConcerningThreshold;
-  const double latency_pressure = system_memory_usage / (responsive_system_cpu_usage + system_memory_usage) * 2.0;
+  const double system_cpu_pressure = 1.0 / (1.0 + clamp(responsive_system_cpu_usage - system_memory_usage, -0.1, 1.0));
 
-  // The combined environment forces of memory, CPU and latency pressures.
-  const double scale = mem_pressure * cpu_pressure * latency_pressure;
+  // Balance the forces of resource share imbalance across processes with the
+  // forces of system lvel resource usage imbalance.
+  const double cpu_pressure = process_cpu_pressure * system_cpu_pressure;
+
+  // The combined forces of memory vs CPU.
+  const double scale = mem_pressure * cpu_pressure;
 
   const double scaled_pressure = unscaled_pressure * scale;
   double gc_pressure;
@@ -163,11 +167,13 @@ double ZAdaptiveHeap::gc_pressure(double unscaled_pressure, double process_cpu_u
   }
 
   if (can_adapt()) {
-    log_debug(gc, heap)("GC Pressure: %.1f, CPU Pressure: %.1f, Memory Pressure: %.1f, Latency Pressure: %.1f",
-                        scaled_pressure, cpu_pressure, mem_pressure, latency_pressure);
+    log_debug(gc, heap)("Process CPU Pressure: %.1f, System CPU Pressure: %.1f, System Memory Pressure: %.1f",
+                        process_cpu_pressure, system_cpu_pressure, mem_pressure);
+    log_debug(gc, heap)("GC Pressure: %.1f, Pressure Scaling: %.1f",
+                        scaled_pressure, scale);
   }
 
-  log_info(gc, load)("System Memory Load: %.1f%%, JVM Memory Load: %.1f%%, Heap Memory Load: %.1f%%",
+  log_info(gc, load)("System Memory Load: %.1f%%, Process Memory Load: %.1f%%, Heap Memory Load: %.1f%%",
                      double(system_used_memory) / double(system_total_memory) * 100.0,
                      double(projected_process_used_memory) / double(system_total_memory) * 100.0,
                      double(heuristic_max_capacity) / double(system_total_memory) * 100.0);
