@@ -808,6 +808,29 @@ double os::elapsedVTime() {
 }
 
 #ifdef __APPLE__
+double os::elapsed_system_vtime() {
+  mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
+  host_cpu_load_info_data_t load_data;
+
+  kern_return_t ret = host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, (host_info_t)&load_data, &count);
+  if (ret != KERN_SUCCESS) {
+    assert(false, "This should never happen");
+    return 0.0;
+  }
+
+  natural_t ticks = load_data.cpu_ticks[CPU_STATE_USER] +
+                    load_data.cpu_ticks[CPU_STATE_NICE] +
+                    load_data.cpu_ticks[CPU_STATE_SYSTEM];
+
+  return double(ticks) / CLK_TCK;
+}
+#else
+double os::elapsed_system_vtime() {
+  return 0.0;
+}
+#endif
+
+#ifdef __APPLE__
 void os::Bsd::clock_init() {
   mach_timebase_info(&_timebase_info);
 }
