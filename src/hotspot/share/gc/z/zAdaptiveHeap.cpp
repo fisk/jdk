@@ -192,7 +192,7 @@ static double sigmoid_function(double value) {
 // early GCs before the system has had any chance to converge to a stable heap size.
 static double smoothing_function(double value, double warmness) {
   const double sigmoid = sigmoid_function(value);
-  const double aggressive = MAX2(sigmoid, 0.5 + value);
+  const double aggressive = MIN2(MAX2(sigmoid, 0.5 + value), 2.0);
 
   return sigmoid * warmness + aggressive * (1.0 - warmness);
 }
