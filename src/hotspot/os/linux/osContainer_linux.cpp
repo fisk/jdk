@@ -162,6 +162,10 @@ int OSContainer::active_processor_count() {
   return cgroup_subsystem->active_processor_count();
 }
 
+jlong OSContainer::cpu_usage_in_micros() {
+  return cgroup_subsystem->cpu_usage_in_micros();
+}
+
 int OSContainer::cpu_quota() {
   assert(cgroup_subsystem != nullptr, "cgroup subsystem not available");
   return cgroup_subsystem->cpu_quota();

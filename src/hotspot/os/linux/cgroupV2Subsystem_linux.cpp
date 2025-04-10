@@ -114,12 +114,14 @@ int CgroupV2CpuController::cpu_quota() {
 // Constructor
 CgroupV2Subsystem::CgroupV2Subsystem(CgroupV2MemoryController * memory,
                                      CgroupV2CpuController* cpu,
+                                     CgroupV2CpuacctController* cpuacct,
                                      CgroupV2Controller unified) :
                                      _unified(unified) {
   CgroupUtil::adjust_controller(memory);
   CgroupUtil::adjust_controller(cpu);
   _memory = new CachingCgroupController<CgroupMemoryController>(memory);
   _cpu = new CachingCgroupController<CgroupCpuController>(cpu);
+  _cpuacct = cpuacct;
 }
 
 bool CgroupV2Subsystem::is_containerized() {
@@ -138,6 +140,16 @@ char* CgroupV2Subsystem::cpu_cpuset_memory_nodes() {
   char mems[1024];
   CONTAINER_READ_STRING_CHECKED(unified(), "/cpuset.mems", "cpuset.mems", mems, 1024);
   return os::strdup(mems);
+}
+
+jlong CgroupV2CpuController::cpu_usage_in_micros() {
+  julong cpu_usage;
+  bool is_ok = reader()->read_numerical_key_value("/cpu.stat", "usage_usec", &cpu_usage);
+  if (!is_ok) {
+    return OSCONTAINER_ERROR;
+  }
+  log_trace(os, container)("CPU usage is: " JULONG_FORMAT, cpu_usage);
+  return (jlong)cpu_usage;
 }
 
 int CgroupV2CpuController::cpu_period() {

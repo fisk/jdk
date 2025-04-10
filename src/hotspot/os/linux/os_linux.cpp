@@ -478,6 +478,13 @@ bool os::Linux::get_tick_information(CPUPerfTicks* pticks, int which_logical_cpu
 }
 
 double os::elapsed_system_vtime() {
+  if (OSContainer::is_containerized()) {
+    jlong result = OSContainer::cpu_usage_in_micros();
+    if (result != OSCONTAINER_ERROR) {
+      return double(result) / 1000000;
+    }
+  }
+
   os::Linux::CPUPerfTicks ticks;
   os::Linux::get_tick_information(&ticks, -1);
   uint64_t sum = ticks.used + ticks.usedKernel;

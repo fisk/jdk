@@ -251,7 +251,7 @@ jlong CgroupV1MemoryController::memory_soft_limit_in_bytes(julong phys_mem) {
 // Constructor
 CgroupV1Subsystem::CgroupV1Subsystem(CgroupV1Controller* cpuset,
                       CgroupV1CpuController* cpu,
-                      CgroupV1Controller* cpuacct,
+                      CgroupV1CpuacctController* cpuacct,
                       CgroupV1Controller* pids,
                       CgroupV1MemoryController* memory) :
     _cpuset(cpuset),
@@ -364,6 +364,13 @@ char* CgroupV1Subsystem::cpu_cpuset_memory_nodes() {
   char mems[1024];
   CONTAINER_READ_STRING_CHECKED(_cpuset, "/cpuset.mems", "cpuset.mems", mems, 1024);
   return os::strdup(mems);
+}
+
+jlong CgroupV1CpuacctController::cpu_usage_in_micros() {
+  julong cpu_usage;
+  CONTAINER_READ_NUMBER_CHECKED(reader(), "/cpuacct.usage", "CPU Usage", cpu_usage);
+  // The output of the file is in nanoseconds
+  return (jlong)cpu_usage / 1000;
 }
 
 /* cpu_quota
