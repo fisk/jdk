@@ -1228,6 +1228,22 @@ double os::elapsed_process_vtime() {
   return user_seconds + kernel_seconds;
 }
 
+double os::elapsed_system_vtime() {
+  FILETIME idle, kernel, user;
+  if (GetSystemTimes(&idle, &kernel, &user) == 0) {
+    assert(false, "this should not fail");
+    return 0.0;
+  }
+
+  // Kernel time includes idle time
+  jlong ticks = windows_to_time_ticks(user) +
+                windows_to_time_ticks(kernel) -
+                windows_to_time_ticks(idle);
+
+  // Ticks are 100 ns
+  return double(ticks) / 10000000.0;
+}
+
 jlong os::javaTimeMillis() {
   FILETIME wt;
   GetSystemTimeAsFileTime(&wt);
