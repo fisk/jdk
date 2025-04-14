@@ -90,7 +90,7 @@ double ZAdaptiveHeap::memory_pressure(double unscaled_pressure, size_t used_memo
   // 3) On systems that compress used memory, using compressed memory is not a
   //    free lunch as it leads to page faults that compress and decompress memory.
   //    This is extra painful for a tracing GC to traverse.
-  const double compression_rate = double(compressed_memory) / double(used_memory);
+  const double compression_rate = double(compressed_memory) / double(total_memory);
 
   const double concerning_vs_high_diff = ZMemoryConcerningThreshold - ZMemoryHighThreshold;
   const double concerning_threshold = MIN2(ZMemoryConcerningThreshold + compression_rate, 1.0);
