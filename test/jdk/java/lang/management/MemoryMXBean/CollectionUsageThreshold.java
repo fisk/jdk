@@ -36,7 +36,7 @@
  * @requires (vm.opt.ExplicitGCInvokesConcurrent == "false" | vm.opt.ExplicitGCInvokesConcurrent == "null") & vm.compMode != "Xcomp"
  * @build jdk.test.whitebox.WhiteBox
  * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
- * @run main/othervm/timeout=300 -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:. CollectionUsageThreshold
+ * @run main/othervm/timeout=300 -XX:+UnlockDiagnosticVMOptions -Xms512m -Xmx512m -XX:+WhiteBoxAPI -Xbootclasspath/a:. CollectionUsageThreshold
  */
 
 import java.util.*;
