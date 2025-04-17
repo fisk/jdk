@@ -1845,10 +1845,12 @@ size_t ZPageAllocator::unused() const {
 }
 
 ZPageAllocatorStats ZPageAllocator::stats(ZGeneration* generation) const {
+  const size_t heuristic_max = heuristic_max_capacity();
+
   ZLocker<ZLock> locker(&_lock);
 
   return ZPageAllocatorStats(_min_capacity,
-                             _static_max_capacity,
+                             heuristic_max,
                              capacity(),
                              _used,
                              _collection_stats[(int)generation->id()]._used_high,
