@@ -24,6 +24,7 @@
 #ifndef SHARE_GC_Z_ZCOMMITTER_HPP
 #define SHARE_GC_Z_ZCOMMITTER_HPP
 
+#include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zAddress.hpp"
 #include "gc/z/zArray.hpp"
 #include "gc/z/zList.hpp"
@@ -57,7 +58,7 @@ private:
 
   bool is_stop_requested();
   size_t commit_granule(size_t capacity, size_t target_capacity);
-  bool should_commit(size_t granule, size_t capacity, size_t target_capacity, size_t curr_max_capacity);
+  bool should_commit(size_t granule, size_t capacity, size_t target_capacity, size_t curr_max_capacity, const ZMemoryPressureMetrics& metrics);
   bool should_uncommit(size_t granule, size_t capacity, size_t target_capacity);
   bool should_heat();
   bool has_heating_request();

@@ -39,6 +39,13 @@ struct ZHeapResizeMetrics {
   const double _alloc_rate;
 };
 
+struct ZMemoryPressureMetrics {
+  const double _unscaled_gc_pressure;
+  const size_t _system_used_memory;
+  const size_t _system_compressed_memory;
+  const size_t _system_max_memory;
+};
+
 class ZAdaptiveHeap : public AllStatic {
 private:
   static bool _explicit_max_capacity;
@@ -68,7 +75,7 @@ private:
   static ZGenerationOverhead _old_data;
 
   static double gc_pressure(double unscaled_pressure, double process_cpu_usage, double system_cpu_usage, double& mem_pressure);
-  static double memory_pressure(double unscaled_pressure, size_t used_memory, size_t compressed_memory, size_t total_memory);
+  static double memory_pressure(const ZMemoryPressureMetrics& metrics);
 
 public:
   static void initialize(bool explicit_max_heap_size);
@@ -78,6 +85,10 @@ public:
 
   static uint64_t uncommit_delay(size_t used_memory, size_t total_memory);
   static uint64_t soft_ref_delay();
+  static ZMemoryPressureMetrics memory_pressure_metrics();
+  static bool is_memory_pressure_concerning(const ZMemoryPressureMetrics& metrics);
+  static bool is_memory_pressure_high(const ZMemoryPressureMetrics& metrics);
+  static bool is_memory_pressure_critical(const ZMemoryPressureMetrics& metrics);
 
   static bool explicit_max_capacity() { return _explicit_max_capacity; }
   static bool can_adapt();

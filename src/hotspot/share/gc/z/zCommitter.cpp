@@ -73,19 +73,28 @@ size_t ZCommitter::commit_granule(size_t capacity, size_t target_capacity) {
   return clamp(align_up(target_capacity / 64, ZGranuleSize), smallest_granule, largest_granule);
 }
 
-bool ZCommitter::should_commit(size_t granule, size_t capacity, size_t target_capacity, size_t curr_max_capacity) {
+bool ZCommitter::should_commit(size_t granule, size_t capacity, size_t target_capacity, size_t curr_max_capacity, const ZMemoryPressureMetrics& metrics) {
   if (capacity > target_capacity) {
     return false;
   }
 
   const size_t new_capacity = capacity + granule;
 
-  if (!ZAdaptiveHeap::explicit_max_capacity() &&
-      new_capacity > size_t(double(curr_max_capacity) * (1.0 - ZMemoryCriticalThreshold))) {
-    // Don't speculatively commit memory around the machine boundaries; it interacts poorly with
-    // panic uncommitting around the same boundaries. When a user is this close to falling over,
-    // this instead acts as an implicit allocation pacer to try to avoid an allocation stall.
-    return false;
+  if (!ZAdaptiveHeap::explicit_max_capacity()) {
+    // Be more mindful about increasing capacity with automatic heap sizing on
+
+    if (ZAdaptiveHeap::is_memory_pressure_high(metrics)) {
+      // When the pressure is "high", we resort to lazyness for committing to ensure that we
+      // are not stepping off a cliff when the memory isn't needed.
+      return false;
+    }
+
+    if (ZAdaptiveHeap::is_memory_pressure_concerning(metrics) &&
+        new_capacity > ZHeap::heap()->heuristic_max_capacity()) {
+      // When memory pressure gets concerning, we don't eagerly commit *past* the heuristic
+      // max heap size, because we migh not need it and we want to avoid a ping pong situation.
+      return false;
+    }
   }
 
   return new_capacity <= target_capacity;
@@ -122,6 +131,7 @@ bool ZCommitter::peek() {
     const size_t curr_max_capacity = _partition->current_max_capacity();
     const size_t target_capacity = MIN2(Atomic::load(&_target_capacity), curr_max_capacity);
     const size_t granule = commit_granule(capacity, target_capacity);
+    const ZMemoryPressureMetrics metrics = ZAdaptiveHeap::memory_pressure_metrics();
 
     ZLocker<ZConditionLock> locker(&_lock);
     if (_stop) {
@@ -134,7 +144,7 @@ bool ZCommitter::peek() {
       continue;
     }
 
-    if (should_commit(granule, capacity, target_capacity, curr_max_capacity)) {
+    if (should_commit(granule, capacity, target_capacity, curr_max_capacity, metrics)) {
       // At least one granule to commit
       return true;
     }
@@ -209,6 +219,7 @@ void ZCommitter::set_target_capacity(size_t target_capacity) {
 
 void ZCommitter::grow_target_capacity(size_t target_capacity) {
   const size_t curr_max_capacity = _partition->current_max_capacity();
+  const ZMemoryPressureMetrics metrics = ZAdaptiveHeap::memory_pressure_metrics();
 
   ZLocker<ZConditionLock> locker(&_lock);
   if (target_capacity < _target_capacity) {
@@ -221,7 +232,7 @@ void ZCommitter::grow_target_capacity(size_t target_capacity) {
   target_capacity = MIN2(target_capacity, curr_max_capacity);
   const size_t granule = commit_granule(capacity, target_capacity);
 
-  if (should_commit(granule, capacity, target_capacity, curr_max_capacity)) {
+  if (should_commit(granule, capacity, target_capacity, curr_max_capacity, metrics)) {
     // At least one granule to commit
     _lock.notify_all();
   }
@@ -397,6 +408,7 @@ void ZCommitter::run_thread() {
       const size_t curr_max_capacity = _partition->current_max_capacity();
       const size_t target_capacity = MIN2(Atomic::load(&_target_capacity), curr_max_capacity);
       const size_t granule = commit_granule(capacity, target_capacity);
+      const ZMemoryPressureMetrics metrics = ZAdaptiveHeap::memory_pressure_metrics();
 
       if (is_stop_requested()) {
         return;
@@ -410,9 +422,9 @@ void ZCommitter::run_thread() {
       last_target_capacity = target_capacity;
 
       // Prioritize committing memory if needed
-      if (uncommitted == 0 && should_commit(granule, capacity, target_capacity, curr_max_capacity)) {
+      if (uncommitted == 0 && should_commit(granule, capacity, target_capacity, curr_max_capacity, metrics)) {
         committed += _partition->commit(granule, target_capacity);
-        assert(!should_uncommit(granule, capacity + granule, target_capacity, curr_max_capacity), "commit rule mismatch");
+        assert(!should_uncommit(granule, capacity + granule, target_capacity), "commit rule mismatch");
         continue;
       }
 
@@ -425,7 +437,7 @@ void ZCommitter::run_thread() {
       // The lowest priority is uncommitting memory if needed
       if (committed == 0 && should_uncommit(granule, capacity, target_capacity)) {
         uncommitted += _partition->uncommit(granule);
-        assert(!should_commit(granule, capacity - granule, target_capacity, curr_max_capacity), "uncommit rule mismatch");
+        assert(!should_commit(granule, capacity - granule, target_capacity, curr_max_capacity, metrics), "uncommit rule mismatch");
         continue;
       }
 
