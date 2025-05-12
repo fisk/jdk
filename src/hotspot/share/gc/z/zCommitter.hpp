@@ -38,13 +38,11 @@ class ZPartition;
 
 class ZHeatingRequestTreeComparator : public AllStatic {
 public:
-  // Until the RBTree gets support for different key comparisons we only check
-  // if the first.start() value is contained in second.
-  static int cmp(ZVirtualMemory first, ZVirtualMemory second);
+  static int cmp(zoffset first, zoffset second);
 };
 
-using ZHeatingRequestTree = RBTreeCHeap<ZVirtualMemory, bool, ZHeatingRequestTreeComparator, mtGC>;
-using ZHeatingRequestNode = RBNode<ZVirtualMemory, bool>;
+using ZHeatingRequestTree = RBTreeCHeap<zoffset, size_t, ZHeatingRequestTreeComparator, mtGC>;
+using ZHeatingRequestNode = RBNode<zoffset, size_t>;
 
 class ZCommitter : public ZThread {
 private:
@@ -62,6 +60,7 @@ private:
   bool should_uncommit(size_t granule, size_t capacity, size_t target_capacity);
   bool should_heat();
   bool has_heating_request();
+  void remove_heating_request_range(const ZVirtualMemory& vmem);
   ZVirtualMemory pop_heating_request();
   size_t process_heating_request();
   bool peek();
