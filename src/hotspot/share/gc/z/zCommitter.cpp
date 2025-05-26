@@ -53,6 +53,7 @@ ZCommitter::ZCommitter(uint32_t id, ZPartition* partition)
     _partition(partition),
     _lock(),
     _heating_requests(),
+    _enqueued_heating(0),
     _target_capacity(0),
     _stop(false),
     _currently_heating() {
@@ -255,6 +256,18 @@ void ZCommitter::shrink_target_capacity(size_t target_capacity) {
   }
 }
 
+void ZCommitter::assert_enqueued_size() {
+#ifdef ASSERT
+  size_t expected_size = _enqueued_heating;
+  size_t size = 0;
+  _heating_requests.visit_in_order([&](const ZHeatingRequestNode* node) {
+    const ZVirtualMemory request(node->key(), node->val());
+    size += request.size();
+  });
+  assert(size == expected_size, "expected size wrong %zuM != %zuM", size / M, expected_size / M);
+#endif // ASSERT
+}
+
 void ZCommitter::assert_not_tracked(const ZVirtualMemory& vmem) {
 #ifdef ASSERT
   _heating_requests.visit_in_order([&](const ZHeatingRequestNode* node) {
@@ -281,6 +294,7 @@ void ZCommitter::remove_heating_request_range(const ZVirtualMemory& vmem) {
     // Const cast the node, we only use it to modify the tree after
     // visit_range_in_order is completed.
     to_remove.push(const_cast<ZHeatingRequestNode*>(node));
+    _enqueued_heating -= node->val();
   });
 
   for (ZHeatingRequestNode* node: to_remove) {
@@ -300,37 +314,38 @@ void ZCommitter::register_heating_request(const ZVirtualMemory& vmem) {
     _lock.wait();
   }
 
-  zoffset insert_start = vmem.start();
-  zoffset_end insert_end = zoffset_end(vmem.start()) + vmem.size();
+  assert_enqueued_size();
+  assert_not_tracked(vmem);
 
-  // Remove overlap on the left
-  if (vmem.start() > zoffset(0)) {
-    ZHeatingRequestNode* left_node = _heating_requests.closest_leq(vmem.start() - ZGranuleSize);
-    if (left_node != nullptr) {
-      ZVirtualMemory closest_left(left_node->key(), left_node->val());
-      if (closest_left.overlaps(vmem)) {
-        insert_start = closest_left.start();
-        insert_end = MAX2(zoffset_end(left_node->key()) + left_node->val(), insert_end);
-        _heating_requests.remove(left_node);
-      }
+  zoffset insert_start = vmem.start();
+  zoffset_end insert_end = vmem.end();
+
+  // Merge adjacent on the left
+  ZHeatingRequestNode* left_node = _heating_requests.closest_leq(vmem.start());
+  if (left_node != nullptr) {
+    ZVirtualMemory closest_left(left_node->key(), left_node->val());
+    if (closest_left.end() == vmem.start()) {
+      insert_start = closest_left.start();
+      _heating_requests.remove(left_node);
     }
   }
 
-  // Remove overlap on the right
-  if (size_t(vmem.start()) + vmem.size() < ZAddressOffsetMax) {
-    ZHeatingRequestNode* right_node = _heating_requests.closest_leq(vmem.start() + vmem.size());
+  // Merge adjacent on the right
+  if (size_t(vmem.end()) < ZAddressOffsetMax) {
+    ZHeatingRequestNode* right_node = _heating_requests.find_node(vmem.start() + vmem.size());
     if (right_node != nullptr) {
-      insert_end = MAX2(zoffset_end(right_node->key()) + right_node->val(), insert_end);
+      insert_end = zoffset_end(right_node->key()) + right_node->val();
       _heating_requests.remove(right_node);
     }
   }
-
-  remove_heating_request_range(vmem);
 
   ZHeatingRequestNode* const new_node = _heating_requests.allocate_node(insert_start, size_t(insert_end) - size_t(insert_start));
   assert(_heating_requests.find(insert_start) == nullptr, "Should have been merged");
   assert_not_tracked(new_node->key(), new_node->val());
   _heating_requests.insert(insert_start, new_node);
+
+  _enqueued_heating += vmem.size();
+  assert_enqueued_size();
 
 #ifdef ASSERT
   if (!_currently_heating.is_null()) {
@@ -354,6 +369,7 @@ void ZCommitter::register_heating_request(const ZVirtualMemory& vmem) {
 ZVirtualMemory ZCommitter::pop_heating_request() {
   assert(has_heating_request(), "precondition");
 
+  assert_enqueued_size();
   ZHeatingRequestNode* const node = _heating_requests.leftmost();
 
   ZVirtualMemory vmem(node->key(), node->val());
@@ -373,6 +389,8 @@ ZVirtualMemory ZCommitter::pop_heating_request() {
     assert_not_tracked(vmem.start(), vmem.size());
   }
 
+  _enqueued_heating -= vmem.size();
+  assert_enqueued_size();
 
   return vmem;
 }
@@ -385,14 +403,17 @@ void ZCommitter::remove_heating_request(const ZVirtualMemory& vmem) {
     _lock.wait();
   }
 
+  assert_enqueued_size();
+
   // Cut off overlap on the left
   if (vmem.start() > zoffset(0)) {
     ZHeatingRequestNode* left_node = _heating_requests.closest_leq(vmem.start() - ZGranuleSize);
     if (left_node != nullptr) {
       const ZVirtualMemory closest_left(left_node->key(), left_node->val());
       if (closest_left.contains(vmem)) {
-        const size_t left_size = size_t(closest_left.start()) - size_t(vmem.start());
+        const size_t left_size = size_t(vmem.start()) - size_t(closest_left.start());
         _heating_requests.upsert(closest_left.start(), left_size);
+        _enqueued_heating -= closest_left.size() - left_size;
 
         const size_t right_size = size_t(closest_left.start()) + vmem.size() - (size_t(vmem.start()) + size_t(vmem.size()));
         if (right_size > 0) {
@@ -401,11 +422,13 @@ void ZCommitter::remove_heating_request(const ZVirtualMemory& vmem) {
           assert(_heating_requests.find(new_node_start) == nullptr, "Should have been merged");
           assert_not_tracked(new_node->key(), new_node->val());
           _heating_requests.insert(new_node_start, new_node);
+          _enqueued_heating += right_size;
         }
       } else if (closest_left.overlaps(vmem)) {
         const size_t overlap_size = size_t(closest_left.start()) + size_t(closest_left.size()) - size_t(vmem.start());
         assert(_heating_requests.find(closest_left.start()) != nullptr, "Invariant");
         _heating_requests.upsert(closest_left.start(), closest_left.size() - overlap_size);
+        _enqueued_heating -= overlap_size;
       }
     }
   }
@@ -423,11 +446,14 @@ void ZCommitter::remove_heating_request(const ZVirtualMemory& vmem) {
         assert(_heating_requests.find(new_node_start) == nullptr, "Should have been merged");
         assert_not_tracked(new_node->key(), new_node->val());
         _heating_requests.insert(new_node_start, new_node);
+        _enqueued_heating -= overlap_size;
       }
     }
   }
 
   remove_heating_request_range(vmem);
+
+  assert_enqueued_size();
 
 #ifdef ASSERT
   if (!_currently_heating.is_null()) {
@@ -445,6 +471,7 @@ void ZCommitter::remove_heating_request(const ZVirtualMemory& vmem) {
 }
 
 size_t ZCommitter::process_heating_request() {
+  SuspendibleThreadSetJoiner sts_joiner;
   ZVirtualMemory vmem;
   {
     ZLocker<ZConditionLock> locker(&_lock);
