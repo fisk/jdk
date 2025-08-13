@@ -44,7 +44,18 @@ public:
 using ZHeatingRequestTree = RBTreeCHeap<zoffset, size_t, ZHeatingRequestTreeComparator, mtGC>;
 using ZHeatingRequestNode = RBNode<zoffset, size_t>;
 
-class ZCommitter : public ZThread {
+// This worker is enabled with automatic heap sizing.
+// Its responsibilities are:
+// * Change heap capacity
+//   - Commit memory concurrently when growing the heap
+//   - Uncommit memory concurrently due to long-term shrinking
+//   - Uncommit memory concurrently due to urgent memory pressure
+// * Heat up memory before mutators start using it
+//   - Pre-touching memory concurrently
+//   - Collapse small pages to large pages
+// There is one memory worker per heap partition
+
+class ZMemoryWorker : public ZThread {
 private:
   const uint32_t      _id;
   ZPartition* const   _partition;
@@ -75,7 +86,7 @@ protected:
   virtual void terminate();
 
 public:
-  ZCommitter(uint32_t id, ZPartition* partition);
+  ZMemoryWorker(uint32_t id, ZPartition* partition);
 
   void heap_resized(size_t capacity, size_t heuristic_max_capacity);
   void heap_truncated(size_t capacity);

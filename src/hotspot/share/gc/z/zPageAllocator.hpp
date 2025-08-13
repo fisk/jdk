@@ -65,7 +65,7 @@ private:
   ZPageAllocator* const _page_allocator;
   ZMappedCache          _cache;
   ZUncommitter          _uncommitter;
-  ZCommitter            _committer;
+  ZMemoryWorker         _mem_worker;
   const size_t          _min_capacity;
   const size_t          _static_max_capacity;
   size_t                _committed;
@@ -108,8 +108,8 @@ public:
   const ZUncommitter& uncommitter() const;
   ZUncommitter& uncommitter();
 
-  const ZCommitter& committer() const;
-  ZCommitter& committer();
+  const ZMemoryWorker& memory_worker() const;
+  ZMemoryWorker& memory_worker();
 
   uint32_t numa_id() const;
 

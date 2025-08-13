@@ -48,7 +48,7 @@ int ZHeatingRequestTreeComparator::cmp(zoffset first, zoffset second) {
   return 0;
 }
 
-ZCommitter::ZCommitter(uint32_t id, ZPartition* partition)
+ZMemoryWorker::ZMemoryWorker(uint32_t id, ZPartition* partition)
   : _id(id),
     _partition(partition),
     _lock(),
@@ -57,16 +57,16 @@ ZCommitter::ZCommitter(uint32_t id, ZPartition* partition)
     _target_capacity(0),
     _stop(false),
     _currently_heating() {
-  set_name("ZCommitter#%u", _id);
+  set_name("ZMemoryWorker#%u", _id);
   create_and_start();
 }
 
-bool ZCommitter::is_stop_requested() {
+bool ZMemoryWorker::is_stop_requested() {
   ZLocker<ZConditionLock> locker(&_lock);
   return _stop;
 }
 
-size_t ZCommitter::commit_granule(size_t capacity, size_t target_capacity) {
+size_t ZMemoryWorker::commit_granule(size_t capacity, size_t target_capacity) {
   const size_t smallest_granule = ZGranuleSize;
   const size_t largest_granule = MAX2(ZPageSizeMediumMax, smallest_granule);
 
@@ -74,7 +74,7 @@ size_t ZCommitter::commit_granule(size_t capacity, size_t target_capacity) {
   return clamp(align_up(target_capacity / 64, ZGranuleSize), smallest_granule, largest_granule);
 }
 
-bool ZCommitter::should_commit(size_t granule, size_t capacity, size_t target_capacity, size_t curr_max_capacity, const ZMemoryPressureMetrics& metrics) {
+bool ZMemoryWorker::should_commit(size_t granule, size_t capacity, size_t target_capacity, size_t curr_max_capacity, const ZMemoryPressureMetrics& metrics) {
   if (capacity > target_capacity) {
     return false;
   }
@@ -101,7 +101,7 @@ bool ZCommitter::should_commit(size_t granule, size_t capacity, size_t target_ca
   return new_capacity <= target_capacity;
 }
 
-bool ZCommitter::should_uncommit(size_t granule, size_t capacity, size_t target_capacity) {
+bool ZMemoryWorker::should_uncommit(size_t granule, size_t capacity, size_t target_capacity) {
   if (!ZUncommit) {
     // Uncommit explicitly disabled; don't uncommit.
     return false;
@@ -117,16 +117,16 @@ bool ZCommitter::should_uncommit(size_t granule, size_t capacity, size_t target_
   return new_capacity > target_capacity;
 }
 
-bool ZCommitter::should_heat() {
+bool ZMemoryWorker::should_heat() {
   ZLocker<ZConditionLock> locker(&_lock);
   return has_heating_request();
 }
 
-bool ZCommitter::has_heating_request() {
+bool ZMemoryWorker::has_heating_request() {
   return _heating_requests.size() != 0;
 }
 
-bool ZCommitter::peek() {
+bool ZMemoryWorker::peek() {
   for (;;) {
     const size_t capacity = _partition->capacity();
     const size_t curr_max_capacity = _partition->current_max_capacity();
@@ -163,11 +163,11 @@ bool ZCommitter::peek() {
   }
 }
 
-size_t ZCommitter::target_capacity() {
+size_t ZMemoryWorker::target_capacity() {
   return Atomic::load(&_target_capacity);
 }
 
-void ZCommitter::heap_resized(size_t capacity, size_t heuristic_max_capacity) {
+void ZMemoryWorker::heap_resized(size_t capacity, size_t heuristic_max_capacity) {
   if (capacity <= heuristic_max_capacity) {
     // Heap increases are handled lazily through the director monitoring
     // This allows growing to be more vigilant and not have to wait for
@@ -209,16 +209,16 @@ void ZCommitter::heap_resized(size_t capacity, size_t heuristic_max_capacity) {
   shrink_target_capacity(target_capacity - uncommit_request);
 }
 
-void ZCommitter::heap_truncated(size_t capacity) {
+void ZMemoryWorker::heap_truncated(size_t capacity) {
   shrink_target_capacity(capacity);
 }
 
-void ZCommitter::set_target_capacity(size_t target_capacity) {
+void ZMemoryWorker::set_target_capacity(size_t target_capacity) {
   ZLocker<ZConditionLock> locker(&_lock);
   Atomic::store(&_target_capacity, target_capacity);
 }
 
-void ZCommitter::grow_target_capacity(size_t target_capacity) {
+void ZMemoryWorker::grow_target_capacity(size_t target_capacity) {
   const size_t curr_max_capacity = _partition->current_max_capacity();
   const ZMemoryPressureMetrics metrics = ZAdaptiveHeap::memory_pressure_metrics();
 
@@ -239,7 +239,7 @@ void ZCommitter::grow_target_capacity(size_t target_capacity) {
   }
 }
 
-void ZCommitter::shrink_target_capacity(size_t target_capacity) {
+void ZMemoryWorker::shrink_target_capacity(size_t target_capacity) {
   ZLocker<ZConditionLock> locker(&_lock);
   if (target_capacity > _target_capacity) {
     // Doesn't seem to be shrinking any more
@@ -256,7 +256,8 @@ void ZCommitter::shrink_target_capacity(size_t target_capacity) {
   }
 }
 
-void ZCommitter::assert_enqueued_size() {
+// TODO: Remove assert functions below
+void ZMemoryWorker::assert_enqueued_size() {
 #ifdef ASSERT
   size_t expected_size = _enqueued_heating;
   size_t size = 0;
@@ -268,7 +269,7 @@ void ZCommitter::assert_enqueued_size() {
 #endif // ASSERT
 }
 
-void ZCommitter::assert_not_tracked(const ZVirtualMemory& vmem) {
+void ZMemoryWorker::assert_not_tracked(const ZVirtualMemory& vmem) {
 #ifdef ASSERT
   _heating_requests.visit_in_order([&](const ZHeatingRequestNode* node) {
     // Should contain no nodes with memory that overlaps with vmem
@@ -278,14 +279,14 @@ void ZCommitter::assert_not_tracked(const ZVirtualMemory& vmem) {
 #endif // ASSERT
 }
 
-void ZCommitter::assert_not_tracked(zoffset start, size_t size) {
+void ZMemoryWorker::assert_not_tracked(zoffset start, size_t size) {
 #ifdef ASSERT
   ZVirtualMemory vmem(start, size);
   assert_not_tracked(vmem);
 #endif
 }
 
-void ZCommitter::remove_heating_request_range(const ZVirtualMemory& vmem) {
+void ZMemoryWorker::remove_heating_request_range(const ZVirtualMemory& vmem) {
   ZArray<ZHeatingRequestNode*> to_remove;
 
   const zoffset start_inclusive = vmem.start();
@@ -302,7 +303,7 @@ void ZCommitter::remove_heating_request_range(const ZVirtualMemory& vmem) {
   }
 }
 
-void ZCommitter::register_heating_request(const ZVirtualMemory& vmem) {
+void ZMemoryWorker::register_heating_request(const ZVirtualMemory& vmem) {
   ZLocker<ZConditionLock> locker(&_lock);
   if (_stop) {
     // Don't add more requests during termination
@@ -366,7 +367,7 @@ void ZCommitter::register_heating_request(const ZVirtualMemory& vmem) {
 #endif // ASSERT
 }
 
-ZVirtualMemory ZCommitter::pop_heating_request() {
+ZVirtualMemory ZMemoryWorker::pop_heating_request() {
   assert(has_heating_request(), "precondition");
 
   assert_enqueued_size();
@@ -395,7 +396,7 @@ ZVirtualMemory ZCommitter::pop_heating_request() {
   return vmem;
 }
 
-void ZCommitter::remove_heating_request(const ZVirtualMemory& vmem) {
+void ZMemoryWorker::remove_heating_request(const ZVirtualMemory& vmem) {
   ZLocker<ZConditionLock> locker(&_lock);
 
   while (!_currently_heating.is_null() && vmem.overlaps(_currently_heating)) {
@@ -470,7 +471,7 @@ void ZCommitter::remove_heating_request(const ZVirtualMemory& vmem) {
 #endif // ASSERT
 }
 
-size_t ZCommitter::process_heating_request() {
+size_t ZMemoryWorker::process_heating_request() {
   SuspendibleThreadSetJoiner sts_joiner;
   ZVirtualMemory vmem;
   {
@@ -499,7 +500,7 @@ size_t ZCommitter::process_heating_request() {
   return vmem.size();
 }
 
-void ZCommitter::run_thread() {
+void ZMemoryWorker::run_thread() {
   for (;;) {
     if (!peek()) {
       // Stop
@@ -569,7 +570,7 @@ void ZCommitter::run_thread() {
   }
 }
 
-void ZCommitter::terminate() {
+void ZMemoryWorker::terminate() {
   ZLocker<ZConditionLock> locker(&_lock);
   _stop = true;
   _lock.notify_all();
