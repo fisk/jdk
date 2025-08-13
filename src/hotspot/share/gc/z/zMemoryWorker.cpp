@@ -22,9 +22,9 @@
  */
 
 #include "gc/z/zAdaptiveHeap.hpp"
-#include "gc/z/zCommitter.hpp"
 #include "gc/z/zGlobals.hpp"
 #include "gc/z/zLock.inline.hpp"
+#include "gc/z/zMemoryWorker.hpp"
 #include "gc/z/zPage.inline.hpp"
 #include "gc/z/zPageAllocator.hpp"
 #include "gc/z/zVirtualMemory.inline.hpp"

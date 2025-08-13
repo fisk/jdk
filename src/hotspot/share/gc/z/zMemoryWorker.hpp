@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -21,8 +21,8 @@
  * questions.
  */
 
-#ifndef SHARE_GC_Z_ZCOMMITTER_HPP
-#define SHARE_GC_Z_ZCOMMITTER_HPP
+#ifndef SHARE_GC_Z_ZMEMORYWORKER_HPP
+#define SHARE_GC_Z_ZMEMORYWORKER_HPP
 
 #include "gc/z/zAdaptiveHeap.hpp"
 #include "gc/z/zAddress.hpp"
@@ -99,4 +99,4 @@ public:
   void remove_heating_request(const ZVirtualMemory& vmem);
 };
 
-#endif // SHARE_GC_Z_ZCOMMITTER_HPP
+#endif // SHARE_GC_Z_ZMEMORYWORKER_HPP
