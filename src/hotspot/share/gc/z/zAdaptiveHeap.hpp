@@ -83,7 +83,7 @@ public:
   static size_t compute_heap_size(ZHeapResizeMetrics* metrics, ZGenerationId generation);
   static double young_to_old_gc_time();
 
-  static uint64_t uncommit_delay(size_t used_memory, size_t total_memory);
+  static double uncommit_urgency(size_t used_memory, size_t total_memory);
   static uint64_t soft_ref_delay();
   static ZMemoryPressureMetrics memory_pressure_metrics();
   static bool is_memory_pressure_concerning(const ZMemoryPressureMetrics& metrics);

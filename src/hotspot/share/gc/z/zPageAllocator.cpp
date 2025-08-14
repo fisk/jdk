@@ -1022,24 +1022,6 @@ size_t ZPartition::commit(size_t size, size_t limit) {
   return total_committed;
 }
 
-size_t ZPartition::uncommit(size_t limit) {
-  // TODO: Broken AF
-  return 0;
-  //return _uncommitter.uncommit(limit);
-}
-
-bool ZPartition::should_wake_uncommitter_early(size_t total_memory, size_t used_memory) const {
-  // TODO: Broken AF
-  return false;
-  //return _uncommitter.should_wake_uncommitter_early(total_memory, used_memory);
-}
-
-bool ZPartition::is_uncommitting(size_t total_memory, size_t used_memory) const {
-  // TODO: Broken AF
-  return false;
-  //return _uncommitter.is_uncommitting();
-}
-
 void ZPartition::sort_segments_physical(const ZVirtualMemory& vmem) {
   verify_virtual_memory_association(vmem, true /* check_multi_partition */);
 
@@ -1407,6 +1389,7 @@ void ZPartition::free_memory_alloc_failed(ZMemoryAllocation* allocation) {
 
 void ZPartition::threads_do(ThreadClosure* tc) const {
   tc->do_thread(const_cast<ZUncommitter*>(&_uncommitter));
+  tc->do_thread(const_cast<ZMemoryWorker*>(&_mem_worker));
 }
 
 void ZPartition::print_on(outputStream* st) const {
@@ -1690,28 +1673,22 @@ void ZPageAllocator::heap_truncated(size_t selected_capacity) {
 void ZPageAllocator::adjust_capacity(size_t used_soon) {
   const size_t total_memory = os::physical_memory();
   const size_t used_memory = os::used_memory();
-  const bool force_uncommit = double(used_memory) > double(total_memory) * (1.0 - ZMemoryCriticalThreshold);
+  const double uncommit_urgency = ZAdaptiveHeap::uncommit_urgency(used_memory, total_memory);
 
   ZPerNUMAIterator<ZPartition> iter = partition_iterator();
   for (ZPartition* partition; iter.next(&partition);) {
-    if (force_uncommit || partition->should_wake_uncommitter_early(total_memory, used_memory)) {
+
+    if (uncommit_urgency > 0.0) {
       // Uncommit is urgent, or uncommit delay has changed
-      ZUncommitter& uncommitter = partition->uncommitter();
-      // TODO: Broken AF
-      //uncommitter.wake_up();
-      continue;
-    }
-
-    if (partition->is_uncommitting(total_memory, used_memory)) {
-      // Already uncommitting, do not commit.
-      continue;
-    }
-
-    const uint32_t numa_id = partition->numa_id();
-    const size_t used_soon_share = ZNUMA::calculate_share(numa_id, used_soon);
-    ZMemoryWorker& mem_worker = partition->memory_worker();
-    if (used_soon_share > mem_worker.target_capacity()) {
-      mem_worker.grow_target_capacity(used_soon_share);
+      ZMemoryWorker& mem_worker = partition->memory_worker();
+      mem_worker.critical_shrink_target_capacity();
+    } else {
+      const uint32_t numa_id = partition->numa_id();
+      const size_t used_soon_share = ZNUMA::calculate_share(numa_id, used_soon);
+      ZMemoryWorker& mem_worker = partition->memory_worker();
+      if (used_soon_share > mem_worker.target_capacity()) {
+        mem_worker.grow_target_capacity(used_soon_share);
+      }
     }
   }
 }

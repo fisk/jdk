@@ -70,8 +70,15 @@ size_t ZMemoryWorker::commit_granule(size_t capacity, size_t target_capacity) {
   const size_t smallest_granule = ZGranuleSize;
   const size_t largest_granule = MAX2(ZPageSizeMediumMax, smallest_granule);
 
+  return clamp(align_up(target_capacity / 128, ZGranuleSize), smallest_granule, largest_granule);
+}
+
+size_t ZMemoryWorker::uncommit_granule() {
+  const size_t smallest_granule = ZGranuleSize;
+  const size_t largest_granule = MAX2(ZPageSizeMediumMax, smallest_granule);
+
   // Don't allocate things that are larger than the largest medium page size, in the lower address space
-  return clamp(align_up(target_capacity / 64, ZGranuleSize), smallest_granule, largest_granule);
+  return largest_granule;
 }
 
 bool ZMemoryWorker::should_commit(size_t granule, size_t capacity, size_t target_capacity, size_t curr_max_capacity, const ZMemoryPressureMetrics& metrics) {
@@ -131,7 +138,8 @@ bool ZMemoryWorker::peek() {
     const size_t capacity = _partition->capacity();
     const size_t curr_max_capacity = _partition->current_max_capacity();
     const size_t target_capacity = MIN2(Atomic::load(&_target_capacity), curr_max_capacity);
-    const size_t granule = commit_granule(capacity, target_capacity);
+    const size_t maybe_commit = commit_granule(capacity, target_capacity);
+    const size_t maybe_uncommit = uncommit_granule();
     const ZMemoryPressureMetrics metrics = ZAdaptiveHeap::memory_pressure_metrics();
 
     ZLocker<ZConditionLock> locker(&_lock);
@@ -145,12 +153,12 @@ bool ZMemoryWorker::peek() {
       continue;
     }
 
-    if (should_commit(granule, capacity, target_capacity, curr_max_capacity, metrics)) {
+    if (should_commit(maybe_commit, capacity, target_capacity, curr_max_capacity, metrics)) {
       // At least one granule to commit
       return true;
     }
 
-    if (should_uncommit(granule, capacity, target_capacity)) {
+    if (should_uncommit(maybe_uncommit, capacity, target_capacity)) {
       // At least one granule to uncommit
       return true;
     }
@@ -248,12 +256,36 @@ void ZMemoryWorker::shrink_target_capacity(size_t target_capacity) {
   Atomic::store(&_target_capacity, target_capacity);
 
   const size_t capacity = _partition->capacity();
-  const size_t granule = commit_granule(capacity, target_capacity);
+  const size_t granule = uncommit_granule();
 
   if (should_uncommit(granule, capacity, target_capacity)) {
     // At least one granule to commit
     _lock.notify_all();
   }
+}
+
+void ZMemoryWorker::critical_shrink_target_capacity() {
+  const size_t capacity = _partition->capacity();
+  const size_t granule = uncommit_granule();
+
+  if (granule >= capacity) {
+    // Can't do much about this
+    return;
+  }
+
+  ZLocker<ZConditionLock> locker(&_lock);
+
+  if (_target_capacity == 0 || _target_capacity < capacity) {
+    // Uncommitting already kick started
+    return;
+  }
+
+  const size_t lowered_capacity = capacity - granule;
+
+  Atomic::store(&_target_capacity, lowered_capacity);
+
+  // At least one granule to commit
+  _lock.notify_all();
 }
 
 // TODO: Remove assert functions below
@@ -502,6 +534,15 @@ size_t ZMemoryWorker::process_heating_request() {
 
 void ZMemoryWorker::run_thread() {
   for (;;) {
+    while (!ZAdaptiveHeap::can_adapt()) {
+      ZLocker<ZConditionLock> locker(&_lock);
+      // Just wait until shutdown when automatic heap sizing is disabled
+      if (_stop) {
+        return;
+      }
+      _lock.wait();
+    }
+
     if (!peek()) {
       // Stop
       return;
@@ -516,7 +557,8 @@ void ZMemoryWorker::run_thread() {
       const size_t capacity = _partition->capacity();
       const size_t curr_max_capacity = _partition->current_max_capacity();
       const size_t target_capacity = MIN2(Atomic::load(&_target_capacity), curr_max_capacity);
-      const size_t granule = commit_granule(capacity, target_capacity);
+      const size_t maybe_commit = commit_granule(capacity, target_capacity);
+      const size_t maybe_uncommit = uncommit_granule();
       const ZMemoryPressureMetrics metrics = ZAdaptiveHeap::memory_pressure_metrics();
 
       if (is_stop_requested()) {
@@ -531,22 +573,20 @@ void ZMemoryWorker::run_thread() {
       last_target_capacity = target_capacity;
 
       // Prioritize committing memory if needed
-      if (uncommitted == 0 && should_commit(granule, capacity, target_capacity, curr_max_capacity, metrics)) {
-        committed += _partition->commit(granule, target_capacity);
-        assert(!should_uncommit(granule, capacity + granule, target_capacity), "commit rule mismatch");
+      if (uncommitted == 0 && should_commit(maybe_commit, capacity, target_capacity, curr_max_capacity, metrics)) {
+        committed += _partition->commit(maybe_commit, target_capacity);
         continue;
       }
 
-      // Secondary priority is to heat pages
+      // The secondary priority is uncommitting memory if needed
+      if (committed == 0 && should_uncommit(maybe_uncommit, capacity, target_capacity)) {
+        uncommitted += uncommit(maybe_uncommit);
+        continue;
+      }
+
+      // Last priority is to heat pages to optimize access speed
       if (should_heat()) {
         heated += process_heating_request();
-        continue;
-      }
-
-      // The lowest priority is uncommitting memory if needed
-      if (committed == 0 && should_uncommit(granule, capacity, target_capacity)) {
-        uncommitted += _partition->uncommit(granule);
-        assert(!should_commit(granule, capacity - granule, target_capacity, curr_max_capacity, metrics), "uncommit rule mismatch");
         continue;
       }
 
@@ -568,6 +608,93 @@ void ZMemoryWorker::run_thread() {
                          _id, heated / M, percent_of(heated, last_target_capacity));
     }
   }
+}
+
+bool ZMemoryWorker::throttle_uncommit(Ticks start) {
+  // TLB shootdown can be expensive; make sure the pace of capacity shrinking is slow enough
+  // Linearly scale uncommit speed with uncommit urgency
+
+  for (;;) {
+    const size_t total_memory = os::physical_memory();
+    const size_t used_memory = os::used_memory();
+    const double uncommit_urgency = ZAdaptiveHeap::uncommit_urgency(used_memory, total_memory);
+
+    const uint64_t intended_delay = 500 * (1.0 - uncommit_urgency);
+
+    Ticks end = Ticks::now();
+    Tickspan duration = end - start;
+
+    const uint64_t actual_delay = duration.milliseconds();
+
+    if (actual_delay >= intended_delay) {
+      return uncommit_urgency > 0.0;
+    }
+
+    ZLocker<ZConditionLock> locker(&_lock);
+    if (_stop) {
+      return false;
+    }
+    // Sleep 10 ms at a time, so that increased urgency can be rapidly detected.
+    // This is the pace in which the director sleeps.
+    _lock.wait(10);
+  }
+}
+
+size_t ZMemoryWorker::uncommit(size_t to_uncommit) {
+  Ticks start = Ticks::now();
+
+  ZArray<ZVirtualMemory> flushed_vmems;
+  size_t flushed = 0;
+
+  {
+    // We need to join the suspendible thread set while manipulating capacity
+    // and used, to make sure GC safepoints will have a consistent view.
+    SuspendibleThreadSetJoiner sts_joiner;
+    ZLocker<ZLock> locker(&_partition->_page_allocator->_lock);
+
+    ZMappedCache& cache = _partition->_cache;
+
+    // Never uncommit below min capacity.
+    const size_t retain = MAX2(_partition->_used, _partition->_min_capacity);
+    const size_t release = _partition->_capacity - retain;
+    const size_t flush = MIN2(release, to_uncommit);
+
+    // Flush memory from the mapped cache for uncommit
+    flushed = cache.remove_for_uncommit(flush, &flushed_vmems);
+    if (flushed == 0) {
+      // Nothing flushed
+      return 0;
+    }
+
+    // Record flushed memory as claimed and how much we've flushed for this partition
+    Atomic::add(&_partition->_claimed, flushed);
+  }
+
+  // Unmap and uncommit flushed memory
+  for (const ZVirtualMemory vmem : flushed_vmems) {
+    _partition->unmap_virtual(vmem);
+    _partition->uncommit_physical(vmem);
+    _partition->free_physical(vmem);
+    _partition->free_virtual(vmem);
+  }
+
+  {
+    SuspendibleThreadSetJoiner sts_joiner;
+    ZLocker<ZLock> locker(&_partition->_page_allocator->_lock);
+
+    // Adjust claimed and capacity to reflect the uncommit
+    Atomic::sub(&_partition->_claimed, flushed);
+    _partition->decrease_capacity(flushed);
+  }
+
+  bool critical = throttle_uncommit(start);
+
+  if (critical) {
+    // Continue critical uncommitting
+    critical_shrink_target_capacity();
+  }
+
+  return flushed;
 }
 
 void ZMemoryWorker::terminate() {

@@ -73,10 +73,6 @@ public:
   ZUncommitter(uint32_t id, ZPartition* partition);
 
   void cancel_uncommit_cycle();
-  void wake_up();
-
-  bool should_wake_uncommitter_early(size_t total_memory, size_t used_memory) const;
-  bool is_uncommitting(size_t total_memory, size_t used_memory) const;
 };
 
 #endif // SHARE_GC_Z_ZUNCOMMITTER_HPP

@@ -41,8 +41,6 @@
 #include <cmath>
 #include <limits>
 
-// TODO: Change the code
-
 static const ZStatCounter ZCounterUncommit("Memory", "Uncommit", ZStatUnitBytesPerSecond);
 
 ZUncommitter::ZUncommitter(uint32_t id, ZPartition* partition)
@@ -62,11 +60,15 @@ ZUncommitter::ZUncommitter(uint32_t id, ZPartition* partition)
 
 bool ZUncommitter::wait(uint64_t timeout) const {
   ZLocker<ZConditionLock> locker(&_lock);
-  while (!ZUncommit && !_stop) {
+  while (ZAdaptiveHeap::can_adapt()) {
+    // Just wait until shutdown when time based uncommit is disabled
+    if (_stop) {
+      return false;
+    }
     _lock.wait();
   }
 
-  if (!_stop && timeout > 0) {
+  if (timeout > 0) {
     if (!uncommit_cycle_is_finished()) {
       log_trace(gc, heap)("Uncommitter (%u) Timeout: " UINT64_FORMAT "ms left to uncommit: "
                           EXACTFMT, _id, timeout, EXACTFMTARGS(_to_uncommit));
@@ -427,31 +429,4 @@ size_t ZUncommitter::uncommit() {
   }
 
   return flushed;
-}
-
-bool ZUncommitter::should_wake_uncommitter_early(size_t total_memory, size_t used_memory) const {
-  // TODO: FIX
-  return false;
-  //const uint64_t delay = ZAdaptiveHeap::uncommit_delay(used_memory, total_memory);
-  //const uint64_t last_uncommit_delay = Atomic::load(&_last_uncommit_delay);
-
-  //return last_uncommit_delay > delay;
-}
-
-bool ZUncommitter::is_uncommitting(size_t total_memory, size_t used_memory) const {
-  // TODO: FIX PLX
-  return false;
-  //const double last_commit = Atomic::load(&_last_commit);
-  //const double last_uncommit = Atomic::load(&_last_uncommit);
-
-  //if (last_uncommit < last_commit) {
-  //  // Committed since last uncommit
-  //  return false;
-  //}
-
-  //const uint64_t delay = ZAdaptiveHeap::uncommit_delay(used_memory, total_memory);
-  //const double expires = last_uncommit + double(delay);
-  //const double now = os::elapsedTime();
-
-  //return now < expires;
 }

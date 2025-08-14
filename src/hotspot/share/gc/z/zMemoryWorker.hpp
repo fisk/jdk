@@ -32,6 +32,7 @@
 #include "gc/z/zThread.hpp"
 #include "gc/z/zVirtualMemory.hpp"
 #include "memory/allocation.hpp"
+#include "utilities/ticks.hpp"
 #include "utilities/rbTree.hpp"
 
 class ZPartition;
@@ -68,8 +69,12 @@ private:
 
   bool is_stop_requested();
   size_t commit_granule(size_t capacity, size_t target_capacity);
+  size_t uncommit_granule();
   bool should_commit(size_t granule, size_t capacity, size_t target_capacity, size_t curr_max_capacity, const ZMemoryPressureMetrics& metrics);
   bool should_uncommit(size_t granule, size_t capacity, size_t target_capacity);
+
+  bool throttle_uncommit(Ticks start);
+  size_t uncommit(size_t to_uncommit);
 
   void assert_enqueued_size();
   void assert_not_tracked(const ZVirtualMemory& vmem);
@@ -92,6 +97,7 @@ public:
   void heap_truncated(size_t capacity);
   void grow_target_capacity(size_t target_capacity);
   void shrink_target_capacity(size_t target_capacity);
+  void critical_shrink_target_capacity();
   void set_target_capacity(size_t target_capacity);
   size_t target_capacity();
 

@@ -59,6 +59,7 @@ enum class ZPageAllocationAttempt;
 class ZPartition {
   friend class VMStructs;
   friend class ZPageAllocator;
+  friend class ZMemoryWorker;
   friend class ZUncommitter;
 
 private:
@@ -136,10 +137,6 @@ public:
 
   size_t commit(size_t size, size_t limit);
 
-  size_t uncommit(size_t limit);
-  bool should_wake_uncommitter_early(size_t total_memory, size_t used_memory) const;
-  bool is_uncommitting(size_t total_memory, size_t used_memory) const;
-
   void sort_segments_physical(const ZVirtualMemory& vmem);
 
   void claim_physical(const ZVirtualMemory& vmem);
@@ -184,6 +181,7 @@ using ZPartitionConstIterator = ZPerNUMAConstIterator<ZPartition>;
 
 class ZPageAllocator {
   friend class VMStructs;
+  friend class ZMemoryWorker;
   friend class ZMultiPartitionTracker;
   friend class ZPartition;
   friend class ZUncommitter;
