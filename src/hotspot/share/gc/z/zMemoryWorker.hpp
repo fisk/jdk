@@ -62,7 +62,6 @@ private:
   ZPartition* const   _partition;
   ZConditionLock      _lock;
   ZHeatingRequestTree _heating_requests;
-  size_t              _enqueued_heating;
   volatile size_t     _target_capacity;
   bool                _stop;
   ZVirtualMemory      _currently_heating;
