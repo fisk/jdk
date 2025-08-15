@@ -120,7 +120,7 @@ bool ZMemoryWorker::should_uncommit(size_t granule, size_t capacity, size_t targ
 
   const size_t new_capacity = capacity - granule;
 
-  return new_capacity > target_capacity;
+  return new_capacity >= target_capacity;
 }
 
 bool ZMemoryWorker::should_heat() {
