@@ -25,8 +25,7 @@
 /**
  * @test
  * @summary Test relevant combinations of command line flags with shared strings
- * @requires vm.cds.write.archived.java.heap & vm.hasJFR
- * @requires vm.gc == null
+ * @requires vm.cds.write.mapped.java.heap & vm.hasJFR
  * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds
  * @build HelloString
  * @run driver FlagCombo
@@ -36,8 +35,7 @@
  * @test
  * @summary Test relevant combinations of command line flags with shared strings
  * @comment A special test excluding the case that requires JFR
- * @requires vm.cds.write.archived.java.heap & !vm.hasJFR
- * @requires vm.gc == null
+ * @requires vm.cds.write.mapped.java.heap & !vm.hasJFR
  * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds
  * @build HelloString
  * @run driver FlagCombo noJfr

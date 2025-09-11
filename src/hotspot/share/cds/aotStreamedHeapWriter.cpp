@@ -23,11 +23,11 @@
  */
 
 #include "cds/aotReferenceObjSupport.hpp"
+#include "cds/aotStreamedHeapWriter.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/filemap.hpp"
 #include "cds/heapShared.inline.hpp"
 #include "cds/regeneratedClasses.hpp"
-#include "cds/streamingArchiveHeapWriter.hpp"
 #include "classfile/modules.hpp"
 #include "classfile/stringTable.hpp"
 #include "classfile/systemDictionary.hpp"
@@ -48,21 +48,21 @@
 
 #if INCLUDE_CDS_JAVA_HEAP
 
-GrowableArrayCHeap<u1, mtClassShared>* StreamingArchiveHeapWriter::_buffer = nullptr;
+GrowableArrayCHeap<u1, mtClassShared>* AOTStreamedHeapWriter::_buffer = nullptr;
 
 // The following are offsets from buffer_bottom()
-size_t StreamingArchiveHeapWriter::_buffer_used;
-size_t StreamingArchiveHeapWriter::_roots_offset;
-size_t StreamingArchiveHeapWriter::_forwarding_offset;
-size_t StreamingArchiveHeapWriter::_root_highest_object_index_table_offset;
+size_t AOTStreamedHeapWriter::_buffer_used;
+size_t AOTStreamedHeapWriter::_roots_offset;
+size_t AOTStreamedHeapWriter::_forwarding_offset;
+size_t AOTStreamedHeapWriter::_root_highest_object_index_table_offset;
 
-GrowableArrayCHeap<oop, mtClassShared>* StreamingArchiveHeapWriter::_source_objs;
+GrowableArrayCHeap<oop, mtClassShared>* AOTStreamedHeapWriter::_source_objs;
 
-StreamingArchiveHeapWriter::BufferOffsetToSourceObjectTable* StreamingArchiveHeapWriter::_buffer_offset_to_source_obj_table;
-StreamingArchiveHeapWriter::SourceObjectToDFSOrderTable* StreamingArchiveHeapWriter::_dfs_order_table;
+AOTStreamedHeapWriter::BufferOffsetToSourceObjectTable* AOTStreamedHeapWriter::_buffer_offset_to_source_obj_table;
+AOTStreamedHeapWriter::SourceObjectToDFSOrderTable* AOTStreamedHeapWriter::_dfs_order_table;
 
-int* StreamingArchiveHeapWriter::_roots_highest_dfs;
-size_t* StreamingArchiveHeapWriter::_dfs_to_archive_object_table;
+int* AOTStreamedHeapWriter::_roots_highest_dfs;
+size_t* AOTStreamedHeapWriter::_dfs_to_archive_object_table;
 
 static const int max_table_capacity = 0x3fffffff;
 
@@ -71,7 +71,7 @@ typedef ResizeableHashTable<address, size_t,
                             AnyObj::C_HEAP,
                             mtClassShared> FillersTable;
 
-void StreamingArchiveHeapWriter::init() {
+void AOTStreamedHeapWriter::init() {
   if (CDSConfig::is_dumping_heap()) {
     _buffer_offset_to_source_obj_table = new (mtClassShared) BufferOffsetToSourceObjectTable(8, max_table_capacity);
 
@@ -79,7 +79,7 @@ void StreamingArchiveHeapWriter::init() {
   }
 }
 
-void StreamingArchiveHeapWriter::add_source_obj(oop src_obj) {
+void AOTStreamedHeapWriter::add_source_obj(oop src_obj) {
   _source_objs->append(src_obj);
 }
 
@@ -107,13 +107,13 @@ private:
   }
 };
 
-int StreamingArchiveHeapWriter::cmp_dfs_order(oop* o1, oop* o2) {
+int AOTStreamedHeapWriter::cmp_dfs_order(oop* o1, oop* o2) {
   int* o1_dfs = _dfs_order_table->get(*o1);
   int* o2_dfs = _dfs_order_table->get(*o2);
   return *o1_dfs - *o2_dfs;
 }
 
-void StreamingArchiveHeapWriter::order_source_objs(GrowableArrayCHeap<oop, mtClassShared>* roots) {
+void AOTStreamedHeapWriter::order_source_objs(GrowableArrayCHeap<oop, mtClassShared>* roots) {
   Stack<oop, mtClassShared> dfs_stack;
   _dfs_order_table = new (mtClassShared) SourceObjectToDFSOrderTable(8, 0x3fffffff);
   _roots_highest_dfs = NEW_C_HEAP_ARRAY(int, roots->length(), mtClassShared);
@@ -160,7 +160,7 @@ void StreamingArchiveHeapWriter::order_source_objs(GrowableArrayCHeap<oop, mtCla
   _source_objs->sort(cmp_dfs_order);
 }
 
-void StreamingArchiveHeapWriter::write(GrowableArrayCHeap<oop, mtClassShared>* roots,
+void AOTStreamedHeapWriter::write(GrowableArrayCHeap<oop, mtClassShared>* roots,
                                        ArchiveStreamedHeapInfo* heap_info) {
   assert(CDSConfig::is_dumping_heap(), "sanity");
   allocate_buffer();
@@ -170,20 +170,20 @@ void StreamingArchiveHeapWriter::write(GrowableArrayCHeap<oop, mtClassShared>* r
   populate_archive_heap_info(heap_info);
 }
 
-void StreamingArchiveHeapWriter::allocate_buffer() {
+void AOTStreamedHeapWriter::allocate_buffer() {
   int initial_buffer_size = 100000;
   _buffer = new GrowableArrayCHeap<u1, mtClassShared>(initial_buffer_size);
   _buffer_used = 0;
   ensure_buffer_space(1); // so that buffer_bottom() works
 }
 
-void StreamingArchiveHeapWriter::ensure_buffer_space(size_t min_bytes) {
+void AOTStreamedHeapWriter::ensure_buffer_space(size_t min_bytes) {
   // We usually have very small heaps. If we get a huge one it's probably caused by a bug.
   guarantee(min_bytes <= max_jint, "we dont support archiving more than 2G of objects");
   _buffer->at_grow(to_array_index(min_bytes));
 }
 
-void StreamingArchiveHeapWriter::copy_roots_to_buffer(GrowableArrayCHeap<oop, mtClassShared>* roots) {
+void AOTStreamedHeapWriter::copy_roots_to_buffer(GrowableArrayCHeap<oop, mtClassShared>* roots) {
   int length = roots->length();
   size_t byte_size = align_up(sizeof(int) + sizeof(int) * length, HeapWordSize);
 
@@ -207,7 +207,7 @@ void StreamingArchiveHeapWriter::copy_roots_to_buffer(GrowableArrayCHeap<oop, mt
 }
 
 template <typename T>
-void StreamingArchiveHeapWriter::write(T value) {
+void AOTStreamedHeapWriter::write(T value) {
   size_t new_used = _buffer_used + sizeof(T);
   ensure_buffer_space(new_used);
   T* mem = offset_to_buffered_address<T*>(_buffer_used);
@@ -215,7 +215,7 @@ void StreamingArchiveHeapWriter::write(T value) {
   _buffer_used = new_used;
 }
 
-void StreamingArchiveHeapWriter::copy_forwarding_to_buffer() {
+void AOTStreamedHeapWriter::copy_forwarding_to_buffer() {
   _forwarding_offset = _buffer_used;
 
   write<size_t>(0); // The first entry is the null entry
@@ -227,7 +227,7 @@ void StreamingArchiveHeapWriter::copy_forwarding_to_buffer() {
   }
 }
 
-void StreamingArchiveHeapWriter::copy_roots_max_dfs_to_buffer(int roots_length) {
+void AOTStreamedHeapWriter::copy_roots_max_dfs_to_buffer(int roots_length) {
   _root_highest_object_index_table_offset = _buffer_used;
 
   for (int i = 0; i < roots_length; ++i) {
@@ -262,11 +262,11 @@ static BitMap::idx_t bit_idx_for_buffer_offset(size_t buffer_offset) {
   }
 }
 
-bool StreamingArchiveHeapWriter::is_dumped_interned_string(oop obj) {
+bool AOTStreamedHeapWriter::is_dumped_interned_string(oop obj) {
   return is_interned_string(obj) && HeapShared::archived_object_cache()->get(obj);
 }
 
-void StreamingArchiveHeapWriter::copy_source_objs_to_buffer(GrowableArrayCHeap<oop, mtClassShared>* roots) {
+void AOTStreamedHeapWriter::copy_source_objs_to_buffer(GrowableArrayCHeap<oop, mtClassShared>* roots) {
   for (int i = 0; i < _source_objs->length(); i++) {
     oop src_obj = _source_objs->at(i);
     HeapShared::CachedOopInfo* info = HeapShared::archived_object_cache()->get(src_obj);
@@ -307,7 +307,7 @@ static bool needs_explicit_size(oop src_obj) {
   return !Klass::layout_helper_is_array(lh);
 }
 
-size_t StreamingArchiveHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
+size_t AOTStreamedHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
   if (needs_explicit_size(src_obj)) {
     // Explicitly write object size for more complex objects, to avoid having to
     // pretend the buffer objects are objects when loading the objects, in order
@@ -322,9 +322,7 @@ size_t StreamingArchiveHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
 
   ensure_buffer_space(new_used);
 
-  bool interned_string = is_interned_string(src_obj);
-
-  if (interned_string) {
+  if (is_interned_string(src_obj)) {
     java_lang_String::hash_code(src_obj);                   // Sets the hash code field(s)
     java_lang_String::set_deduplication_forbidden(src_obj); // Allows faster interning at runtime
     assert(java_lang_String::hash_is_set(src_obj), "hash must be set");
@@ -336,13 +334,8 @@ size_t StreamingArchiveHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
   assert(is_object_aligned(byte_size), "sanity");
   memcpy(to, from, byte_size);
 
-  if (interned_string) {
-    // Mark the mark word of interned string so the loader knows to link these to
-    // the string table at runtime.
-    markWord* mark_addr = (markWord*)to;
-    *mark_addr = (*mark_addr).set_marked();
-  } else if (java_lang_Module::is_instance(src_obj)) {
-  // These native pointers will be restored explicitly at run time.
+  if (java_lang_Module::is_instance(src_obj)) {
+    // These native pointers will be restored explicitly at run time.
     Modules::check_archived_module_oop(src_obj);
     update_buffered_object_field<ModuleEntry*>(to, java_lang_Module::module_entry_offset(), nullptr);
   } else if (java_lang_ClassLoader::is_instance(src_obj)) {
@@ -364,15 +357,15 @@ size_t StreamingArchiveHeapWriter::copy_one_source_obj_to_buffer(oop src_obj) {
 
 // Oop relocation
 
-inline void StreamingArchiveHeapWriter::store_oop_in_buffer(oop* buffered_addr, int dfs_index) {
+inline void AOTStreamedHeapWriter::store_oop_in_buffer(oop* buffered_addr, int dfs_index) {
   *(ssize_t*)buffered_addr = dfs_index;
 }
 
-inline void StreamingArchiveHeapWriter::store_oop_in_buffer(narrowOop* buffered_addr, int dfs_index) {
+inline void AOTStreamedHeapWriter::store_oop_in_buffer(narrowOop* buffered_addr, int dfs_index) {
   *(int32_t*)buffered_addr = (int32_t)dfs_index;
 }
 
-template <typename T> void StreamingArchiveHeapWriter::relocate_field_in_buffer(oop obj, T* field_addr_in_buffer, CHeapBitMap* oopmap) {
+template <typename T> void AOTStreamedHeapWriter::relocate_field_in_buffer(oop obj, T* field_addr_in_buffer, CHeapBitMap* oopmap) {
   if (obj != nullptr) {
     int dfs_index = *_dfs_order_table->get(obj);
     store_oop_in_buffer(field_addr_in_buffer, dfs_index);
@@ -383,7 +376,7 @@ template <typename T> void StreamingArchiveHeapWriter::relocate_field_in_buffer(
   }
 }
 
-template <typename T> void StreamingArchiveHeapWriter::mark_oop_pointer(T* buffered_addr, CHeapBitMap* oopmap) {
+template <typename T> void AOTStreamedHeapWriter::mark_oop_pointer(T* buffered_addr, CHeapBitMap* oopmap) {
   // Mark the pointer in the oopmap
   size_t buffered_offset = buffered_address_to_offset((address)buffered_addr);
   BitMap::idx_t idx = bit_idx_for_buffer_offset(buffered_offset);
@@ -391,7 +384,7 @@ template <typename T> void StreamingArchiveHeapWriter::mark_oop_pointer(T* buffe
   oopmap->set_bit(idx);
 }
 
-void StreamingArchiveHeapWriter::update_header_for_buffered_addr(address buffered_addr, oop src_obj,  Klass* src_klass) {
+void AOTStreamedHeapWriter::update_header_for_buffered_addr(address buffered_addr, oop src_obj,  Klass* src_klass) {
   assert(UseCompressedClassPointers, "Archived heap only supported for compressed klasses");
   narrowKlass nk = ArchiveBuilder::current()->get_requested_narrow_klass(src_klass);
 
@@ -407,7 +400,11 @@ void StreamingArchiveHeapWriter::update_header_for_buffered_addr(address buffere
     mw = mw.copy_set_hash(src_hash);
   }
 
-  assert(mw.is_unlocked(), "sanity");
+  if (is_interned_string(src_obj)) {
+    // Mark the mark word of interned string so the loader knows to link these to
+    // the string table at runtime.
+    mw = mw.set_marked();
+  }
 
   if (UseCompactObjectHeaders) {
     fake_oop->set_mark(mw.set_narrow_klass(nk));
@@ -417,7 +414,7 @@ void StreamingArchiveHeapWriter::update_header_for_buffered_addr(address buffere
   }
 }
 
-class StreamingArchiveHeapWriter::EmbeddedOopRelocator: public BasicOopIterateClosure {
+class AOTStreamedHeapWriter::EmbeddedOopRelocator: public BasicOopIterateClosure {
   oop _src_obj;
   address _buffered_obj;
   CHeapBitMap* _oopmap;
@@ -438,7 +435,7 @@ private:
   void do_oop_work(T *p) {
     size_t field_offset = pointer_delta(p, _src_obj, sizeof(char));
     oop obj = HeapShared::maybe_remap_referent(_is_java_lang_ref, field_offset, HeapAccess<>::oop_load(p));
-    StreamingArchiveHeapWriter::relocate_field_in_buffer<T>(obj, (T*)(_buffered_obj + field_offset), _oopmap);
+    AOTStreamedHeapWriter::relocate_field_in_buffer<T>(obj, (T*)(_buffered_obj + field_offset), _oopmap);
   }
 };
 
@@ -454,7 +451,7 @@ static void log_bitmap_usage(const char* which, BitMap* bitmap, size_t total_bit
 }
 
 // Update all oop fields embedded in the buffered objects
-void StreamingArchiveHeapWriter::relocate_embedded_oops(GrowableArrayCHeap<oop, mtClassShared>* roots,
+void AOTStreamedHeapWriter::relocate_embedded_oops(GrowableArrayCHeap<oop, mtClassShared>* roots,
                                                         ArchiveStreamedHeapInfo* heap_info) {
   size_t oopmap_unit = (UseCompressedOops ? sizeof(narrowOop) : sizeof(oop));
   size_t heap_region_byte_size = _buffer_used;
@@ -476,7 +473,7 @@ void StreamingArchiveHeapWriter::relocate_embedded_oops(GrowableArrayCHeap<oop, 
   log_bitmap_usage("oopmap", heap_info->oopmap(), total_bytes / oopmap_unit);
 }
 
-size_t StreamingArchiveHeapWriter::source_obj_to_buffered_offset(oop src_obj) {
+size_t AOTStreamedHeapWriter::source_obj_to_buffered_offset(oop src_obj) {
   HeapShared::CachedOopInfo* p = HeapShared::archived_object_cache()->get(src_obj);
   if (p != nullptr) {
     return p->buffer_offset();
@@ -486,11 +483,11 @@ size_t StreamingArchiveHeapWriter::source_obj_to_buffered_offset(oop src_obj) {
   }
 }
 
-address StreamingArchiveHeapWriter::source_obj_to_buffered_addr(oop src_obj) {
+address AOTStreamedHeapWriter::source_obj_to_buffered_addr(oop src_obj) {
   return offset_to_buffered_address<address>(source_obj_to_buffered_offset(src_obj));
 }
 
-oop StreamingArchiveHeapWriter::buffered_addr_to_source_obj(address buffered_addr) {
+oop AOTStreamedHeapWriter::buffered_addr_to_source_obj(address buffered_addr) {
   oop* p = _buffer_offset_to_source_obj_table->get(buffered_address_to_offset(buffered_addr));
   if (p != nullptr) {
     return *p;
@@ -499,7 +496,7 @@ oop StreamingArchiveHeapWriter::buffered_addr_to_source_obj(address buffered_add
   }
 }
 
-void StreamingArchiveHeapWriter::populate_archive_heap_info(ArchiveStreamedHeapInfo* info) {
+void AOTStreamedHeapWriter::populate_archive_heap_info(ArchiveStreamedHeapInfo* info) {
   assert(!info->is_used(), "only set once");
 
   size_t heap_region_byte_size = _buffer_used;
@@ -513,7 +510,7 @@ void StreamingArchiveHeapWriter::populate_archive_heap_info(ArchiveStreamedHeapI
   info->set_num_archived_objects(_source_objs->length());
 }
 
-intptr_t StreamingArchiveHeapWriter::log_target_location(oop source_oop) {
+intptr_t AOTStreamedHeapWriter::log_target_location(oop source_oop) {
   int* maybe_dfs_index = _dfs_order_table->get(source_oop);
   if (maybe_dfs_index == nullptr) {
     ShouldNotReachHere();
@@ -523,7 +520,7 @@ intptr_t StreamingArchiveHeapWriter::log_target_location(oop source_oop) {
   return _dfs_to_archive_object_table[dfs_index];
 }
 
-void StreamingArchiveHeapWriter::log_oop_info(outputStream* st, oop source_oop) {
+void AOTStreamedHeapWriter::log_oop_info(outputStream* st, oop source_oop) {
   intptr_t buffer_offset = log_target_location(source_oop);
   address buffered_addr = address(_buffer->adr_at(0)) + buffer_offset;
   address buffered_end = buffered_addr + source_oop->size() * HeapWordSize;
@@ -531,7 +528,7 @@ void StreamingArchiveHeapWriter::log_oop_info(outputStream* st, oop source_oop) 
   HeapShared::log_oop_info(st, source_oop, buffered_addr, buffered_end);
 }
 
-void StreamingArchiveHeapWriter::log_heap_region(ArchiveStreamedHeapInfo* heap_info) {
+void AOTStreamedHeapWriter::log_heap_region(ArchiveStreamedHeapInfo* heap_info) {
   MemRegion r = heap_info->buffer_region();
   address start = address(r.start());
   address end = address(r.end());

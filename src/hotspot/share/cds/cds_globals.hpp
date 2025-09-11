@@ -83,7 +83,7 @@
   product(bool, AOTStreamableObjects, true,                                 \
           "Archive the Java heap in a generic streamable object format")    \
                                                                             \
-  product(bool, AOTEagerlyLoadObjects, false,                               \
+  product(bool, AOTEagerlyLoadObjects, false, DIAGNOSTIC,                   \
           "Load streamable objects synchronously without concurrency")      \
                                                                             \
   product(ccstr, SharedClassListFile, nullptr,                              \

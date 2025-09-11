@@ -26,24 +26,6 @@
  * @test
  * @summary Hello World test for dynamic archive with custom loader
  * @requires vm.cds
- * @requires vm.gc.G1
- * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds /test/hotspot/jtreg/runtime/cds/appcds/customLoader/test-classes
- * @build HelloUnload CustomLoadee jdk.test.lib.classloader.ClassUnloadCommon
- * @build jdk.test.whitebox.WhiteBox
- * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar hello.jar HelloUnload
- *                 jdk.test.lib.classloader.ClassUnloadCommon
- *                 jdk.test.lib.classloader.ClassUnloadCommon$1
- *                 jdk.test.lib.classloader.ClassUnloadCommon$TestFailure
- * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar hello_custom.jar CustomLoadee
- * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar WhiteBox.jar jdk.test.whitebox.WhiteBox
- * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:./WhiteBox.jar PrintSharedArchiveAndExit G1
- */
-
-/*
- * @test
- * @summary Hello World test for dynamic archive with custom loader
- * @requires vm.cds
- * @requires vm.gc != "G1" & vm.gc != null
  * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds /test/hotspot/jtreg/runtime/cds/appcds/customLoader/test-classes
  * @build HelloUnload CustomLoadee jdk.test.lib.classloader.ClassUnloadCommon
  * @build jdk.test.whitebox.WhiteBox
@@ -61,13 +43,13 @@ import jdk.test.lib.cds.CDSTestUtils;
 import jdk.test.lib.process.OutputAnalyzer;
 import jdk.test.lib.helpers.ClassFileInstaller;
 
+import jdk.test.whitebox.WhiteBox;
+
 public class PrintSharedArchiveAndExit extends DynamicArchiveTestBase {
     private static final String ARCHIVE_NAME = CDSTestUtils.getOutputFileName("top.jsa");
-
-    private static boolean useG1;
+    private static final WhiteBox WB = WhiteBox.getWhiteBox();
 
     public static void main(String... args) throws Exception {
-        useG1 = args.length > 0 && args[0].equals("G1");
         runTest(PrintSharedArchiveAndExit::testPrtNExit);
     }
 
@@ -114,8 +96,8 @@ public class PrintSharedArchiveAndExit extends DynamicArchiveTestBase {
                       .shouldContain("Shared Unregistered Dictionary")
                       .shouldMatch("Number of shared symbols: \\d+")
                       .shouldMatch("VM version: .*");
-                if (useG1) {
-                      // G1 uses the non-streaming object archiving mechanism, which dumps the string table
+                if (WB.canWriteMappedJavaHeapArchive()) {
+                      // With the mapping object archiving mechanism, the string table is dumped
                       output.shouldMatch("Number of shared strings: \\d+");
                 }
             });

@@ -26,19 +26,19 @@
 #include "cds/aotClassInitializer.hpp"
 #include "cds/aotClassLocation.hpp"
 #include "cds/aotLogging.hpp"
+#include "cds/aotMappedHeapLoader.hpp"
+#include "cds/aotMappedHeapWriter.hpp"
 #include "cds/aotReferenceObjSupport.hpp"
+#include "cds/aotStreamedHeapLoader.hpp"
+#include "cds/aotStreamedHeapWriter.hpp"
 #include "cds/archiveBuilder.hpp"
 #include "cds/archiveUtils.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/cdsEnumKlass.hpp"
 #include "cds/cdsHeapVerifier.hpp"
 #include "cds/heapShared.inline.hpp"
-#include "cds/mappingArchiveHeapLoader.hpp"
-#include "cds/mappingArchiveHeapWriter.hpp"
 #include "cds/metaspaceShared.hpp"
 #include "cds/regeneratedClasses.hpp"
-#include "cds/streamingArchiveHeapLoader.hpp"
-#include "cds/streamingArchiveHeapWriter.hpp"
 #include "classfile/classLoaderData.hpp"
 #include "classfile/javaClasses.inline.hpp"
 #include "classfile/modules.hpp"
@@ -267,9 +267,9 @@ HeapShared::ArchivedObjectCache* HeapShared::_archived_object_cache = nullptr;
 
 bool HeapShared::is_archived_heap_in_use() {
   if (HeapShared::is_loading_streaming_mode()) {
-    return StreamingArchiveHeapLoader::is_loaded();
+    return AOTStreamedHeapLoader::is_loaded();
   } else {
-    return MappingArchiveHeapLoader::is_in_use();
+    return AOTMappedHeapLoader::is_in_use();
   }
 }
 
@@ -295,7 +295,7 @@ bool HeapShared::is_too_large_to_archive(size_t size) {
   if (HeapShared::is_writing_streaming_mode()) {
     return false;
   } else {
-    return MappingArchiveHeapWriter::is_too_large_to_archive(size);
+    return AOTMappedHeapWriter::is_too_large_to_archive(size);
   }
 }
 
@@ -303,7 +303,7 @@ bool HeapShared::is_too_large_to_archive(oop obj) {
   if (HeapShared::is_writing_streaming_mode()) {
     return false;
   } else {
-    return MappingArchiveHeapWriter::is_too_large_to_archive(obj);
+    return AOTMappedHeapWriter::is_too_large_to_archive(obj);
   }
 }
 
@@ -382,13 +382,13 @@ void HeapShared::initialize_writing_mode() {
 void HeapShared::initialize_streaming() {
   assert(is_loading_streaming_mode(), "shouldn't call this");
   if (can_use_archived_heap()) {
-    StreamingArchiveHeapLoader::initialize();
+    AOTStreamedHeapLoader::initialize();
   }
 }
 
 void HeapShared::enable_gc() {
   if (HeapShared::is_loading_streaming_mode()) {
-    StreamingArchiveHeapLoader::enable_gc();
+    AOTStreamedHeapLoader::enable_gc();
   }
 }
 
@@ -416,10 +416,10 @@ oop HeapShared::get_root(int index, bool clear) {
 
   oop result;
   if (HeapShared::is_loading_streaming_mode()) {
-    result = StreamingArchiveHeapLoader::get_root(index);
+    result = AOTStreamedHeapLoader::get_root(index);
   } else {
     assert(HeapShared::is_loading_mapping_mode(), "must be");
-    result = MappingArchiveHeapLoader::get_root(index);
+    result = AOTMappedHeapLoader::get_root(index);
   }
 
   if (clear) {
@@ -435,7 +435,7 @@ void HeapShared::finish_materialize_objects() {
   }
 
   // Materialize roots
-  StreamingArchiveHeapLoader::finish_materialize_objects();
+  AOTStreamedHeapLoader::finish_materialize_objects();
 }
 
 void HeapShared::clear_root(int index) {
@@ -446,10 +446,10 @@ void HeapShared::clear_root(int index) {
       log_debug(aot, heap)("Clearing root %d: was %zu", index, p2i(get_root(index, false /* clear */)));
     }
     if (HeapShared::is_loading_streaming_mode()) {
-      StreamingArchiveHeapLoader::clear_root(index);
+      AOTStreamedHeapLoader::clear_root(index);
     } else {
       assert(HeapShared::is_loading_mapping_mode(), "must be");
-      MappingArchiveHeapLoader::clear_root(index);
+      AOTMappedHeapLoader::clear_root(index);
     }
   }
 }
@@ -472,9 +472,9 @@ bool HeapShared::archive_object(oop obj, oop referrer, KlassSubGraphInfo* subgra
   count_allocation(obj->size());
 
   if (HeapShared::is_writing_streaming_mode()) {
-    StreamingArchiveHeapWriter::add_source_obj(obj);
+    AOTStreamedHeapWriter::add_source_obj(obj);
   } else {
-    MappingArchiveHeapWriter::add_source_obj(obj);
+    AOTMappedHeapWriter::add_source_obj(obj);
   }
 
   CachedOopInfo info = make_cached_oop_info(obj, referrer);
@@ -857,10 +857,10 @@ void HeapShared::write_heap(ArchiveMappedHeapInfo* mapped_heap_info, ArchiveStre
 
   if (HeapShared::is_writing_mapping_mode()) {
     StringTable::write_shared_table();
-    MappingArchiveHeapWriter::write(_pending_roots, mapped_heap_info);
+    AOTMappedHeapWriter::write(_pending_roots, mapped_heap_info);
   } else {
     assert(HeapShared::is_writing_streaming_mode(), "are there more modes?");
-    StreamingArchiveHeapWriter::write(_pending_roots, streamed_heap_info);
+    AOTStreamedHeapWriter::write(_pending_roots, streamed_heap_info);
   }
 
   ArchiveBuilder::OtherROAllocMark mark;
@@ -2187,9 +2187,9 @@ void HeapShared::init_for_dumping(TRAPS) {
 
 void HeapShared::init_heap_writer() {
   if (HeapShared::is_writing_streaming_mode()) {
-    StreamingArchiveHeapWriter::init();
+    AOTStreamedHeapWriter::init();
   } else {
-    MappingArchiveHeapWriter::init();
+    AOTMappedHeapWriter::init();
   }
 }
 
@@ -2245,9 +2245,9 @@ void HeapShared::archive_object_subgraphs(ArchivableStaticFieldInfo fields[],
 
 bool HeapShared::is_dumped_interned_string(oop o) {
   if (is_writing_mapping_mode()) {
-    return MappingArchiveHeapWriter::is_dumped_interned_string(o);
+    return AOTMappedHeapWriter::is_dumped_interned_string(o);
   } else {
-    return StreamingArchiveHeapWriter::is_dumped_interned_string(o);
+    return AOTStreamedHeapWriter::is_dumped_interned_string(o);
   }
 }
 
@@ -2416,9 +2416,9 @@ static void print_class_signature_for_mirror(outputStream* st, oop scratch_mirro
 
 intptr_t HeapShared::log_target_location(oop source_oop) {
   if (is_writing_mapping_mode()) {
-    return MappingArchiveHeapWriter::log_target_location(source_oop);
+    return AOTMappedHeapWriter::log_target_location(source_oop);
   } else {
-    return StreamingArchiveHeapWriter::log_target_location(source_oop);
+    return AOTStreamedHeapWriter::log_target_location(source_oop);
   }
 }
 
@@ -2616,9 +2616,9 @@ void HeapShared::log_oop_info(outputStream* st, oop source_oop, address archived
 
 void HeapShared::log_oop_info(outputStream* st, oop source_oop) {
   if (is_writing_mapping_mode()) {
-    MappingArchiveHeapWriter::log_oop_info(st, source_oop);
+    AOTMappedHeapWriter::log_oop_info(st, source_oop);
   } else {
-    StreamingArchiveHeapWriter::log_oop_info(st, source_oop);
+    AOTStreamedHeapWriter::log_oop_info(st, source_oop);
   }
 }
 

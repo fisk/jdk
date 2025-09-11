@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef SHARE_CDS_STREAMINGARCHIVEHEAPWRITER_HPP
-#define SHARE_CDS_STREAMINGARCHIVEHEAPWRITER_HPP
+#ifndef SHARE_CDS_AOTSTREAMEDHEAPWRITER_HPP
+#define SHARE_CDS_AOTSTREAMEDHEAPWRITER_HPP
 
 #include "cds/heapShared.hpp"
 #include "memory/allocation.hpp"
@@ -38,7 +38,7 @@
 class MemRegion;
 
 #if INCLUDE_CDS_JAVA_HEAP
-class StreamingArchiveHeapWriter : AllStatic {
+class AOTStreamedHeapWriter : AllStatic {
   class EmbeddedOopRelocator;
   static GrowableArrayCHeap<u1, mtClassShared>* _buffer;
 
@@ -151,4 +151,4 @@ public:
   static void log_heap_region(ArchiveStreamedHeapInfo* heap_info);
 };
 #endif // INCLUDE_CDS_JAVA_HEAP
-#endif // SHARE_CDS_STREAMINGARCHIVEHEAPWRITER_HPP
+#endif // SHARE_CDS_AOTSTREAMEDHEAPWRITER_HPP

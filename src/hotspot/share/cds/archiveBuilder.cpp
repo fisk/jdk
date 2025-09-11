@@ -26,6 +26,8 @@
 #include "cds/aotClassLinker.hpp"
 #include "cds/aotLinkedClassBulkLoader.hpp"
 #include "cds/aotLogging.hpp"
+#include "cds/aotMappedHeapWriter.hpp"
+#include "cds/aotStreamedHeapWriter.hpp"
 #include "cds/archiveBuilder.hpp"
 #include "cds/archiveUtils.hpp"
 #include "cds/cdsConfig.hpp"
@@ -33,10 +35,8 @@
 #include "cds/dumpAllocStats.hpp"
 #include "cds/dynamicArchive.hpp"
 #include "cds/heapShared.hpp"
-#include "cds/mappingArchiveHeapWriter.hpp"
 #include "cds/metaspaceShared.hpp"
 #include "cds/regeneratedClasses.hpp"
-#include "cds/streamingArchiveHeapWriter.hpp"
 #include "classfile/classLoader.hpp"
 #include "classfile/classLoaderDataShared.hpp"
 #include "classfile/javaClasses.hpp"
@@ -1352,12 +1352,12 @@ public:
 
 #if INCLUDE_CDS_JAVA_HEAP
     if (mapped_heap_info != nullptr && mapped_heap_info->is_used()) {
-      address requested_base = MappingArchiveHeapWriter::requested_address();
+      address requested_base = AOTMappedHeapWriter::requested_address();
       log_region("heap", (address)mapped_heap_info->buffer_region().start(), (address)mapped_heap_info->buffer_region().end(), requested_base);
-      MappingArchiveHeapWriter::log_heap_region(mapped_heap_info);
+      AOTMappedHeapWriter::log_heap_region(mapped_heap_info);
     } else if (streamed_heap_info != nullptr && streamed_heap_info->is_used()) {
       log_region("heap", (address)streamed_heap_info->buffer_region().start(), (address)streamed_heap_info->buffer_region().end(), 0);
-      StreamingArchiveHeapWriter::log_heap_region(streamed_heap_info);
+      AOTStreamedHeapWriter::log_heap_region(streamed_heap_info);
     }
 #endif
 

@@ -77,7 +77,7 @@ public class TestZGCWithAOTHeap {
                               dumpGC,
                               coops,
                               coh,
-			      stream,
+                              stream,
                               "-Xlog:cds,aot,aot+heap");
         out.shouldContain("Dumping shared data to file:");
         out.shouldHaveExitValue(0);
@@ -91,7 +91,7 @@ public class TestZGCWithAOTHeap {
                               "Hello");
         if (!shouldStream && execWithZ) {
             // Only when dumping without streaming and executing with ZGC
-	    // do we expect there to be a problem.
+            // do we expect there to be a problem.
             out.shouldContain(HELLO);
             out.shouldContain(errMsg);
             out.shouldHaveExitValue(0);
@@ -102,8 +102,8 @@ public class TestZGCWithAOTHeap {
         }
 
         // Regardless of which GC dumped the heap, there will be an object archive, either
-	// created with mapping if dumped with G1, or streaming if dumped with parallel GC. 
-	// At exec time, try to load them into a small ZGC heap that may be too small.
+        // created with mapping if dumped with G1, or streaming if dumped with parallel GC. 
+        // At exec time, try to load them into a small ZGC heap that may be too small.
         System.out.println("2. Exec with " + execGC + ", " + coops + ", " + coh + ", " + stream);
         out = TestCommon.exec(helloJar,
                               execGC,
@@ -128,12 +128,12 @@ public class TestZGCWithAOTHeap {
                                   execGC,
                                   coops,
                                   coh,
-				  eagerLoading,
+                                  eagerLoading,
                                   "-Xlog:cds,aot,aot+heap",
                                   "Hello");
             if (!shouldStream && execWithZ) {
                 // Only when dumping without streaming and executing with ZGC
-	        // do we expect there to be a problem.
+                // do we expect there to be a problem.
                 out.shouldContain(HELLO);
                 out.shouldContain(errMsg);
                 out.shouldHaveExitValue(0);

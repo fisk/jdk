@@ -491,8 +491,7 @@ static bool can_assign(const Thread* t) {
     return true;
   }
   const JavaThread* jt = JavaThread::cast(t);
-  JavaThreadState state = jt->thread_state();
-  return state == _thread_new || state == _thread_in_vm || jt->is_attaching_via_jni();
+  return jt->thread_state() == _thread_new || jt->is_attaching_via_jni();
 }
 #endif
 
@@ -504,6 +503,9 @@ traceid JfrThreadLocal::assign_thread_id(const Thread* t, JfrThreadLocal* tl) {
     assert(can_assign(t), "invariant");
     if (t->is_Java_thread()) {
       tid = load_java_thread_id(t);
+      if (tid == 0) {
+        tid = JavaThread::cast(t)->monitor_owner_id();
+      }
       tl->_jvm_thread_id = tid;
       Atomic::store(&tl->_vthread_id, tid);
       return tid;

@@ -23,9 +23,9 @@
  */
 
 #include "cds/aotLinkedClassBulkLoader.hpp"
+#include "cds/aotMappedHeapLoader.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/heapShared.hpp"
-#include "cds/mappingArchiveHeapLoader.hpp"
 #include "classfile/classLoader.hpp"
 #include "classfile/classLoaderData.hpp"
 #include "classfile/classLoaderDataShared.hpp"
@@ -138,7 +138,7 @@ void vmClasses::resolve_all(TRAPS) {
       // Object_klass is resolved. See the above resolve_through()
       // call. No mirror objects are accessed/restored in the above call.
       // Mirrors are restored after java.lang.Class is loaded.
-      MappingArchiveHeapLoader::fixup_region();
+      AOTMappedHeapLoader::fixup_region();
     }
 
     if (HeapShared::is_archived_heap_in_use() && !CDSConfig::is_using_full_module_graph()) {

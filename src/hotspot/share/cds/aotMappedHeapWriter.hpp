@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef SHARE_CDS_MAPPINGARCHIVEHEAPWRITER_HPP
-#define SHARE_CDS_MAPPINGARCHIVEHEAPWRITER_HPP
+#ifndef SHARE_CDS_AOTMAPPEDHEAPWRITER_HPP
+#define SHARE_CDS_AOTMAPPEDHEAPWRITER_HPP
 
 #include "cds/heapShared.hpp"
 #include "memory/allocation.hpp"
@@ -52,10 +52,10 @@ public:
                                 HeapShared::string_oop_hash>(size, max_size) {}
 };
 
-class MappingArchiveHeapWriter : AllStatic {
+class AOTMappedHeapWriter : AllStatic {
   friend class HeapShared;
-  friend class MappingArchiveHeapLoader;
-  // ArchiveHeapWriter manipulates three types of addresses:
+  friend class AOTMappedHeapLoader;
+  // AOTMappedHeapWriter manipulates three types of addresses:
   //
   //     "source" vs "buffered" vs "requested"
   //
@@ -246,4 +246,4 @@ public:
   static void log_heap_region(ArchiveMappedHeapInfo* heap_info);
 };
 #endif // INCLUDE_CDS_JAVA_HEAP
-#endif // SHARE_CDS_MAPPINGARCHIVEHEAPWRITER_HPP
+#endif // SHARE_CDS_AOTMAPPEDHEAPWRITER_HPP

@@ -25,8 +25,7 @@
 /*
  * @test
  * @summary Write a lots of shared strings.
- * @requires vm.cds.write.archived.java.heap
- * @requires vm.gc.G1
+ * @requires vm.cds.write.mapped.java.heap
  * @library /test/hotspot/jtreg/runtime/cds/appcds /test/lib
  * @build HelloString
  * @run driver/timeout=650 SharedStringsStress

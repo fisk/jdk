@@ -47,7 +47,7 @@ namespace TypeToBT {
 };
 
 class typeArrayOopDesc : public arrayOopDesc {
-  friend class StreamingArchiveHeapWriter;
+  friend class AOTStreamedHeapWriter;
 private:
   template <typename T>
   static BasicType bt() { return TypeToBT::to_basic_type<T>(); }

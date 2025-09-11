@@ -25,6 +25,7 @@
  */
 
 #include "cds/aotLinkedClassBulkLoader.hpp"
+#include "cds/aotThread.hpp"
 #include "cds/cds_globals.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/heapShared.hpp"
@@ -377,6 +378,10 @@ void Threads::initialize_java_lang_classes(JavaThread* main_thread, TRAPS) {
   // The VM preresolves methods to these classes. Make sure that they get initialized
   initialize_class(vmSymbols::java_lang_reflect_Method(), CHECK);
   initialize_class(vmSymbols::java_lang_ref_Finalizer(), CHECK);
+
+  if (HeapShared::is_loading_streaming_mode()) {
+    AOTThread::materialize_thread_object();
+  }
 
   // Phase 1 of the system initialization in the library, java.lang.System class initialization
   call_initPhase1(CHECK);
@@ -1077,7 +1082,7 @@ jboolean Threads::is_supported_jni_version(jint version) {
 void Threads::add(JavaThread* p, bool force_daemon) {
   // The threads lock must be owned at this point
   assert(Threads_lock->owned_by_self(), "must have threads lock");
-  assert(p->threadObj() == nullptr || p->monitor_owner_id() != 0, "should be set");
+  assert(p->monitor_owner_id() != 0, "should be set");
 
   BarrierSet::barrier_set()->on_thread_attach(p);
 

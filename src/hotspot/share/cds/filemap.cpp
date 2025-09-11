@@ -24,6 +24,8 @@
 
 #include "cds/aotClassLocation.hpp"
 #include "cds/aotLogging.hpp"
+#include "cds/aotMappedHeapLoader.hpp"
+#include "cds/aotMappedHeapWriter.hpp"
 #include "cds/archiveBuilder.hpp"
 #include "cds/archiveUtils.inline.hpp"
 #include "cds/cds_globals.hpp"
@@ -31,8 +33,6 @@
 #include "cds/dynamicArchive.hpp"
 #include "cds/filemap.hpp"
 #include "cds/heapShared.hpp"
-#include "cds/mappingArchiveHeapLoader.hpp"
-#include "cds/mappingArchiveHeapWriter.hpp"
 #include "cds/metaspaceShared.hpp"
 #include "classfile/altHashing.hpp"
 #include "classfile/classFileStream.hpp"
@@ -910,7 +910,7 @@ void FileMapInfo::write_region(int region, char* base, size_t size,
     assert(!CDSConfig::is_dumping_dynamic_archive(), "must be");
     mapping_offset = 0;
     if (HeapShared::is_writing_mapping_mode()) {
-      requested_base = (char*)MappingArchiveHeapWriter::requested_address();
+      requested_base = (char*)AOTMappedHeapWriter::requested_address();
       if (UseCompressedOops) {
         mapping_offset = (size_t)((address)requested_base - CompressedOops::base());
         assert((mapping_offset >> CompressedOops::shift()) << CompressedOops::shift() == mapping_offset, "must be");
@@ -1509,13 +1509,13 @@ void FileMapInfo::map_or_load_heap_region() {
   bool success = false;
 
   if (can_use_heap_region()) {
-    if (MappingArchiveHeapLoader::can_map()) {
-      success = MappingArchiveHeapLoader::map_heap_region(this);
-    } else if (MappingArchiveHeapLoader::can_load()) {
-      success = MappingArchiveHeapLoader::load_heap_region(this);
+    if (AOTMappedHeapLoader::can_map()) {
+      success = AOTMappedHeapLoader::map_heap_region(this);
+    } else if (AOTMappedHeapLoader::can_load()) {
+      success = AOTMappedHeapLoader::load_heap_region(this);
     }
   } else {
-    if (!UseCompressedOops && !MappingArchiveHeapLoader::can_map()) {
+    if (!UseCompressedOops && !AOTMappedHeapLoader::can_map()) {
       MetaspaceShared::report_loading_error("Cannot use CDS heap data. Selected GC not compatible -XX:-UseCompressedOops");
     } else {
       MetaspaceShared::report_loading_error("Cannot use CDS heap data. UseEpsilonGC, UseG1GC, UseSerialGC, UseParallelGC, or UseShenandoahGC are required.");

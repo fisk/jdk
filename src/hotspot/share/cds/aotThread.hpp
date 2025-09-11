@@ -38,10 +38,10 @@ private:
 public:
   static void initialize();
 
-  static void materialize_thread_object();
-
   // Hide this thread from external view.
-  bool is_hidden_from_external_view() const { return true; }
+  virtual bool is_hidden_from_external_view() const { return true; }
+
+  static void materialize_thread_object();
 
   static AOTThread* aot_thread() { return _aot_thread; };
 };

@@ -22,11 +22,11 @@
  *
  */
 
+#include "cds/aotMappedHeapLoader.hpp"
+#include "cds/aotMappedHeapWriter.hpp"
 #include "cds/archiveBuilder.hpp"
 #include "cds/cdsConfig.hpp"
 #include "cds/heapShared.hpp"
-#include "cds/mappingArchiveHeapLoader.hpp"
-#include "cds/mappingArchiveHeapWriter.hpp"
 #include "classfile/altHashing.hpp"
 #include "classfile/compactHashtable.hpp"
 #include "classfile/javaClasses.inline.hpp"
@@ -1074,7 +1074,7 @@ oop StringTable::init_shared_strings_array() {
       //   so we are all good.
       // - If there's a referece to it, we will report an error inside HeapShared.cpp and
       //   dumping will fail.
-      MappingArchiveHeapWriter::add_to_dumped_interned_strings(string);
+      AOTMappedHeapWriter::add_to_dumped_interned_strings(string);
       if (!_is_two_dimensional_shared_strings_array) {
         assert(index < array->length(), "no strings should have been added");
         array->obj_at_put(index, string);
@@ -1130,7 +1130,7 @@ void StringTable::serialize_shared_table_header(SerializeClosure* soc) {
   if (soc->writing()) {
     // Sanity. Make sure we don't use the shared table at dump time
     _shared_table.reset();
-  } else if (!MappingArchiveHeapLoader::is_in_use()) {
+  } else if (!AOTMappedHeapLoader::is_in_use()) {
     _shared_table.reset();
   }
 

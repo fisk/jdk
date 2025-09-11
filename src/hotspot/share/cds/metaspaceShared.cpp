@@ -29,6 +29,7 @@
 #include "cds/aotConstantPoolResolver.hpp"
 #include "cds/aotLinkedClassBulkLoader.hpp"
 #include "cds/aotLogging.hpp"
+#include "cds/aotMappedHeapLoader.hpp"
 #include "cds/aotReferenceObjSupport.hpp"
 #include "cds/archiveBuilder.hpp"
 #include "cds/cds_globals.hpp"
@@ -44,7 +45,6 @@
 #include "cds/heapShared.hpp"
 #include "cds/lambdaFormInvokers.hpp"
 #include "cds/lambdaProxyClassDictionary.hpp"
-#include "cds/mappingArchiveHeapLoader.hpp"
 #include "cds/metaspaceShared.hpp"
 #include "classfile/classLoaderDataGraph.hpp"
 #include "classfile/classLoaderDataShared.hpp"
@@ -1980,7 +1980,7 @@ void MetaspaceShared::initialize_shared_spaces() {
   } else {
     // Finish up archived heap initialization. These must be
     // done after ReadClosure.
-    MappingArchiveHeapLoader::finish_initialization(static_mapinfo);
+    AOTMappedHeapLoader::finish_initialization(static_mapinfo);
   }
   Universe::load_archived_object_instances();
   AOTCodeCache::initialize();

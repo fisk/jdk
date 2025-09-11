@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef SHARE_CDS_STREAMINGARCHIVEHEAPLOADER_HPP
-#define SHARE_CDS_STREAMINGARCHIVEHEAPLOADER_HPP
+#ifndef SHARE_CDS_AOTSTREAMEDHEAPLOADER_HPP
+#define SHARE_CDS_AOTSTREAMEDHEAPLOADER_HPP
 
 #include "cds/filemap.hpp"
 #include "memory/allocation.hpp"
@@ -122,7 +122,7 @@ struct AOTHeapTraversalEntry {
   uintptr_t _heap_field_offset_bytes;
 };
 
-class StreamingArchiveHeapLoader {
+class AOTStreamedHeapLoader {
   friend class InflateReferenceOopClosure;
 private:
   static FileMapRegion* _heap_region;
@@ -133,13 +133,13 @@ private:
   static BitMapView _oopmap;
   static bool _is_loaded;
   static bool _allow_gc;
-  static bool _stop_background_processing;
-  static bool _finished_processing;
+  static bool _objects_are_handles;
   static int _previous_batch_last_object_index;
   static int _current_batch_last_object_index;
   static size_t _allocated_words;
   static int _current_root_index;
   static size_t _num_archived_objects;
+  static int _num_roots;
 
   static size_t* _object_index_to_buffer_offset_table;
   static void** _object_index_to_heap_object_table;
@@ -165,7 +165,7 @@ private:
 
   static bool materialize_early();
   static void materialize_late();
-  static void cleanup(bool finished_before_gc_allowed);
+  static void cleanup();
   static void log_telemetry();
 
   class TracingObjectLoader {
@@ -200,9 +200,7 @@ private:
 
   static void install_root(int root_index, oop heap_object);
 
-  static int compute_roots_length();
-
-  static bool await_gc_enabled();
+  static void await_gc_enabled();
   static void await_finished_processing();
 
 public:
@@ -216,4 +214,4 @@ public:
   static bool is_loaded() { return _is_loaded; }
 };
 
-#endif // SHARE_CDS_STREAMINGARCHIVEHEAPLOADER_HPP
+#endif // SHARE_CDS_AOTSTREAMEDHEAPLOADER_HPP

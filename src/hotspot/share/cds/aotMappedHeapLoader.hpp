@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef SHARE_CDS_MAPPINGARCHIVEHEAPLOADER_HPP
-#define SHARE_CDS_MAPPINGARCHIVEHEAPLOADER_HPP
+#ifndef SHARE_CDS_AOTMAPPEDHEAPLOADER_HPP
+#define SHARE_CDS_AOTMAPPEDHEAPLOADER_HPP
 
 #include "gc/shared/gc_globals.hpp"
 #include "memory/allocation.hpp"
@@ -39,7 +39,7 @@
 class  FileMapInfo;
 struct LoadedArchiveHeapRegion;
 
-class MappingArchiveHeapLoader : AllStatic {
+class AOTMappedHeapLoader : AllStatic {
 public:
   // At runtime, the heap region in the CDS archive can be used in two different ways,
   // depending on the GC type:
@@ -184,4 +184,4 @@ public:
 
 };
 
-#endif // SHARE_CDS_MAPPINGARCHIVEHEAPLOADER_HPP
+#endif // SHARE_CDS_AOTMAPPEDHEAPLOADER_HPP

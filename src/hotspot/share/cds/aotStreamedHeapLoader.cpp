@@ -22,12 +22,12 @@
  *
  */
 
-#include "cds/cdsConfig.hpp"
+#include "cds/aotStreamedHeapLoader.hpp"
 #include "cds/aotThread.hpp"
+#include "cds/cdsConfig.hpp"
 #include "cds/filemap.hpp"
 #include "cds/heapShared.inline.hpp"
 #include "cds/metaspaceShared.hpp"
-#include "cds/streamingArchiveHeapLoader.hpp"
 #include "classfile/classLoaderDataShared.hpp"
 #include "classfile/stringTable.hpp"
 #include "gc/shared/collectedHeap.inline.hpp"
@@ -51,29 +51,29 @@
 
 #if INCLUDE_CDS_JAVA_HEAP
 
-FileMapRegion* StreamingArchiveHeapLoader::_heap_region;
-FileMapRegion* StreamingArchiveHeapLoader::_bitmap_region;
-int* StreamingArchiveHeapLoader::_roots_archive;
-oop* StreamingArchiveHeapLoader::_roots_heap;
-BitMapView StreamingArchiveHeapLoader::_oopmap;
-bool StreamingArchiveHeapLoader::_is_loaded;
-int StreamingArchiveHeapLoader::_previous_batch_last_object_index;
-int StreamingArchiveHeapLoader::_current_batch_last_object_index;
-int StreamingArchiveHeapLoader::_current_root_index;
-size_t StreamingArchiveHeapLoader::_allocated_words;
-bool StreamingArchiveHeapLoader::_allow_gc;
-bool StreamingArchiveHeapLoader::_stop_background_processing;
-bool StreamingArchiveHeapLoader::_finished_processing;
-size_t StreamingArchiveHeapLoader::_num_archived_objects;
+FileMapRegion* AOTStreamedHeapLoader::_heap_region;
+FileMapRegion* AOTStreamedHeapLoader::_bitmap_region;
+int* AOTStreamedHeapLoader::_roots_archive;
+oop* AOTStreamedHeapLoader::_roots_heap;
+BitMapView AOTStreamedHeapLoader::_oopmap;
+bool AOTStreamedHeapLoader::_is_loaded;
+int AOTStreamedHeapLoader::_previous_batch_last_object_index;
+int AOTStreamedHeapLoader::_current_batch_last_object_index;
+int AOTStreamedHeapLoader::_current_root_index;
+size_t AOTStreamedHeapLoader::_allocated_words;
+bool AOTStreamedHeapLoader::_allow_gc;
+bool AOTStreamedHeapLoader::_objects_are_handles;
+size_t AOTStreamedHeapLoader::_num_archived_objects;
+int AOTStreamedHeapLoader::_num_roots;
 
-size_t* StreamingArchiveHeapLoader::_object_index_to_buffer_offset_table;
-void** StreamingArchiveHeapLoader::_object_index_to_heap_object_table;
-int* StreamingArchiveHeapLoader::_root_highest_object_index_table;
+size_t* AOTStreamedHeapLoader::_object_index_to_buffer_offset_table;
+void** AOTStreamedHeapLoader::_object_index_to_heap_object_table;
+int* AOTStreamedHeapLoader::_root_highest_object_index_table;
 
-bool StreamingArchiveHeapLoader::_waiting_for_iterator;
-bool StreamingArchiveHeapLoader::_swapping_root_format;
+bool AOTStreamedHeapLoader::_waiting_for_iterator;
+bool AOTStreamedHeapLoader::_swapping_root_format;
 
-OopHandle StreamingArchiveHeapLoader::_roots;
+OopHandle AOTStreamedHeapLoader::_roots;
 
 static jlong _early_materialization_time_ns = 0;
 static jlong _late_materialization_time_ns = 0;
@@ -81,30 +81,30 @@ static jlong _final_materialization_time_ns = 0;
 static jlong _cleanup_materialization_time_ns = 0;
 static volatile jlong _accumulated_lazy_materialization_time_ns = 0;
 
-int StreamingArchiveHeapLoader::object_index_for_root_index(int root_index) {
+int AOTStreamedHeapLoader::object_index_for_root_index(int root_index) {
   return _roots_archive[root_index];
 }
 
-int StreamingArchiveHeapLoader::highest_object_index_for_root_index(int root_index) {
+int AOTStreamedHeapLoader::highest_object_index_for_root_index(int root_index) {
   return _root_highest_object_index_table[root_index];
 }
 
-size_t StreamingArchiveHeapLoader::buffer_offset_for_object_index(int object_index) {
+size_t AOTStreamedHeapLoader::buffer_offset_for_object_index(int object_index) {
   return _object_index_to_buffer_offset_table[object_index];
 }
 
-oopDesc* StreamingArchiveHeapLoader::archive_object_for_object_index(int object_index) {
+oopDesc* AOTStreamedHeapLoader::archive_object_for_object_index(int object_index) {
   size_t buffer_offset = buffer_offset_for_object_index(object_index);
   address bottom = (address)_heap_region->mapped_base();
   return (oopDesc*)(bottom + buffer_offset);
 }
 
-size_t StreamingArchiveHeapLoader::buffer_offset_for_archive_object(oopDesc* archive_object) {
+size_t AOTStreamedHeapLoader::buffer_offset_for_archive_object(oopDesc* archive_object) {
   address bottom = (address)_heap_region->mapped_base();
   return size_t(archive_object) - size_t(bottom);
 }
 
-BitMap::idx_t StreamingArchiveHeapLoader::obj_bit_idx_for_buffer_offset(size_t buffer_offset) {
+BitMap::idx_t AOTStreamedHeapLoader::obj_bit_idx_for_buffer_offset(size_t buffer_offset) {
   if (UseCompressedOops) {
     return BitMap::idx_t(buffer_offset / sizeof(narrowOop));
   } else {
@@ -112,15 +112,11 @@ BitMap::idx_t StreamingArchiveHeapLoader::obj_bit_idx_for_buffer_offset(size_t b
   }
 }
 
-oop StreamingArchiveHeapLoader::heap_object_for_object_index(int object_index) {
+oop AOTStreamedHeapLoader::heap_object_for_object_index(int object_index) {
   assert(object_index >= 0 && object_index <= (int)_num_archived_objects,
          "Heap object reference out of index: %d", object_index);
 
-  if (object_index == 0) {
-    return nullptr;
-  }
-
-  if (_allow_gc) {
+  if (_objects_are_handles) {
     oop* handle = (oop*)_object_index_to_heap_object_table[object_index];
     if (handle == nullptr) {
       return nullptr;
@@ -131,9 +127,9 @@ oop StreamingArchiveHeapLoader::heap_object_for_object_index(int object_index) {
   }
 }
 
-void StreamingArchiveHeapLoader::set_heap_object_for_object_index(int object_index, oop heap_object) {
+void AOTStreamedHeapLoader::set_heap_object_for_object_index(int object_index, oop heap_object) {
   assert(heap_object_for_object_index(object_index) == nullptr, "Should only set once with this API");
-  if (_allow_gc) {
+  if (_objects_are_handles) {
     oop* handle = Universe::vm_global()->allocate();
     NativeAccess<>::oop_store(handle, heap_object);
     _object_index_to_heap_object_table[object_index] = (void*)handle;
@@ -142,8 +138,8 @@ void StreamingArchiveHeapLoader::set_heap_object_for_object_index(int object_ind
   }
 }
 
-void StreamingArchiveHeapLoader::replace_heap_object_for_object_index(int object_index, oop heap_object) {
-  if (_allow_gc) {
+void AOTStreamedHeapLoader::replace_heap_object_for_object_index(int object_index, oop heap_object) {
+  if (_objects_are_handles) {
     oop* handle = (oop*)_object_index_to_heap_object_table[object_index];
     NativeAccess<>::oop_store(handle, heap_object);
   } else {
@@ -180,7 +176,7 @@ static size_t archive_object_size(oopDesc* archive_object) {
   }
 }
 
-oop StreamingArchiveHeapLoader::allocate_object(oopDesc* archive_object, markWord mark, size_t size, JavaThread* thread) {
+oop AOTStreamedHeapLoader::allocate_object(oopDesc* archive_object, markWord mark, size_t size, JavaThread* thread) {
   assert(!archive_object->is_stackChunk(), "no such objects are archived");
 
   oop heap_object;
@@ -206,13 +202,13 @@ oop StreamingArchiveHeapLoader::allocate_object(oopDesc* archive_object, markWor
   return heap_object;
 }
 
-void StreamingArchiveHeapLoader::install_root(int root_index, oop heap_object) {
+void AOTStreamedHeapLoader::install_root(int root_index, oop heap_object) {
   objArrayOop roots = objArrayOop((oop)NativeAccess<>::oop_load(_roots_heap));
   OrderAccess::release(); // Once the store below publishes an object, it can be concurrently picked up by another thread without using the lock
   roots->obj_at_put(root_index, heap_object);
 }
 
-void StreamingArchiveHeapLoader::TracingObjectLoader::wait_for_iterator() {
+void AOTStreamedHeapLoader::TracingObjectLoader::wait_for_iterator() {
   if (JavaThread::current()->is_active_Java_thread()) {
     // When the main thread has bootstrapped past the point of allowing safepoints,
     // we can and indeed have to use safepoint checking waiting.
@@ -249,7 +245,7 @@ public:
 };
 
 template <bool use_coops>
-void StreamingArchiveHeapLoader::TracingObjectLoader::copy_object(int object_index,
+void AOTStreamedHeapLoader::TracingObjectLoader::copy_object(int object_index,
                                                                   oopDesc* archive_object,
                                                                   oop heap_object,
                                                                   size_t size,
@@ -317,7 +313,7 @@ void StreamingArchiveHeapLoader::TracingObjectLoader::copy_object(int object_ind
   HeapShared::remap_loaded_metadata(heap_object);
 }
 
-oop StreamingArchiveHeapLoader::TracingObjectLoader::materialize_object_inner(int object_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
+oop AOTStreamedHeapLoader::TracingObjectLoader::materialize_object_inner(int object_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
   // Allocate object
   oopDesc* archive_object = archive_object_for_object_index(object_index);
   size_t size = archive_object_size(archive_object);
@@ -357,7 +353,7 @@ oop StreamingArchiveHeapLoader::TracingObjectLoader::materialize_object_inner(in
   return heap_object;
 }
 
-oop StreamingArchiveHeapLoader::TracingObjectLoader::materialize_object(int object_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
+oop AOTStreamedHeapLoader::TracingObjectLoader::materialize_object(int object_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
   oop heap_object = heap_object_for_object_index(object_index);
 
   if (object_index <= _previous_batch_last_object_index) {
@@ -384,7 +380,7 @@ oop StreamingArchiveHeapLoader::TracingObjectLoader::materialize_object(int obje
   return materialize_object_inner(object_index, dfs_stack, thread);
 }
 
-void StreamingArchiveHeapLoader::TracingObjectLoader::drain_stack(Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
+void AOTStreamedHeapLoader::TracingObjectLoader::drain_stack(Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
   while (!dfs_stack.is_empty()) {
     AOTHeapTraversalEntry entry = dfs_stack.pop();
     int pointee_object_index = entry._pointee_object_index;
@@ -394,7 +390,7 @@ void StreamingArchiveHeapLoader::TracingObjectLoader::drain_stack(Stack<AOTHeapT
   }
 }
 
-oop StreamingArchiveHeapLoader::TracingObjectLoader::materialize_object_transitive(int object_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
+oop AOTStreamedHeapLoader::TracingObjectLoader::materialize_object_transitive(int object_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
   assert_locked_or_safepoint(AOTHeapLoading_lock);
   while (_waiting_for_iterator) {
     wait_for_iterator();
@@ -406,13 +402,13 @@ oop StreamingArchiveHeapLoader::TracingObjectLoader::materialize_object_transiti
   return result();
 }
 
-oop StreamingArchiveHeapLoader::TracingObjectLoader::materialize_root(int root_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
+oop AOTStreamedHeapLoader::TracingObjectLoader::materialize_root(int root_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
   int root_object_index = object_index_for_root_index(root_index);
 
   return materialize_object_transitive(root_object_index, dfs_stack, thread);
 }
 
-oop StreamingArchiveHeapLoader::TracingObjectLoader::root(int root_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
+oop AOTStreamedHeapLoader::TracingObjectLoader::root(int root_index, Stack<AOTHeapTraversalEntry, mtClassShared>& dfs_stack, JavaThread* thread) {
   // Get the materialized roots array
   oop roots_obj = NativeAccess<>::oop_load(_roots_heap);
   objArrayOop roots = (objArrayOop)roots_obj;
@@ -443,13 +439,13 @@ public:
   template <typename T>
   void do_oop_work(T* p, int object_index) {
     if (object_index != 0) {
-      oop obj = StreamingArchiveHeapLoader::heap_object_for_object_index(object_index);
+      oop obj = AOTStreamedHeapLoader::heap_object_for_object_index(object_index);
       HeapAccess<IS_DEST_UNINITIALIZED>::oop_store(p, obj);
     }
   }
 };
 
-void StreamingArchiveHeapLoader::IterativeObjectLoader::copy_object(oopDesc* archive_object, oop heap_object, size_t size) {
+void AOTStreamedHeapLoader::IterativeObjectLoader::copy_object(oopDesc* archive_object, oop heap_object, size_t size) {
   // Don't copy the markWord; it is set on allocation time
   size_t payload_size = size - 1;
   HeapWord* archive_start = ((HeapWord*)archive_object) + 1;
@@ -462,7 +458,7 @@ void StreamingArchiveHeapLoader::IterativeObjectLoader::copy_object(oopDesc* arc
 }
 
 // The range is inclusive
-void StreamingArchiveHeapLoader::IterativeObjectLoader::initialize_range(int first_object_index, int last_object_index, JavaThread* thread) {
+void AOTStreamedHeapLoader::IterativeObjectLoader::initialize_range(int first_object_index, int last_object_index, JavaThread* thread) {
   bool last_object_was_interned_string = false;
 
   for (int i = first_object_index; i <= last_object_index; ++i) {
@@ -488,7 +484,7 @@ void StreamingArchiveHeapLoader::IterativeObjectLoader::initialize_range(int fir
 }
 
 // The range is inclusive
-size_t StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_range(int first_object_index, int last_object_index, JavaThread* thread) {
+size_t AOTStreamedHeapLoader::IterativeObjectLoader::materialize_range(int first_object_index, int last_object_index, JavaThread* thread) {
   GrowableArrayCHeap<int, mtClassShared>* lazy_object_indices = nullptr;
   size_t materialized_words = 0;
 
@@ -539,16 +535,16 @@ size_t StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_range(int 
   return materialized_words;
 }
 
-bool StreamingArchiveHeapLoader::IterativeObjectLoader::has_more() {
-  return _current_root_index < compute_roots_length();
+bool AOTStreamedHeapLoader::IterativeObjectLoader::has_more() {
+  return _current_root_index < _num_roots;
 }
 
-void StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_next_batch(JavaThread* thread) {
+void AOTStreamedHeapLoader::IterativeObjectLoader::materialize_next_batch(JavaThread* thread) {
   assert(has_more(), "only materialize if there is something to materialize");
 
   int min_batch_objects = 128;
   int from_root_index = _current_root_index;
-  int max_to_root_index = compute_roots_length() - 1;
+  int max_to_root_index = _num_roots - 1;
   int until_root_index = from_root_index;
   int highest_object_index;
 
@@ -568,6 +564,13 @@ void StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_next_batch(J
 
   // Materialize objects of necessary, representing the transitive closure of the root
   if (highest_object_index > _previous_batch_last_object_index) {
+    while (_swapping_root_format) {
+      // When the roots are being upgraded to use handles, it is not safe to racingly
+      // iterate over the object; we must wait. Setting the current batch last object index
+      // to something other than the previous batch last object index indicates to the
+      // root swapping that there is current iteration ongoing.
+      AOTHeapLoading_lock->wait();
+    }
     int first_object_index = _previous_batch_last_object_index + 1;
     _current_batch_last_object_index = highest_object_index;
     size_t allocated_words;
@@ -578,10 +581,9 @@ void StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_next_batch(J
     _allocated_words += allocated_words;
     _previous_batch_last_object_index = _current_batch_last_object_index;
     if (_waiting_for_iterator) {
+      // If tracer is waiting, let it know at the next point of unlocking that the root
+      // set it waited for has been processed now.
       AOTHeapLoading_lock->notify_all();
-    }
-    while (_swapping_root_format) {
-      AOTHeapLoading_lock->wait();
     }
   }
 
@@ -594,7 +596,7 @@ void StreamingArchiveHeapLoader::IterativeObjectLoader::materialize_next_batch(J
   }
 }
 
-bool StreamingArchiveHeapLoader::materialize_early() {
+bool AOTStreamedHeapLoader::materialize_early() {
   jlong start = os::javaTimeNanos();
   JavaThread* thread = JavaThread::current();
 
@@ -608,7 +610,7 @@ bool StreamingArchiveHeapLoader::materialize_early() {
                       bootstrap_max_memory / M, bootstrap_min_memory / M, before_gc_materialize_budget_bytes / M);
 
   while (IterativeObjectLoader::has_more()) {
-    if (_stop_background_processing || _allow_gc || _allocated_words > before_gc_materialize_budget_words) {
+    if (_allow_gc || _allocated_words > before_gc_materialize_budget_words) {
       log_info(aot, heap)("Early object materialization interrupted at root %d", _current_root_index);
       break;
     }
@@ -623,39 +625,35 @@ bool StreamingArchiveHeapLoader::materialize_early() {
   return finished_before_gc_allowed;
 }
 
-void StreamingArchiveHeapLoader::materialize_late() {
-  if (await_gc_enabled()) {
-    // Materialization is signalled to stop
-    return;
-  }
-
+void AOTStreamedHeapLoader::materialize_late() {
   jlong start = os::javaTimeNanos();
 
   // Continue materializing with GC allowed
   JavaThread* thread = JavaThread::current();
 
   while (IterativeObjectLoader::has_more()) {
-    if (_stop_background_processing) {
-      log_info(aot, heap)("Late object materialization interrupted at root %d", _current_root_index);
-      break;
-    }
-
     IterativeObjectLoader::materialize_next_batch(thread);
   }
 
   _late_materialization_time_ns = os::javaTimeNanos() - start;
 }
 
-void StreamingArchiveHeapLoader::cleanup(bool finished_before_gc_allowed) {
+void AOTStreamedHeapLoader::cleanup() {
   JavaThread* thread = JavaThread::current();
+
+  // First ensure there is no concurrent tracing going on
+  while (_waiting_for_iterator) {
+    AOTHeapLoading_lock->wait();
+  }
 
   jlong start = os::javaTimeNanos();
 
   // Remove OopStorage roots
-  if (!finished_before_gc_allowed) {
+  if (_objects_are_handles) {
     size_t num_handles = _num_archived_objects;
     // Skip the null entry
     oop** handles = ((oop**)_object_index_to_heap_object_table) + 1;
+    // Sort the handles so that oop storage can release them faster
     qsort(handles, num_handles, sizeof(oop*), (int (*)(const void*, const void*))oop_handle_cmp);
     for (size_t i = 0; i < num_handles; ++i) {
       oop* handle = handles[i];
@@ -675,7 +673,7 @@ void StreamingArchiveHeapLoader::cleanup(bool finished_before_gc_allowed) {
   log_telemetry();
 }
 
-void StreamingArchiveHeapLoader::log_telemetry() {
+void AOTStreamedHeapLoader::log_telemetry() {
   const char* async_or_sync = AOTEagerlyLoadObjects ? "sync" : "async";
   log_info(aot, heap)("early object materialization time (%s): %zuus",
                       async_or_sync, _early_materialization_time_ns / 1000);
@@ -683,7 +681,7 @@ void StreamingArchiveHeapLoader::log_telemetry() {
                       async_or_sync, _late_materialization_time_ns / 1000);
   log_info(aot, heap)("object materialization cleanup time (%s): %zuus",
                       async_or_sync, _cleanup_materialization_time_ns / 1000);
-  log_info(aot, heap)("final object materialization time (sync): %zuus",
+  log_info(aot, heap)("final object materialization time stall (sync): %zuus",
                       _final_materialization_time_ns / 1000);
   log_info(aot, heap)("bootstrapping lazy materialization time (sync): %zuus",
                       _accumulated_lazy_materialization_time_ns / 1000);
@@ -708,19 +706,21 @@ void StreamingArchiveHeapLoader::log_telemetry() {
                       materialized_bytes / 1024, size_t(materialized_bytes * UCONST64(1000000000) / M / iterative_time));
 }
 
-void StreamingArchiveHeapLoader::materialize_objects() {
+void AOTStreamedHeapLoader::materialize_objects() {
   JavaThread* thread = JavaThread::current();
   // Objects are laid out in DFS order; DFS traverse the roots by linearly walking all objects
   HandleMark hm(thread);
   // Early materialization with a budget before GC is allowed
   MutexLocker ml(AOTHeapLoading_lock, Mutex::_safepoint_check_flag);
-  bool finished_before_gc_allowed = materialize_early();
+  materialize_early();
+  await_gc_enabled();
   materialize_late();
-  await_finished_processing();
-  cleanup(finished_before_gc_allowed);
+  // Notify materialization is done
+  AOTHeapLoading_lock->notify_all();
+  cleanup();
 }
 
-void StreamingArchiveHeapLoader::switch_object_index_to_handle(int object_index) {
+void AOTStreamedHeapLoader::switch_object_index_to_handle(int object_index) {
   oop heap_object = cast_to_oop(_object_index_to_heap_object_table[object_index]);
   if (heap_object == nullptr) {
     return;
@@ -731,15 +731,10 @@ void StreamingArchiveHeapLoader::switch_object_index_to_handle(int object_index)
   _object_index_to_heap_object_table[object_index] = handle;
 }
 
-void StreamingArchiveHeapLoader::enable_gc() {
-  if (AOTEagerlyLoadObjects) {
-    if (_finished_processing) {
-      return;
-    }
-  } else {
-    // Need java.lang.Thread loaded to create the Thread object of the AOT thread
-    // which starts way earlier due to its startup helping nature
-    AOTThread::materialize_thread_object();
+void AOTStreamedHeapLoader::enable_gc() {
+  if (AOTEagerlyLoadObjects && !IterativeObjectLoader::has_more()) {
+    // Everything was loaded eagerly at early startup
+    return;
   }
 
   MutexLocker ml(AOTHeapLoading_lock, Mutex::_safepoint_check_flag);
@@ -774,6 +769,9 @@ void StreamingArchiveHeapLoader::enable_gc() {
       // Upgrade the roots to use handles
       switch_object_index_to_handle(i);
     }
+
+    // From now on, accessing the object table must be done through a handle.
+    _objects_are_handles = true;
   }
 
   // Unlock tracing
@@ -786,38 +784,25 @@ void StreamingArchiveHeapLoader::enable_gc() {
 
   AOTHeapLoading_lock->notify_all();
 
-  if (AOTEagerlyLoadObjects) {
+  if (AOTEagerlyLoadObjects && IterativeObjectLoader::has_more()) {
     materialize_late();
-    cleanup(false /* finished_before_gc_allowed */);
+    cleanup();
   }
 }
 
-void StreamingArchiveHeapLoader::finish_materialize_objects() {
+void AOTStreamedHeapLoader::finish_materialize_objects() {
   if (!_is_loaded) {
     // No roots to materialize
     return;
   }
 
-  // Get the materialized roots array
-  JavaThread* thread = JavaThread::current();
-  HandleMark hm(thread);
-
   jlong start = os::javaTimeNanos();
 
   MutexLocker ml(AOTHeapLoading_lock, Mutex::_safepoint_check_flag);
-  _stop_background_processing = true;
-  // Wait for the AOT thread to stop iterating
-  while (_previous_batch_last_object_index != _current_batch_last_object_index) {
+  // Wait for the AOT thread to finish
+  while (IterativeObjectLoader::has_more()) {
     AOTHeapLoading_lock->wait();
   }
-
-  while (IterativeObjectLoader::has_more()) {
-    IterativeObjectLoader::materialize_next_batch(thread);
-  }
-
-  // Notify AOT thread we are done
-  _finished_processing = true;
-  AOTHeapLoading_lock->notify_all();
 
   _final_materialization_time_ns = os::javaTimeNanos() - start;
 }
@@ -828,7 +813,7 @@ void account_lazy_materialization_time_ns(jlong time, const char* description, i
 }
 
 // Initialize an empty array of AOT heap roots; materialize them lazily
-void StreamingArchiveHeapLoader::initialize() {
+void AOTStreamedHeapLoader::initialize() {
   JavaThread* thread = JavaThread::current();
 
   FileMapInfo::current_info()->map_bitmap_region();
@@ -848,9 +833,9 @@ void StreamingArchiveHeapLoader::initialize() {
 
   // The first int is the length of the array
   _roots_archive = ((int*)(((address)_heap_region->mapped_base()) + roots_offset)) + 1;
-  int length = compute_roots_length();
+  _num_roots = _roots_archive[-1];
 
-  objArrayOop roots = oopFactory::new_objectArray(length, thread);
+  objArrayOop roots = oopFactory::new_objectArray(_num_roots, thread);
   if (roots == nullptr) {
     fatal("Not enough memory available to initialize JVM");
   }
@@ -870,7 +855,8 @@ void StreamingArchiveHeapLoader::initialize() {
   _roots = OopHandle(Universe::vm_global(), roots);
 
   if (FLAG_IS_DEFAULT(AOTEagerlyLoadObjects)) {
-    AOTEagerlyLoadObjects = os::initial_active_processor_count() <= 1;
+    // Concurrency will not help much if there are no extra cores available.
+    FLAG_SET_ERGO(AOTEagerlyLoadObjects, os::initial_active_processor_count() <= 1);
   }
 
   if (AOTEagerlyLoadObjects) {
@@ -880,15 +866,14 @@ void StreamingArchiveHeapLoader::initialize() {
     MutexLocker ml(AOTHeapLoading_lock, Mutex::_safepoint_check_flag);
     bool finished_before_gc_allowed = materialize_early();
     if (finished_before_gc_allowed) {
-      _finished_processing = true;
-      cleanup(true /* finished_before_gc_allowed */);
+      cleanup();
     }
   } else {
     AOTThread::initialize();
   }
 }
 
-oop StreamingArchiveHeapLoader::materialize_root(int root_index) {
+oop AOTStreamedHeapLoader::materialize_root(int root_index) {
   jlong start = os::javaTimeNanos();
   JavaThread* thread = JavaThread::current();
   Stack<AOTHeapTraversalEntry, mtClassShared> dfs_stack;
@@ -911,7 +896,7 @@ oop StreamingArchiveHeapLoader::materialize_root(int root_index) {
   return result;
 }
 
-oop StreamingArchiveHeapLoader::get_root(int index) {
+oop AOTStreamedHeapLoader::get_root(int index) {
   oop result = objArrayOop(_roots.resolve())->obj_at(index);
   if (result == nullptr) {
     // Materialize root
@@ -924,35 +909,13 @@ oop StreamingArchiveHeapLoader::get_root(int index) {
   return result;
 }
 
-void StreamingArchiveHeapLoader::clear_root(int index) {
+void AOTStreamedHeapLoader::clear_root(int index) {
   // The root acts as a sentinel object for null
   objArrayOop(_roots.resolve())->obj_at_put(index, _roots.resolve());
 }
 
-int StreamingArchiveHeapLoader::compute_roots_length() {
-  if (!_is_loaded) {
-    return 0;
-  }
-
-  return _roots_archive[-1];
-}
-
-bool StreamingArchiveHeapLoader::await_gc_enabled() {
-  // Signal that we have stopped working
-  AOTHeapLoading_lock->notify_all();
-  while (!_allow_gc || _waiting_for_iterator) {
-    AOTHeapLoading_lock->wait();
-  }
-
-  return _stop_background_processing;
-}
-
-void StreamingArchiveHeapLoader::await_finished_processing() {
-  // Signal that we have stopped working
-  AOTHeapLoading_lock->notify_all();
-
-  // Wait for bootstrapping thread to finish any remaining work
-  while (!_finished_processing) {
+void AOTStreamedHeapLoader::await_gc_enabled() {
+  while (!_allow_gc) {
     AOTHeapLoading_lock->wait();
   }
 }
