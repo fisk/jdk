@@ -77,7 +77,8 @@ void AOTThread::initialize() {
 
 void AOTThread::materialize_thread_object() {
 #if INCLUDE_CDS_JAVA_HEAP
-  if (AOTEagerlyLoadObjects) {
+  if (_aot_thread == nullptr) {
+    // No thread object to materialize
     return;
   }
 
