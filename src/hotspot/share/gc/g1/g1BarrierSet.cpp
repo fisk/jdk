@@ -135,6 +135,14 @@ void G1BarrierSet::write_region(JavaThread* thread, MemRegion mr) {
 void G1BarrierSet::on_thread_create(Thread* thread) {
   // Create thread local data
   G1ThreadLocalData::create(thread);
+  // TODO: Remove debugging info before integration
+  SATBMarkQueue& satbq = G1ThreadLocalData::satb_mark_queue(thread);
+  assert(!satbq.is_active(), "SATB queue should not be active");
+  assert(satbq.buffer() == nullptr, "SATB queue should not have a buffer");
+  assert(satbq.index() == 0, "SATB queue index should be zero");
+  G1DirtyCardQueue& dirtyq = G1ThreadLocalData::dirty_card_queue(thread);
+  assert(dirtyq.buffer() == nullptr, "Dirty Card queue should not have a buffer");
+  assert(dirtyq.index() == 0, "Dirty Card queue index should be zero");
 }
 
 void G1BarrierSet::on_thread_destroy(Thread* thread) {
