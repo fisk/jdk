@@ -1491,7 +1491,6 @@ void FileMapInfo::stream_heap_region() {
 
   if (can_use_heap_region()) {
     if (map_auxiliary_region(AOTMetaspace::hp, /*readonly=*/true) != nullptr) {
-      FileMapRegion* r = region_at(AOTMetaspace::hp);
       HeapShared::initialize_streaming();
       success = true;
     }
