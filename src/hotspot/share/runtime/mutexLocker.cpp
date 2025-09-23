@@ -332,7 +332,8 @@ void mutex_init() {
 
   MUTEX_DEFL(Threads_lock                   , PaddedMonitor, CompileThread_lock, true);
   MUTEX_DEFL(Compile_lock                   , PaddedMutex  , MethodCompileQueue_lock);
-  MUTEX_DEFL(AOTHeapLoading_lock            , PaddedMonitor, AdapterHandlerLibrary_lock);
+  MUTEX_DEFL(Module_lock                    , PaddedMutex  , AdapterHandlerLibrary_lock);
+  MUTEX_DEFL(AOTHeapLoading_lock            , PaddedMonitor, Module_lock);
   MUTEX_DEFL(JNICritical_lock               , PaddedMonitor, AOTHeapLoading_lock); // used for JNI critical regions
   MUTEX_DEFL(Heap_lock                      , PaddedMonitor, JNICritical_lock);
 
@@ -355,7 +356,6 @@ void mutex_init() {
     MUTEX_DEFL(PSOldGenExpand_lock          , PaddedMutex  , Heap_lock, true);
   }
 #endif
-  MUTEX_DEFL(Module_lock                    , PaddedMutex  , AOTHeapLoading_lock);
   MUTEX_DEFL(SystemDictionary_lock          , PaddedMonitor, Module_lock);
 #if INCLUDE_JVMCI
   // JVMCIRuntime_lock must be acquired before JVMCI_lock to avoid deadlock
