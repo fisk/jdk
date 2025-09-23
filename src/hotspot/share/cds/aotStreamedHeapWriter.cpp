@@ -66,7 +66,6 @@ size_t* AOTStreamedHeapWriter::_dfs_to_archive_object_table;
 
 static const int max_table_capacity = 0x3fffffff;
 
-
 typedef ResizeableHashTable<address, size_t,
                             AnyObj::C_HEAP,
                             mtClassShared> FillersTable;
@@ -83,17 +82,8 @@ void AOTStreamedHeapWriter::delete_tables_with_raw_oops() {
   delete _source_objs;
   _source_objs = nullptr;
 
-  delete _buffer_offset_to_source_obj_table;
-  _buffer_offset_to_source_obj_table = nullptr;
-
   delete _dfs_order_table;
   _dfs_order_table = nullptr;
-
-  FREE_C_HEAP_ARRAY(int, _roots_highest_dfs);
-  _roots_highest_dfs = nullptr;
-
-  FREE_C_HEAP_ARRAY(size_t, _dfs_to_archive_object_table);
-  _dfs_to_archive_object_table = nullptr;
 }
 
 void AOTStreamedHeapWriter::add_source_obj(oop src_obj) {
@@ -291,7 +281,8 @@ void AOTStreamedHeapWriter::copy_source_objs_to_buffer(GrowableArrayCHeap<oop, m
     size_t buffer_offset = copy_one_source_obj_to_buffer(src_obj);
     info->set_buffer_offset(buffer_offset);
 
-    _buffer_offset_to_source_obj_table->put(buffer_offset, src_obj);
+    OopHandle handle(Universe::vm_global(), src_obj);
+    _buffer_offset_to_source_obj_table->put_when_absent(buffer_offset, handle);
     _buffer_offset_to_source_obj_table->maybe_grow();
 
     size_t dfs_order = i + 1;
@@ -504,13 +495,17 @@ address AOTStreamedHeapWriter::source_obj_to_buffered_addr(oop src_obj) {
   return offset_to_buffered_address<address>(source_obj_to_buffered_offset(src_obj));
 }
 
-oop AOTStreamedHeapWriter::buffered_addr_to_source_obj(address buffered_addr) {
-  oop* p = _buffer_offset_to_source_obj_table->get(buffered_address_to_offset(buffered_addr));
-  if (p != nullptr) {
-    return *p;
+oop AOTStreamedHeapWriter::buffered_offset_to_source_obj(size_t buffered_offset) {
+  OopHandle* oh = _buffer_offset_to_source_obj_table->get(buffered_offset);
+  if (oh != nullptr) {
+    return oh->resolve();
   } else {
     return nullptr;
   }
+}
+
+oop AOTStreamedHeapWriter::buffered_addr_to_source_obj(address buffered_addr) {
+  return buffered_offset_to_source_obj(buffered_address_to_offset(buffered_addr));
 }
 
 void AOTStreamedHeapWriter::populate_archive_heap_info(ArchiveStreamedHeapInfo* info) {
@@ -522,6 +517,7 @@ void AOTStreamedHeapWriter::populate_archive_heap_info(ArchiveStreamedHeapInfo* 
   info->set_buffer_region(MemRegion(offset_to_buffered_address<HeapWord*>(0),
                                     offset_to_buffered_address<HeapWord*>(_buffer_used)));
   info->set_roots_offset(_roots_offset);
+  info->set_num_roots((size_t)HeapShared::pending_roots()->length());
   info->set_forwarding_offset(_forwarding_offset);
   info->set_root_highest_object_index_table_offset(_root_highest_object_index_table_offset);
   info->set_num_archived_objects(_source_objs->length());
@@ -537,28 +533,35 @@ AOTMapLogger::OopDataIterator* AOTStreamedHeapWriter::oop_iterator(ArchiveStream
     address _buffer_end;
 
     int _num_archived_objects;
+    int _num_archived_roots;
+    int* _roots;
 
   public:
     StreamedWriterOopIterator(address buffer_start,
                               address buffer_end,
-                              int num_archived_objects)
+                              int num_archived_objects,
+                              int num_archived_roots,
+                              int* roots)
       : _current(0),
         _next(1),
         _buffer_start(buffer_start),
         _buffer_end(buffer_end),
-        _num_archived_objects(num_archived_objects) {
+        _num_archived_objects(num_archived_objects),
+        _num_archived_roots(num_archived_roots),
+        _roots(roots) {
     }
 
     AOTMapLogger::OopData capture(int dfs_index) {
       size_t buffered_offset = _dfs_to_archive_object_table[dfs_index];
       address buffered_addr = _buffer_start + buffered_offset;
-      oop obj = buffered_addr_to_source_obj(buffered_addr);
+      oop src_obj = AOTStreamedHeapWriter::buffered_offset_to_source_obj(buffered_offset);
+      assert(src_obj != nullptr, "why is this null?");
       oopDesc* raw_oop = (oopDesc*)buffered_addr;
-      size_t size = obj->size();
+      Klass* klass = src_obj->klass();
+      size_t size = src_obj->size();
 
       intptr_t target_location = (intptr_t)buffered_offset;
       uint32_t narrow_location = checked_cast<uint32_t>(dfs_index);
-      Klass* klass = obj->klass();
 
       address requested_addr = (address)buffered_offset;
 
@@ -603,11 +606,11 @@ AOTMapLogger::OopDataIterator* AOTStreamedHeapWriter::oop_iterator(ArchiveStream
 
     GrowableArrayCHeap<AOTMapLogger::OopData, mtClass>* roots() override {
       GrowableArrayCHeap<AOTMapLogger::OopData, mtClass>* result = new GrowableArrayCHeap<AOTMapLogger::OopData, mtClass>();
-      GrowableArrayCHeap<oop, mtClassShared>* pending_roots = HeapShared::pending_roots();
 
-      for (int i = 0; i < pending_roots->length(); ++i) {
-        oop obj = pending_roots->at(i);
-        int object_index = *_dfs_order_table->get((void*)obj);
+      int root_start = 0;
+
+      for (int i = 0; i < _num_archived_roots; ++i) {
+        int object_index = _roots[i];
         result->append(capture(object_index));
       }
 
@@ -619,7 +622,10 @@ AOTMapLogger::OopDataIterator* AOTStreamedHeapWriter::oop_iterator(ArchiveStream
   address buffer_start = address(r.start());
   address buffer_end = address(r.end());
 
-  return new StreamedWriterOopIterator(buffer_start, buffer_end, _source_objs->length());
+  size_t roots_offset = heap_info->roots_offset();
+  int* roots = ((int*)(buffer_start + roots_offset)) + 1;
+
+  return new StreamedWriterOopIterator(buffer_start, buffer_end, (int)heap_info->num_archived_objects(), (int)heap_info->num_roots(), roots);
 }
 
 #endif // INCLUDE_CDS_JAVA_HEAP

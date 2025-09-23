@@ -57,7 +57,7 @@ class AOTStreamedHeapWriter : AllStatic {
 
   static GrowableArrayCHeap<oop, mtClassShared>* _source_objs;
 
-  typedef ResizeableHashTable<size_t, oop,
+  typedef ResizeableHashTable<size_t, OopHandle,
                               AnyObj::C_HEAP,
                               mtClassShared> BufferOffsetToSourceObjectTable;
 
@@ -152,6 +152,8 @@ public:
 
   static size_t source_obj_to_buffered_offset(oop src_obj);
   static address source_obj_to_buffered_addr(oop src_obj);
+
+  static oop buffered_offset_to_source_obj(size_t buffered_offset);
   static oop buffered_addr_to_source_obj(address buffered_addr);
 
   static AOTMapLogger::OopDataIterator* oop_iterator(ArchiveStreamedHeapInfo* heap_info);

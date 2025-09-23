@@ -255,10 +255,13 @@ public:
 
   CHeapBitMap* oopmap() { return &_oopmap; }
   void set_roots_offset(size_t n) { _roots_offset = n; }
+  size_t roots_offset() { return _roots_offset; }
   void set_num_roots(size_t n) { _num_roots = n; }
+  size_t num_roots() { return _num_roots; }
   void set_forwarding_offset(size_t n) { _forwarding_offset = n; }
   void set_root_highest_object_index_table_offset(size_t n) { _root_highest_object_index_table_offset = n; }
   void set_num_archived_objects(size_t n) { _num_archived_objects = n; }
+  size_t num_archived_objects() { return _num_archived_objects; }
 
   ArchiveStreamedHeapHeader create_header();
 };
