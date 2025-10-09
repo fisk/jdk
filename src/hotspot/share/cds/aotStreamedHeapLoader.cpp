@@ -324,7 +324,7 @@ void AOTStreamedHeapLoader::copy_object_impl(oopDesc* archive_object,
     // and patches them up to refer to objects. This can be done because we just copied
     // the payload of the object from the archive to the heap object, including the
     // reference object indices. However, this is only okay to do before the GC can run.
-    // A concurrent GC thread might racingly read the object payload.
+    // A concurrent GC thread might racingly read the object payload after GC is enabled.
     InPlaceLinkingOopClosure cl(heap_object, linker);
     heap_object->oop_iterate(&cl);
     HeapShared::remap_loaded_metadata(heap_object);
