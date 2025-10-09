@@ -499,8 +499,12 @@ oop AOTStreamedHeapLoader::TracingObjectLoader::materialize_object_transitive(in
     wait_for_iterator();
   }
 
-  Handle result(THREAD, materialize_object(object_index, dfs_stack, THREAD));
-  (void)(CHECK_NULL);
+  auto handlized_materialize_object = [&](TRAPS) {
+    oop obj = materialize_object(object_index, dfs_stack, CHECK_(Handle()));
+    return Handle(THREAD, obj);
+  };
+
+  Handle result = handlized_materialize_object(CHECK_NULL);
   drain_stack(dfs_stack, CHECK_NULL);
 
   return result();
