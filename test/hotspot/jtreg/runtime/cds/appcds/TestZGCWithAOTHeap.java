@@ -93,10 +93,9 @@ public class TestZGCWithAOTHeap {
         if (!shouldStream && execWithZ) {
             // Only when dumping without streaming and executing with ZGC
             // do we expect there to be a problem.
-            // TODO: Re-enable with Ioi's FMG fix
-            //out.shouldContain(HELLO);
-            //out.shouldContain(generalErrMsg);
-            //out.shouldHaveExitValue(0);
+            out.shouldContain(HELLO);
+            out.shouldContain(generalErrMsg);
+            out.shouldHaveExitValue(0);
         } else {
             out.shouldContain(HELLO);
             out.shouldNotContain(generalErrMsg);
@@ -117,8 +116,7 @@ public class TestZGCWithAOTHeap {
         if (out.getExitValue() == 0) {
             out.shouldContain(HELLO);
             if (!shouldStream && execWithZ) {
-                // TODO: Re-enable with Ioi's FMG fix
-                //out.shouldContain(coopsErrMsg);
+                out.shouldContain(coopsErrMsg);
             } else {
                 out.shouldNotContain(generalErrMsg);
             }
@@ -137,10 +135,9 @@ public class TestZGCWithAOTHeap {
             if (!shouldStream && execWithZ) {
                 // Only when dumping without streaming and executing with ZGC
                 // do we expect there to be a problem.
-                // TODO: Re-enable with Ioi's FMG fix
-                //out.shouldContain(HELLO);
-                //out.shouldContain(generalErrMsg);
-                //out.shouldHaveExitValue(0);
+                out.shouldContain(HELLO);
+                out.shouldContain(generalErrMsg);
+                out.shouldHaveExitValue(0);
             } else {
                 out.shouldContain(HELLO);
                 out.shouldNotContain(generalErrMsg);
