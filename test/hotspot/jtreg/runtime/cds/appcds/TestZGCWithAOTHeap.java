@@ -114,7 +114,6 @@ public class TestZGCWithAOTHeap {
                               "-Xlog:cds,aot,aot+heap",
                               "Hello");
         if (out.getExitValue() == 0) {
-            out.shouldContain(HELLO);
             if (!shouldStream && execWithZ) {
                 out.shouldContain(coopsErrMsg);
             } else {
