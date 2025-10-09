@@ -156,7 +156,7 @@ private:
 
 
   template <typename LinkerT>
-  class CopyConjointLinkingOopClosure;
+  class InPlaceLinkingOopClosure;
 
   static oop allocate_object(oopDesc* archive_object, markWord mark, size_t size, TRAPS);
   static int object_index_for_root_index(int root_index);

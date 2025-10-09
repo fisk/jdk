@@ -222,13 +222,13 @@ void AOTStreamedHeapLoader::TracingObjectLoader::wait_for_iterator() {
 
 // Link object after copying in-place
 template <typename LinkerT>
-class AOTStreamedHeapLoader::CopyConjointLinkingOopClosure : public BasicOopIterateClosure {
+class AOTStreamedHeapLoader::InPlaceLinkingOopClosure : public BasicOopIterateClosure {
 private:
   oop _obj;
   LinkerT _linker;
 
 public:
-  CopyConjointLinkingOopClosure(oop obj, LinkerT linker)
+  InPlaceLinkingOopClosure(oop obj, LinkerT linker)
     : _obj(obj),
       _linker(linker) {
   }
@@ -286,7 +286,15 @@ void AOTStreamedHeapLoader::copy_payload_carefully(oopDesc* archive_object,
       int pointee_object_index = (int)*archive_p;
       int heap_p_offset = pointer_delta_as_int((address)heap_p, cast_from_oop<address>(heap_object));
 
-      // Disjoint linking in the heap object.
+      // The object index is retrieved from the archive, not the heap object. This is
+      // important after GC is enabled. Concurrent GC threads may scan references in the
+      // heap for various reasons after this point. Therefore, it is not okay to first copy
+      // the object index from a reference location in the archived object payload to a
+      // corresponding location in the heap object payload, and then fix it up afterwards to
+      // refer to a heap object. This is why this code iterates carefully over object references
+      // in the archived object, linking them one by one, without clobbering the reference
+      // locations in the heap objects with anything other than transitions from null to the
+      // intended linked object.
       oop obj = linker(heap_p_offset, pointee_object_index);
       if (obj != nullptr) {
         heap_object->obj_field_put(heap_p_offset, obj);
@@ -312,7 +320,12 @@ void AOTStreamedHeapLoader::copy_object_impl(oopDesc* archive_object,
 
     Copy::disjoint_words(archive_start, heap_start, payload_size);
 
-    CopyConjointLinkingOopClosure cl(heap_object, linker);
+    // In-place linking fixes up object indices from references of the heap object,
+    // and patches them up to refer to objects. This can be done because we just copied
+    // the payload of the object from the archive to the heap object, including the
+    // reference object indices. However, this is only okay to do before the GC can run.
+    // A concurrent GC thread might racingly read the object payload.
+    InPlaceLinkingOopClosure cl(heap_object, linker);
     heap_object->oop_iterate(&cl);
     HeapShared::remap_loaded_metadata(heap_object);
     return;
