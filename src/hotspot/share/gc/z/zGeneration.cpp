@@ -937,6 +937,10 @@ void ZGenerationYoung::register_flip_promoted(const ZArray<ZPage*>& pages) {
   _relocation_set.register_flip_promoted(pages);
 }
 
+ZArray<ZPage*>* ZGenerationYoung::flip_promoted_pages() {
+  return _relocation_set.flip_promoted_pages();
+}
+
 void ZGenerationYoung::register_in_place_relocate_promoted(ZPage* page) {
   _relocation_set.register_in_place_relocate_promoted(page);
 }

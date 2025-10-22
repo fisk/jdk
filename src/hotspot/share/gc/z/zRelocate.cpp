@@ -1322,7 +1322,7 @@ private:
 
 public:
   ZFlipAgePagesTask(const ZArray<ZPage*>* pages)
-    : ZTask("ZPromotePagesTask"),
+    : ZTask("ZFlipAgePagesTask"),
       _iter(pages) {}
 
   virtual void work() {
@@ -1336,16 +1336,6 @@ public:
 
       // Figure out if this is proper promotion
       const bool promotion = to_age == ZPageAge::old;
-
-      if (promotion) {
-        // Before promoting an object (and before relocate start), we must ensure that all
-        // contained zpointers are store good. The marking code ensures that for non-null
-        // pointers, but null pointers are ignored. This code ensures that even null pointers
-        // are made store good, for the promoted objects.
-        prev_page->object_iterate([&](oop obj) {
-          ZIterator::basic_oop_iterate_safe(obj, ZBarrier::promote_barrier_on_young_oop_field);
-        });
-      }
 
       // Logging
       prev_page->log_msg(promotion ? " (flip promoted)" : " (flip survived)");
@@ -1371,9 +1361,58 @@ public:
   }
 };
 
+class ZPromoteBarrierTask : public ZTask {
+private:
+  ZArrayParallelIterator<ZPage*> _iter;
+
+public:
+  ZPromoteBarrierTask(const ZArray<ZPage*>* pages)
+    : ZTask("ZPromoteBarrierTask"),
+      _iter(pages) {}
+
+  virtual void work() {
+    SuspendibleThreadSetJoiner sts_joiner;
+
+    for (ZPage* page; _iter.next(&page);) {
+      // When promoting an object (and before relocate start), we must ensure that all
+      // contained zpointers are store good. The marking code ensures that for non-null
+      // pointers, but null pointers are ignored. This code ensures that even null pointers
+      // are made store good, for the promoted objects.
+      page->object_iterate([&](oop obj) {
+        ZIterator::basic_oop_iterate_safe(obj, ZBarrier::promote_barrier_on_young_oop_field);
+      });
+
+      SuspendibleThreadSet::yield();
+    }
+  }
+};
+
+class ZPromotionHandshakeClosure : public HandshakeClosure {
+public:
+  ZPromotionHandshakeClosure()
+    : HandshakeClosure("ZPromotion") {}
+
+  void do_thread(Thread* thread) {
+    // Does nothing
+  }
+};
+
 void ZRelocate::flip_age_pages(const ZArray<ZPage*>* pages) {
-  ZFlipAgePagesTask flip_age_task(pages);
-  workers()->run(&flip_age_task);
+  {
+    ZFlipAgePagesTask flip_age_task(pages);
+    workers()->run(&flip_age_task);
+  }
+  // Perform a handshake between flip promotion and running the promotion barrier. This ensures
+  // that ZBarrierSet::on_slowpath_allocation_exit() observing a young page that was then racingly
+  // flip promoted, will run any stores without barriers to completion before responding to the
+  // handshake at the subsequent safepoint poll. This ensures that the flip promotion barriers always
+  // run after compiled code missing barriers, but before relocate start.
+  ZPromotionHandshakeClosure cl;
+  Handshake::execute(&cl);
+  {
+    ZPromoteBarrierTask promote_barrier_task(ZGeneration::young()->flip_promoted_pages());
+    workers()->run(&promote_barrier_task);
+  }
 }
 
 void ZRelocate::synchronize() {

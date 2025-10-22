@@ -238,6 +238,7 @@ public:
   void in_place_relocate_promote(ZPage* from_page, ZPage* to_page);
 
   void register_flip_promoted(const ZArray<ZPage*>& pages);
+  ZArray<ZPage*>* flip_promoted_pages();
   void register_in_place_relocate_promoted(ZPage* page);
 
   uint tenuring_threshold();
