@@ -933,19 +933,21 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
 //     <-- every thing is still working at this moment -->
 //   + Call java.lang.Shutdown.shutdown(), which will invoke Java level
 //        shutdown hooks
-//   + Call before_exit(), prepare for VM exit
+//   + Preparation before JavaThread::exit()
 //      > run VM level shutdown hooks (they are registered through JVM_OnExit(),
 //        currently the only user of this mechanism is File.deleteOnExit())
 //      > stop watcher thread,
 //        post thread end and vm death events to JVMTI,
 //        stop signal thread
-//   + Call JavaThread::exit(), it will:
+//   + Call before_exit(), prepare for VM exit
 //      > release JNI handle blocks, remove stack guard pages
 //      > remove this thread from Threads list
 //     <-- no more Java code from this thread after this point -->
 //   + Stop VM thread, it will bring the remaining VM to a safepoint and stop
 //     the compiler threads at safepoint
+//     <-- no more Java code from any thread after this point -->
 //     <-- do not use anything that could get blocked by Safepoint -->
+//      > shut down any GC threads that do not stopping for safepoints.
 //   + Disable tracing at JNI/JVM barriers
 //   + Set _vm_exited flag for threads that are still running native code
 //   + Call exit_globals()
@@ -1020,6 +1022,9 @@ void Threads::destroy_vm() {
     assert(SafepointSynchronize::is_at_safepoint(), "VM thread should exit at Safepoint");
     VMThread::destroy();
   }
+
+  // Shut down GC
+  Universe::before_exit();
 
   // Now, all Java threads are gone except daemon threads. Daemon threads
   // running Java code or in VM are stopped by the Safepoint. However,

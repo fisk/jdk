@@ -251,7 +251,7 @@ void mutex_init() {
   MUTEX_DEFN(NonJavaThreadsListSync_lock     , PaddedMutex  , nosafepoint);
 
   MUTEX_DEFN(RetData_lock                    , PaddedMutex  , safepoint);
-  MUTEX_DEFN(Terminator_lock                 , PaddedMonitor, safepoint, true);
+  MUTEX_DEFN(Terminator_lock                 , PaddedMonitor, nosafepoint, true);
   MUTEX_DEFN(InitCompleted_lock              , PaddedMonitor, nosafepoint);
   MUTEX_DEFN(Notify_lock                     , PaddedMonitor, safepoint, true);
 

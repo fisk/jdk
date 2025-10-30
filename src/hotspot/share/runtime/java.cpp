@@ -476,9 +476,6 @@ void before_exit(JavaThread* thread, bool halt) {
 
   NativeHeapTrimmer::cleanup();
 
-  // Run before exit and then stop concurrent GC threads
-  Universe::before_exit();
-
   if (PrintBytecodeHistogram) {
     BytecodeHistogram::print();
   }

@@ -571,6 +571,8 @@ int VM_Exit::wait_for_threads_in_native_to_block() {
 }
 
 void VM_Exit::doit() {
+  // Run before exit and then stop concurrent GC threads
+  Universe::before_exit();
 
   if (VerifyBeforeExit) {
     HandleMark hm(VMThread::vm_thread());

@@ -668,11 +668,6 @@ void ZStatPhaseCollection::register_start(ConcurrentGCTimer* timer, const Ticks&
 void ZStatPhaseCollection::register_end(ConcurrentGCTimer* timer, const Ticks& start, const Ticks& end) const {
   const GCCause::Cause cause = _minor ? ZDriver::minor()->gc_cause() : ZDriver::major()->gc_cause();
 
-  if (ZAbort::should_abort()) {
-    log_info(gc)("%s (%s) Aborted", name(), GCCause::to_string(cause));
-    return;
-  }
-
   timer->register_gc_end(end);
 
   jfr_tracer()->report_gc_end(end, timer->time_partitions());
@@ -710,11 +705,6 @@ void ZStatPhaseGeneration::register_start(ConcurrentGCTimer* timer, const Ticks&
 }
 
 void ZStatPhaseGeneration::register_end(ConcurrentGCTimer* timer, const Ticks& start, const Ticks& end) const {
-  if (ZAbort::should_abort()) {
-    log_info(gc, phases)("%s Aborted", name());
-    return;
-  }
-
   jfr_tracer()->report_end(end);
 
   ZCollectedHeap::heap()->print_after_gc();
@@ -793,10 +783,6 @@ void ZStatPhaseConcurrent::register_start(ConcurrentGCTimer* timer, const Ticks&
 }
 
 void ZStatPhaseConcurrent::register_end(ConcurrentGCTimer* timer, const Ticks& start, const Ticks& end) const {
-  if (ZAbort::should_abort()) {
-    return;
-  }
-
   timer->register_gc_concurrent_end(end);
 
   const Tickspan duration = end - start;
@@ -810,7 +796,7 @@ ZStatSubPhase::ZStatSubPhase(const char* name, ZGenerationId id)
   : ZStatPhase(id == ZGenerationId::young ? "Young Subphase" : "Old Subphase", name) {}
 
 void ZStatSubPhase::register_start(ConcurrentGCTimer* timer, const Ticks& start) const {
-  if (timer != nullptr && !ZAbort::should_abort()) {
+  if (timer != nullptr) {
     assert(!Thread::current()->is_Worker_thread(), "Unexpected timer value");
     timer->register_gc_phase_start(name(), start);
   }
@@ -825,10 +811,6 @@ void ZStatSubPhase::register_start(ConcurrentGCTimer* timer, const Ticks& start)
 }
 
 void ZStatSubPhase::register_end(ConcurrentGCTimer* timer, const Ticks& start, const Ticks& end) const {
-  if (ZAbort::should_abort()) {
-    return;
-  }
-
   if (timer != nullptr) {
     assert(!Thread::current()->is_Worker_thread(), "Unexpected timer value");
     timer->register_gc_phase_end(end);

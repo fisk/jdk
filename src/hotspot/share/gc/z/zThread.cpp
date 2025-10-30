@@ -40,7 +40,7 @@ void ZThread::stop_service() {
     // Signal thread to terminate
     // The should_terminate() flag should be true, and this notifies waiters
     // to wake up.
-    MonitorLocker ml(Terminator_lock);
+    MonitorLocker ml(Terminator_lock, Mutex::_no_safepoint_check_flag);
     assert(should_terminate(), "This should be called when should_terminate has been set");
     ml.notify_all();
   }

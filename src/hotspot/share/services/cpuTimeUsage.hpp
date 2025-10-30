@@ -28,13 +28,19 @@
 #include "memory/allStatic.hpp"
 #include "utilities/globalDefinitions.hpp"
 
+class ConcurrentGCThread;
+
 namespace CPUTimeUsage {
   class GC : public AllStatic {
+    static jlong _terminated_gc_cpu_time;
+
   public:
     static jlong total();
     static jlong gc_threads();
     static jlong vm_thread();
     static jlong stringdedup();
+
+    static void on_termination(ConcurrentGCThread* thread);
   };
 
   class Error : public AllStatic {

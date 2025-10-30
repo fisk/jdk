@@ -565,7 +565,7 @@ void ZRemembered::scan_and_follow(ZMark* mark) {
     ZGeneration::young()->workers()->run(&task);
 
     // Try to terminate after following the graph
-    if (ZAbort::should_abort() || !mark->try_terminate_flush()) {
+    if (!mark->try_terminate_flush()) {
       return;
     }
   }

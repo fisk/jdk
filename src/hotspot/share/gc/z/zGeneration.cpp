@@ -523,37 +523,23 @@ void ZGenerationYoung::collect(ZYoungType type, ConcurrentGCTimer* timer) {
   // Phase 2: Concurrent Mark
   concurrent_mark();
 
-  abortpoint();
-
   // Phase 3: Pause Mark End
   while (!pause_mark_end()) {
     // Phase 3.5: Concurrent Mark Continue
     concurrent_mark_continue();
-
-    abortpoint();
   }
 
   // Phase 4: Concurrent Mark Free
   concurrent_mark_free();
 
-  abortpoint();
-
   // Phase 5: Concurrent Reset Relocation Set
   concurrent_reset_relocation_set();
-
-  abortpoint();
 
   // Phase 6: Concurrent Select Relocation Set
   concurrent_select_relocation_set();
 
-  abortpoint();
-
   // Phase 7: Pause Relocate Start
   pause_relocate_start();
-
-  // Note that we can't have an abortpoint here. We need
-  // to let concurrent_relocate() call abort_page()
-  // on the remaining entries in the relocation set.
 
   // Phase 8: Concurrent Relocate
   concurrent_relocate();
@@ -997,30 +983,20 @@ void ZGenerationOld::collect(ConcurrentGCTimer* timer) {
   // Phase 1: Concurrent Mark
   concurrent_mark();
 
-  abortpoint();
-
   // Phase 2: Pause Mark End
   while (!pause_mark_end()) {
     // Phase 2.5: Concurrent Mark Continue
     concurrent_mark_continue();
-
-    abortpoint();
   }
 
   // Phase 3: Concurrent Mark Free
   concurrent_mark_free();
 
-  abortpoint();
-
   // Phase 4: Concurrent Process Non-Strong References
   concurrent_process_non_strong_references();
 
-  abortpoint();
-
   // Phase 5: Concurrent Reset Relocation Set
   concurrent_reset_relocation_set();
-
-  abortpoint();
 
   // Phase 6: Pause Verify
   pause_verify();
@@ -1028,23 +1004,15 @@ void ZGenerationOld::collect(ConcurrentGCTimer* timer) {
   // Phase 7: Concurrent Select Relocation Set
   concurrent_select_relocation_set();
 
-  abortpoint();
-
   {
     ZDriverLocker locker;
 
     // Phase 8: Concurrent Remap Roots
     concurrent_remap_young_roots();
 
-    abortpoint();
-
     // Phase 9: Pause Relocate Start
     pause_relocate_start();
   }
-
-  // Note that we can't have an abortpoint here. We need
-  // to let concurrent_relocate() call abort_page()
-  // on the remaining entries in the relocation set.
 
   // Phase 10: Concurrent Relocate
   concurrent_relocate();

@@ -23,6 +23,7 @@
  */
 
 #include "gc/shared/collectedHeap.hpp"
+#include "gc/shared/concurrentGCThread.hpp"
 #include "gc/shared/stringdedup/stringDedup.hpp"
 #include "gc/shared/stringdedup/stringDedupProcessor.hpp"
 #include "memory/universe.hpp"
@@ -34,6 +35,7 @@
 #include "services/cpuTimeUsage.hpp"
 
 volatile bool CPUTimeUsage::Error::_has_error = false;
+jlong CPUTimeUsage::GC::_terminated_gc_cpu_time;
 
 static inline jlong thread_cpu_time_or_zero(Thread* thread) {
   jlong cpu_time = os::thread_cpu_time(thread);
@@ -50,8 +52,13 @@ private:
 
 public:
   virtual void do_thread(Thread* thread) {
+    if (thread->is_ConcurrentGC_thread() && ConcurrentGCThread::cast(thread)->has_terminated()) {
+      // Already accounted in _terminated_gc_cpu_time
+      return;
+    }
     _cpu_time += thread_cpu_time_or_zero(thread);
   }
+
   jlong cpu_time() { return _cpu_time; };
 };
 
@@ -62,7 +69,12 @@ jlong CPUTimeUsage::GC::vm_thread() {
 jlong CPUTimeUsage::GC::gc_threads() {
   CPUTimeThreadClosure cl;
   Universe::heap()->gc_threads_do(&cl);
-  return cl.cpu_time();
+  return cl.cpu_time() + _terminated_gc_cpu_time;
+}
+
+void CPUTimeUsage::GC::on_termination(ConcurrentGCThread* thread) {
+  assert_lock_strong(Terminator_lock);
+  _terminated_gc_cpu_time += thread_cpu_time_or_zero(thread);
 }
 
 jlong CPUTimeUsage::GC::total() {

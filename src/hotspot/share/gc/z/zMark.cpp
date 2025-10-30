@@ -464,7 +464,7 @@ bool ZMark::rebalance_work(ZMarkContext* context) {
 
   SuspendibleThreadSet::yield();
 
-  return ZAbort::should_abort() || _generation->should_worker_resize();
+  return _generation->should_worker_resize();
 }
 
 bool ZMark::drain(ZMarkContext* context) {
@@ -938,7 +938,7 @@ void ZMark::mark_follow() {
   for (;;) {
     ZMarkTask task(this);
     workers()->run(&task);
-    if (ZAbort::should_abort() || !try_terminate_flush()) {
+    if (!try_terminate_flush()) {
       break;
     }
   }

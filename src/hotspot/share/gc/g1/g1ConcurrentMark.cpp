@@ -1879,11 +1879,7 @@ bool G1ConcurrentMark::concurrent_cycle_abort() {
   // might have already completed the abort (leading to in_progress() below to
   // return false), however this still left marking state particularly in the
   // shared marking bitmap that must be cleaned up.
-  // If there are multiple full gcs during shutdown we do this work repeatedly for
-  // nothing, but this situation should be extremely rare (a full gc after shutdown
-  // has been signalled is already rare), and this work should be negligible compared
-  // to actual full gc work.
-  if (!cm_thread()->in_progress() && !_g1h->is_shutting_down()) {
+  if (!cm_thread()->in_progress()) {
     return false;
   }
 

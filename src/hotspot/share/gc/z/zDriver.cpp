@@ -206,12 +206,8 @@ void ZDriverMinor::run_thread() {
 
     ZDriverLocker locker;
 
-    abortpoint();
-
     // Run GC
     gc(request);
-
-    abortpoint();
 
     // Notify GC completed
     _port.ack();
@@ -419,16 +415,12 @@ void ZDriverMajor::collect_young(const ZDriverRequest& request) {
     // Collect young generation and promote everything to old generation
     ZGeneration::young()->collect(ZYoungType::major_full_preclean, &_gc_timer);
 
-    abortpoint();
-
     // Collect young generation and gather roots pointing into old generation
     ZGeneration::young()->collect(ZYoungType::major_full_roots, &_gc_timer);
   } else {
     // Collect young generation and gather roots pointing into old generation
     ZGeneration::young()->collect(ZYoungType::major_partial_roots, &_gc_timer);
   }
-
-  abortpoint();
 
   // Handle allocations waiting for a young collection
   handle_alloc_stalling_for_young();
@@ -444,8 +436,6 @@ void ZDriverMajor::gc(const ZDriverRequest& request) {
 
   // Collect the young generation
   collect_young(request);
-
-  abortpoint();
 
   // Collect the old generation
   collect_old();
@@ -470,12 +460,8 @@ void ZDriverMajor::run_thread() {
 
     ZBreakpoint::at_before_gc();
 
-    abortpoint();
-
     // Run GC
     gc(request);
-
-    abortpoint();
 
     // Notify GC completed
     _port.ack();

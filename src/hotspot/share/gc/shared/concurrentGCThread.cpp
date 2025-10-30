@@ -28,6 +28,7 @@
 #include "runtime/jniHandles.hpp"
 #include "runtime/mutexLocker.hpp"
 #include "runtime/os.hpp"
+#include "services/cpuTimeUsage.hpp"
 
 ConcurrentGCThread::ConcurrentGCThread() :
     _should_terminate(false),
@@ -47,8 +48,9 @@ void ConcurrentGCThread::run() {
   run_service();
 
   // Signal thread has terminated
-  MonitorLocker ml(Terminator_lock);
+  MonitorLocker ml(Terminator_lock, Mutex::_no_safepoint_check_flag);
   AtomicAccess::release_store(&_has_terminated, true);
+  CPUTimeUsage::GC::on_termination(this);
   ml.notify_all();
 }
 
@@ -62,7 +64,7 @@ void ConcurrentGCThread::stop() {
   stop_service();
 
   // Wait for thread to terminate
-  MonitorLocker ml(Terminator_lock);
+  MonitorLocker ml(Terminator_lock, Mutex::_no_safepoint_check_flag);
   while (!_has_terminated) {
     ml.wait();
   }

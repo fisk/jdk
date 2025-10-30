@@ -462,11 +462,6 @@ void ZVerify::threads_start_processing() {
 }
 
 void ZVerify::objects(bool verify_weaks) {
-  if (ZAbort::should_abort()) {
-    // Invariants might be a bit mushy if the young generation
-    // collection was forced to shut down. So let's be a bit forgiving here.
-    return;
-  }
   assert(SafepointSynchronize::is_at_safepoint(), "Must be at a safepoint");
   assert(ZGeneration::young()->is_phase_mark_complete() ||
          ZGeneration::old()->is_phase_mark_complete(), "Invalid phase");
@@ -759,11 +754,6 @@ void ZVerify::after_relocation(ZForwarding* forwarding) {
 
 void ZVerify::after_scan(ZForwarding* forwarding) {
   if (!ZVerifyRemembered) {
-    return;
-  }
-
-  if (ZAbort::should_abort()) {
-    // We can't verify remembered set accurately when shutting down the VM
     return;
   }
 

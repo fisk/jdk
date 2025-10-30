@@ -106,7 +106,8 @@ void ZCollectedHeap::stop() {
   log_info_p(gc, exit)("Stopping ZGC");
   ZAbort::abort();
   ZStopConcurrentGCThreadClosure cl;
-  gc_threads_do(&cl);
+  cl.do_thread(_director);
+  cl.do_thread(_stat);
 }
 
 size_t ZCollectedHeap::max_capacity() const {

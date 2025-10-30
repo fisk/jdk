@@ -467,11 +467,6 @@ HeapWord* G1CollectedHeap::attempt_allocation_slow(uint node_index, size_t word_
     log_trace(gc, alloc)("%s: Unsuccessfully scheduled collection allocating %zu words",
                          Thread::current()->name(), word_size);
 
-    if (is_shutting_down()) {
-      stall_for_vm_shutdown();
-      return nullptr;
-    }
-
     // Has the gc overhead limit been reached in the meantime? If so, this mutator
     // should receive null even when unsuccessfully scheduling a collection as well
     // for global consistency.
@@ -720,11 +715,6 @@ HeapWord* G1CollectedHeap::attempt_allocation_humongous(size_t word_size) {
 
     log_trace(gc, alloc)("%s: Unsuccessfully scheduled collection allocating %zu",
                          Thread::current()->name(), word_size);
-
-    if (is_shutting_down()) {
-      stall_for_vm_shutdown();
-      return nullptr;
-    }
 
     // Has the gc overhead limit been reached in the meantime? If so, this mutator
     // should receive null even when unsuccessfully scheduling a collection as well
@@ -1626,14 +1616,7 @@ jint G1CollectedHeap::initialize() {
   return JNI_OK;
 }
 
-void G1CollectedHeap::stop() {
-  // Stop all concurrent threads. We do this to make sure these threads
-  // do not continue to execute and access resources (e.g. logging)
-  // that are destroyed during shutdown.
-  _cr->stop();
-  _service_thread->stop();
-  _cm_thread->stop();
-}
+void G1CollectedHeap::stop() {}
 
 void G1CollectedHeap::safepoint_synchronize_begin() {
   SuspendibleThreadSet::synchronize();
@@ -1948,13 +1931,6 @@ bool G1CollectedHeap::try_collect_concurrently(GCCause::Cause cause,
     if (cause == GCCause::_g1_periodic_collection) {
       LOG_COLLECT_CONCURRENTLY_COMPLETE(cause, op.gc_succeeded());
       return op.gc_succeeded();
-    }
-
-    // If VMOp skipped initiating concurrent marking cycle because
-    // we're terminating, then we're done.
-    if (is_shutting_down()) {
-      LOG_COLLECT_CONCURRENTLY(cause, "skipped: terminating");
-      return false;
     }
 
     // Lock to get consistent set of values.
