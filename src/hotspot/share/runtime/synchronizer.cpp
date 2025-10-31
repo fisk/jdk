@@ -1083,6 +1083,7 @@ static size_t delete_monitors(GrowableArray<ObjectMonitor*>* delete_list,
     // A JavaThread must check for a safepoint/handshake and honor it.
     safepointer->block_for_safepoint("deletion", "deleted_count", deleted_count);
   }
+
   return deleted_count;
 }
 
@@ -1206,13 +1207,10 @@ size_t ObjectSynchronizer::deflate_idle_monitors() {
     GrowableArray<ObjectMonitor*> delete_list((int)deflated_count);
     unlinked_count = _in_use_list.unlink_deflated(deflated_count, &delete_list, &safepointer);
 
-#ifdef ASSERT
+    GrowableArray<ObjectMonitorTable::Table*> table_delete_list;
     if (UseObjectMonitorTable) {
-      for (ObjectMonitor* monitor : delete_list) {
-        assert(!LightweightSynchronizer::contains_monitor(current, monitor), "Should have been removed");
-      }
+      ObjectMonitorTable::rebuild(&table_delete_list);
     }
-#endif
 
     log.before_handshake(unlinked_count);
 
@@ -1233,6 +1231,9 @@ size_t ObjectSynchronizer::deflate_idle_monitors() {
 
     // Delete the unlinked ObjectMonitors.
     deleted_count = delete_monitors(&delete_list, &safepointer);
+    if (UseObjectMonitorTable) {
+      ObjectMonitorTable::destroy(&table_delete_list);
+    }
     assert(unlinked_count == deleted_count, "must be");
   }
 

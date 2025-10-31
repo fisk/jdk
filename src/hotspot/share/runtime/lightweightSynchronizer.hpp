@@ -30,7 +30,29 @@
 #include "runtime/objectMonitor.hpp"
 #include "runtime/synchronizer.hpp"
 
-class ObjectMonitorTable;
+class ObjectMonitorTable : AllStatic {
+  static constexpr double GROW_LOAD_FACTOR = 0.125;
+
+public:
+  class Table;
+
+private:
+  static Table* volatile _curr;
+
+public:
+  static void create();
+  static ObjectMonitor* monitor_get(Thread* current, oop obj);
+  static ObjectMonitor* monitor_put_get(Thread* current, ObjectMonitor* monitor, oop obj);
+  static void rebuild(GrowableArray<Table*>* delete_list);
+  static void destroy(GrowableArray<Table*>* delete_list);
+  static void remove_monitor_entry(Thread* current, ObjectMonitor* monitor);
+  static void monitor_reinsert(Table* from, ObjectMonitor* monitor, oop obj);
+
+  // Compiler support
+  static address current_table_address();
+  static ByteSize table_capacity_mask_offset();
+  static ByteSize table_buckets_offset();
+};
 
 class LightweightSynchronizer : AllStatic {
  private:
@@ -38,7 +60,7 @@ class LightweightSynchronizer : AllStatic {
   static ObjectMonitor* get_or_insert_monitor(oop object, JavaThread* current, ObjectSynchronizer::InflateCause cause);
 
   static ObjectMonitor* add_monitor(JavaThread* current, ObjectMonitor* monitor, oop obj);
-  static bool remove_monitor(Thread* current, ObjectMonitor* monitor, oop obj);
+  static void remove_monitor(Thread* current, ObjectMonitor* monitor, oop obj);
 
   static void deflate_mark_word(oop object);
 
@@ -50,9 +72,6 @@ class LightweightSynchronizer : AllStatic {
 
  public:
   static void initialize();
-
-  static bool needs_resize();
-  static bool resize_table(JavaThread* current);
 
  private:
   static inline bool fast_lock_try_enter(oop obj, LockStack& lock_stack, JavaThread* current);
@@ -71,8 +90,6 @@ class LightweightSynchronizer : AllStatic {
   static void deflate_monitor(Thread* current, oop obj, ObjectMonitor* monitor);
 
   static ObjectMonitor* get_monitor_from_table(Thread* current, oop obj);
-
-  static bool contains_monitor(Thread* current, ObjectMonitor* monitor);
 
   static bool quick_enter(oop obj, BasicLock* Lock, JavaThread* current);
 };
