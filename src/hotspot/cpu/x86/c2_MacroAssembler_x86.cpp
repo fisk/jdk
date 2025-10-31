@@ -33,6 +33,7 @@
 #include "opto/opcodes.hpp"
 #include "opto/subnode.hpp"
 #include "runtime/globals.hpp"
+#include "runtime/lightweightSynchronizer.hpp"
 #include "runtime/objectMonitor.hpp"
 #include "runtime/stubRoutines.hpp"
 #include "utilities/checkedCast.hpp"
@@ -217,7 +218,6 @@ inline Assembler::AvxVectorLen C2_MacroAssembler::vector_length_encoding(int vle
 //    In the case of failure, the node will branch directly to the
 //    FailureLabel
 
-
 // obj: object to lock
 // box: on-stack box address -- KILLED
 // rax: tmp -- KILLED
@@ -233,6 +233,8 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
   Label locked;
   // Finish fast lock unsuccessfully. MUST jump with ZF == 0
   Label slow_path;
+  // Finish fast lock unsuccessfully. Sets ZF == 0 for you
+  Label slow_path_clear_zf;
 
   if (UseObjectMonitorTable) {
     // Clear cache in case fast locking succeeds or we need to take the slow-path.
@@ -286,7 +288,7 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
     // After successful lock, push object on lock-stack.
     movptr(Address(thread, top), obj);
     addl(Address(thread, JavaThread::lock_stack_top_offset()), oopSize);
-    jmpb(locked);
+    jmp(locked);
   }
 
   { // Handle inflated monitor.
@@ -302,33 +304,74 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
       Label monitor_found;
 
       // Load cache address
-      lea(t, Address(thread, JavaThread::om_cache_oops_offset()));
+      lea(rax_reg, Address(thread, JavaThread::om_cache_oops_offset()));
 
-      const int num_unrolled = 2;
+      Label found_in_cache;
+      Label lookup_in_table;
+
+      const int num_unrolled = OMCache::CAPACITY;
       for (int i = 0; i < num_unrolled; i++) {
-        cmpptr(obj, Address(t));
-        jccb(Assembler::equal, monitor_found);
-        increment(t, in_bytes(OMCache::oop_to_oop_difference()));
+        cmpptr(obj, Address(rax_reg));
+        jccb(Assembler::equal, found_in_cache);
+        increment(rax_reg, in_bytes(OMCache::oop_to_oop_difference()));
       }
 
-      Label loop;
+      jmpb(lookup_in_table);
 
-      // Search for obj in cache.
-      bind(loop);
+      bind(found_in_cache);
+      movptr(monitor, Address(rax_reg, OMCache::oop_to_monitor_difference()));
+      jmp(monitor_found);
 
-      // Check for match.
-      cmpptr(obj, Address(t));
-      jccb(Assembler::equal, monitor_found);
+      // Grab hash code
+      bind(lookup_in_table);
 
-      // Search until null encountered, guaranteed _null_sentinel at end.
-      cmpptr(Address(t), 1);
-      jcc(Assembler::below, slow_path); // 0 check, but with ZF=0 when *t == 0
-      increment(t, in_bytes(OMCache::oop_to_oop_difference()));
-      jmpb(loop);
+      movptr(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
+      shrq(mark, markWord::hash_shift);
+      andq(mark, markWord::hash_mask);
+
+      // Not in the table without a hash code.
+      jcc(Assembler::zero, slow_path_clear_zf);
+
+      // Read the current table
+      lea(rax_reg, ExternalAddress(ObjectMonitorTable::current_table_address()));
+      movptr(rax_reg, Address(rax_reg, 0));
+
+      // Materialize table index
+      andq(monitor, Address(rax_reg, ObjectMonitorTable::table_capacity_mask_offset()));
+
+      // Grab the buckets
+      movptr(rax_reg, Address(rax_reg, ObjectMonitorTable::table_buckets_offset()));
+
+      // Check for monitor
+      movptr(monitor, Address(rax_reg, mark, Address::times_8));
+
+      // Check if null or tomb stone
+      cmpptr(monitor, 0);
+      jcc(Assembler::lessEqual, slow_path_clear_zf);
+
+      // Read the WeakHandle
+      movptr(rax_reg, Address(monitor, ObjectMonitor::object_offset()));
+
+      // Read the object
+      // TODO: Move to new try_load_at abstraction in barrier sets maybe
+      // TODO: No shenandoah support yet
+      movptr(rax_reg, Address(rax_reg, 0));
+      if (UseZGC) {
+        // Check if oop is okay
+        testptr(rax_reg, Address(thread, ZThreadLocalData::mark_bad_mask_offset()));
+        jcc(Assembler::notZero, slow_path);
+
+        // Uncolor oop if okay
+        relocate(barrier_Relocation::spec(), 0); // TODO: ZBarrierRelocationFormatLoadGoodBeforeShl
+        shrq(rax_reg, barrier_Relocation::unpatched);
+      }
+
+      // Did not find monitor at the first searching position; go to the slow path
+      cmpptr(rax_reg, obj);
+      jcc(Assembler::notEqual, slow_path);
 
       // Cache hit.
       bind(monitor_found);
-      movptr(monitor, Address(t, OMCache::oop_to_monitor_difference()));
     }
     const ByteSize monitor_tag = in_ByteSize(UseObjectMonitorTable ? 0 : checked_cast<int>(markWord::monitor_value));
     const Address recursions_address(monitor, ObjectMonitor::recursions_offset() - monitor_tag);
@@ -363,6 +406,7 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
   // Set ZF = 1
   xorl(rax_reg, rax_reg);
 
+  Label the_end;
 #ifdef ASSERT
   // Check that locked label is reached with ZF set.
   Label zf_correct;
@@ -370,6 +414,11 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
   jcc(Assembler::zero, zf_correct);
   jmp(zf_bad_zero);
 #endif
+  jmpb(the_end);
+
+  bind(slow_path_clear_zf);
+  // Set ZF = 0
+  orl(rax_reg, 1);
 
   bind(slow_path);
 #ifdef ASSERT
@@ -380,6 +429,7 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
   stop("Fast Lock ZF != 1");
   bind(zf_correct);
 #endif
+  bind(the_end);
   // C2 uses the value of ZF to determine the continuation.
 }
 
