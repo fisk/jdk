@@ -353,18 +353,8 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
       movptr(rax_reg, Address(monitor, ObjectMonitor::object_offset()));
 
       // Read the object
-      // TODO: Move to new try_load_at abstraction in barrier sets maybe
-      // TODO: No shenandoah support yet
-      movptr(rax_reg, Address(rax_reg, 0));
-      if (UseZGC) {
-        // Check if oop is okay
-        testptr(rax_reg, Address(thread, ZThreadLocalData::mark_bad_mask_offset()));
-        jcc(Assembler::notZero, slow_path);
-
-        // Uncolor oop if okay
-        relocate(barrier_Relocation::spec(), 0); // TODO: ZBarrierRelocationFormatLoadGoodBeforeShl
-        shrq(rax_reg, barrier_Relocation::unpatched);
-      }
+      BarrierSetAssembler* bs_asm = BarrierSet::barrier_set()->barrier_set_assembler();
+      bs_asm->try_resolve_weak_handle_in_c2(this, rax_reg, slow_path_clear_zf);
 
       // Did not find monitor at the first searching position; go to the slow path
       cmpptr(rax_reg, obj);
