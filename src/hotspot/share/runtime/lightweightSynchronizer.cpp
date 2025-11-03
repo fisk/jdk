@@ -48,7 +48,6 @@
 #include "utilities/concurrentHashTableTasks.inline.hpp"
 #include "utilities/globalDefinitions.hpp"
 
-volatile size_t ObjectMonitorTable::_items_count = 0;
 ObjectMonitorTable::Table* volatile ObjectMonitorTable::_curr;
 
 class ObjectMonitorTable::Table : public CHeapObj<mtObjectMonitor> {
@@ -58,11 +57,28 @@ class ObjectMonitorTable::Table : public CHeapObj<mtObjectMonitor> {
   Table* volatile _prev;             // Set while rehashing
   ObjectMonitor* volatile* _buckets; // The payload
 
+  char _padding[DEFAULT_CACHE_LINE_SIZE];
+
+  volatile size_t _items_count;
+
+  static ObjectMonitor* tomb_stone() {
+    return (ObjectMonitor*)-1;
+  }
+
+  void inc_items_count() {
+    AtomicAccess::inc(&_items_count, memory_order_relaxed);
+  }
+
+  void dec_items_count() {
+    AtomicAccess::dec(&_items_count, memory_order_relaxed);
+  }
+
 public:
   Table(size_t capacity, Table* prev)
     : _capacity_mask(capacity - 1),
       _prev(prev),
-      _buckets(NEW_C_HEAP_ARRAY(ObjectMonitor*, capacity, mtObjectMonitor))
+      _buckets(NEW_C_HEAP_ARRAY(ObjectMonitor*, capacity, mtObjectMonitor)),
+      _items_count(0)
   {
     for (size_t i = 0; i < capacity; ++i) {
       _buckets[i] = nullptr;
@@ -261,7 +277,6 @@ public:
           // Re-insert still live monitor
           monitor_reinsert(prev, monitor, obj);
         }
-        dec_items_count();
       }
     }
 
@@ -269,18 +284,6 @@ public:
     AtomicAccess::release_store(&_prev, (Table*)nullptr);
   }
 };
-
-ObjectMonitor* ObjectMonitorTable::tomb_stone() {
-  return (ObjectMonitor*)-1;
-}
-
-void ObjectMonitorTable::inc_items_count() {
-  AtomicAccess::inc(&_items_count, memory_order_relaxed);
-}
-
-void ObjectMonitorTable::dec_items_count() {
-  AtomicAccess::dec(&_items_count, memory_order_relaxed);
-}
 
 void ObjectMonitorTable::create() {
   _curr = new Table(128, nullptr);

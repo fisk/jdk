@@ -37,11 +37,7 @@ public:
   class Table;
 
 private:
-  static volatile size_t _items_count;
   static Table* volatile _curr;
-  static ObjectMonitor* tomb_stone();
-  static void inc_items_count();
-  static void dec_items_count();
 
 public:
   static void create();
