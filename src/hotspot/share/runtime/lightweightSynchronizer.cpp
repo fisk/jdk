@@ -65,6 +65,23 @@ class ObjectMonitorTable::Table : public CHeapObj<mtObjectMonitor> {
     return (ObjectMonitor*)-1;
   }
 
+  // Make sure we leave space for previous versions to relocate too
+  bool try_inc_items_count() {
+    for (;;) {
+      size_t population = AtomicAccess::load(&_items_count);
+      if (should_grow(population)) {
+        return false;
+      }
+      if (AtomicAccess::cmpxchg(&_items_count, population, population + 1, memory_order_relaxed) == population) {
+        return true;
+      }
+    }
+  }
+
+  double get_load_factor(size_t count) {
+    return (double)count / (double)capacity();
+  }
+
   void inc_items_count() {
     AtomicAccess::inc(&_items_count, memory_order_relaxed);
   }
@@ -97,13 +114,12 @@ public:
     return _capacity_mask + 1;
   }
 
-  double get_load_factor() {
-    size_t count = AtomicAccess::load(&_items_count);
-    return (double)count / (double)capacity();
+  bool should_grow(size_t population) {
+    return get_load_factor(population) > GROW_LOAD_FACTOR;
   }
 
   bool should_grow() {
-    return get_load_factor() > GROW_LOAD_FACTOR;
+    return should_grow(AtomicAccess::load(&_items_count));
   }
 
   ObjectMonitor* get(oop obj, int hash) {
@@ -165,17 +181,25 @@ public:
 
       if (monitor == nullptr) {
         // Empty slot to install the new monitor
-        for (;;) {
+        if (try_inc_items_count()) {
+          // Succeeding in claiming an item
           ObjectMonitor* result = AtomicAccess::cmpxchg(bucket, monitor, new_monitor, memory_order_release);
           if (result == monitor) {
-            // Success
-            inc_items_count();
+            // Success - already incremented
             return new_monitor;
           }
 
           // Someething else was installed in place
+          dec_items_count();
           monitor = result;
-          break;
+        } else {
+          // Out of allowance; leaving place for rehashing to succeed
+          // To avoid concurrent inserts succeeding, place a tomb stine here.
+          ObjectMonitor* result = AtomicAccess::cmpxchg(bucket, monitor, tomb_stone());
+          if (result == monitor) {
+            // Success; nobody will try to insert here again, except reinsert from rehashing
+            return nullptr;
+          }
         }
       }
 
@@ -197,14 +221,8 @@ public:
     }
   }
 
-  bool reinsert(Table* last, oop obj, ObjectMonitor* new_monitor, int hash) {
-    // Acquire any tomb stones and relocations if prev transitioned to null
-    Table* prev = AtomicAccess::load_acquire(&_prev);
-    if (prev != nullptr && last != prev) {
-      if (_prev->reinsert(last, obj, new_monitor, hash)) {
-        return true;
-      }
-    }
+  void reinsert(oop obj, ObjectMonitor* new_monitor) {
+    int hash = obj->mark().hash();
 
     const size_t start_index = size_t(hash) & _capacity_mask;
     size_t index = start_index;
@@ -215,33 +233,41 @@ public:
 
       if (monitor == nullptr) {
         // Empty slot to install the new monitor
-        for (;;) {
-          ObjectMonitor* result = AtomicAccess::cmpxchg(bucket, monitor, new_monitor, memory_order_release);
-          if (result == monitor) {
-            // Success
-            inc_items_count();
-            return new_monitor;
-          }
-
-          // Someething else was installed in place
-          monitor = result;
-          break;
+        ObjectMonitor* result = AtomicAccess::cmpxchg(bucket, monitor, new_monitor, memory_order_release);
+        if (result == monitor) {
+          // Success - unconditionally increment
+          inc_items_count();
+          return;
         }
+
+        // Another monitor was installed
+        monitor = result;
       }
 
+      if (monitor == tomb_stone()) {
+        // A concurrent inserter did not get enough allowance in the table
+        // But reinsert always succeeds - we will take the spot
+        ObjectMonitor* result = AtomicAccess::cmpxchg(bucket, monitor, new_monitor, memory_order_release);
+        if (result == monitor) {
+          // Success - unconditionally increment
+          inc_items_count();
+          return;
+        }
+
+        // Another monitor was installed
+        monitor = result;
+      }
+
+      assert(monitor != nullptr, "invariant");
       assert(monitor != tomb_stone(), "invariant");
       assert(monitor->object_peek() != obj, "invariant");
 
       index = (index + 1) & _capacity_mask;
-      if (index == start_index) {
-        // No slot to install in this table
-        return false;
-      }
+      assert(index != start_index, "should never be full");
     }
   }
 
   void rebuild() {
-    // TODO: Yield for safepoints?
     Table* prev = _prev;
     if (prev == nullptr) {
       // Base case for recursion - no previous version
@@ -255,6 +281,11 @@ public:
 
     // Relocate entries from prev after
     for (size_t index = 0; index <= prev->_capacity_mask; index++) {
+      if ((index & 128) == 0) {
+        // Poll for safepoints to improve time to safepoint
+        ThreadBlockInVM tbivm(current);
+      }
+
       ObjectMonitor* volatile* bucket = prev->_buckets + index;
       ObjectMonitor* monitor = AtomicAccess::load(bucket);
 
@@ -275,7 +306,7 @@ public:
         oop obj = monitor->object_peek();
         if (!monitor->is_being_async_deflated() && obj != nullptr) {
           // Re-insert still live monitor
-          monitor_reinsert(prev, monitor, obj);
+          reinsert(obj, monitor);
         }
       }
     }
@@ -287,7 +318,6 @@ public:
 
 void ObjectMonitorTable::create() {
   _curr = new Table(128, nullptr);
-  _items_count = 0;
 }
 
 ObjectMonitor* ObjectMonitorTable::monitor_get(Thread* current, oop obj) {
@@ -329,29 +359,6 @@ ObjectMonitor* ObjectMonitorTable::monitor_put_get(Thread* current, ObjectMonito
     }
 
     return result;
-  }
-}
-
-void ObjectMonitorTable::monitor_reinsert(Table* from, ObjectMonitor* monitor, oop obj) {
-  const int hash = obj->mark().hash();
-
-  for (;;) {
-    Table* curr = AtomicAccess::load_acquire(&_curr);
-
-    // Curr is the latest table and is reasonably loaded
-    if (curr->reinsert(from, obj, monitor, hash)) {
-      return;
-    }
-
-    // Table rehashing needed; try again in the new table
-    Table* new_table = new Table(curr->capacity() << 1, curr);
-    if (AtomicAccess::cmpxchg(&_curr, curr, new_table, memory_order_release) == curr) {
-      // Successfully started rehashing
-      log_info(monitorinflation)("Growing object monitor table");
-      ObjectSynchronizer::request_deflate_idle_monitors();
-    } else {
-      delete new_table;
-    }
   }
 }
 

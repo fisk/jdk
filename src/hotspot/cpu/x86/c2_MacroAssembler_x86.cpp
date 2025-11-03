@@ -271,7 +271,7 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
 
     // Check if recursive.
     cmpptr(obj, Address(thread, top, Address::times_1, -oopSize));
-    jccb(Assembler::equal, push);
+    jcc(Assembler::equal, push);
 
     // Try to lock. Transition lock bits 0b01 => 0b00
     movptr(rax_reg, mark);
@@ -312,11 +312,11 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
       const int num_unrolled = OMCache::CAPACITY;
       for (int i = 0; i < num_unrolled; i++) {
         cmpptr(obj, Address(rax_reg));
-        jccb(Assembler::equal, found_in_cache);
+        jcc(Assembler::equal, found_in_cache);
         increment(rax_reg, in_bytes(OMCache::oop_to_oop_difference()));
       }
 
-      jmpb(lookup_in_table);
+      jmp(lookup_in_table);
 
       bind(found_in_cache);
       movptr(monitor, Address(rax_reg, OMCache::oop_to_monitor_difference()));
@@ -380,11 +380,11 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
     xorptr(rax_reg, rax_reg);
     movptr(box, Address(thread, JavaThread::monitor_owner_id_offset()));
     lock(); cmpxchgptr(box, owner_address);
-    jccb(Assembler::equal, monitor_locked);
+    jcc(Assembler::equal, monitor_locked);
 
     // Check if recursive.
     cmpptr(box, rax_reg);
-    jccb(Assembler::notEqual, slow_path);
+    jcc(Assembler::notEqual, slow_path);
 
     // Recursive.
     increment(recursions_address);
