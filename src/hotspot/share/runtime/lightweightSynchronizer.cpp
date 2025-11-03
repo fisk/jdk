@@ -200,6 +200,7 @@ public:
             // Success; nobody will try to insert here again, except reinsert from rehashing
             return nullptr;
           }
+          monitor = result;
         }
       }
 
