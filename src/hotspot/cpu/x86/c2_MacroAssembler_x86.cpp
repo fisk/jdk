@@ -329,9 +329,6 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
       shrq(mark, markWord::hash_shift);
       andq(mark, markWord::hash_mask);
 
-      // Not in the table without a hash code.
-      jcc(Assembler::zero, slow_path_clear_zf);
-
       // Read the current table
       lea(rax_reg, ExternalAddress(ObjectMonitorTable::current_table_address()));
       movptr(rax_reg, Address(rax_reg, 0));

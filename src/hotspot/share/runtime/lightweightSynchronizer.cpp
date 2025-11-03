@@ -322,10 +322,6 @@ void ObjectMonitorTable::create() {
 
 ObjectMonitor* ObjectMonitorTable::monitor_get(Thread* current, oop obj) {
   const int hash = obj->mark().hash();
-  if (hash == 0) {
-    // Objects that do not have a hash code can not have been inserted into the table
-    return nullptr;
-  }
 
   Table* curr = AtomicAccess::load_acquire(&_curr);
   ObjectMonitor* monitor = curr->get(obj, hash);
@@ -334,7 +330,7 @@ ObjectMonitor* ObjectMonitorTable::monitor_get(Thread* current, oop obj) {
 }
 
 ObjectMonitor* ObjectMonitorTable::monitor_put_get(Thread* current, ObjectMonitor* monitor, oop obj) {
-  const int hash = ObjectSynchronizer::FastHashCode(current, obj);
+  const int hash = obj->mark().hash();
 
   for (;;) {
     Table* curr = AtomicAccess::load_acquire(&_curr);
@@ -364,7 +360,6 @@ ObjectMonitor* ObjectMonitorTable::monitor_put_get(Thread* current, ObjectMonito
 
 // Before handshake; rehash and unlink tables
 void ObjectMonitorTable::rebuild(GrowableArray<Table*>* delete_list) {
-  // TODO: Shrink every now and then? Not done before either though...
   Table* new_table;
   {
     Table* curr = AtomicAccess::load_acquire(&_curr);
