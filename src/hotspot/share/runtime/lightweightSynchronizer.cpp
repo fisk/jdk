@@ -166,7 +166,7 @@ public:
     // Acquire any tomb stones and relocations if prev transitioned to null
     Table* prev = AtomicAccess::load_acquire(&_prev);
     if (prev != nullptr) {
-      ObjectMonitor* result = _prev->get_set(obj, new_monitor, hash);
+      ObjectMonitor* result = prev->get_set(obj, new_monitor, hash);
       if (result != nullptr) {
         return result;
       }

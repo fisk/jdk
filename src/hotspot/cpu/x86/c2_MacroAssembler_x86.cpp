@@ -524,14 +524,14 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register reg_rax, 
     cmpl(top, in_bytes(JavaThread::lock_stack_base_offset()));
     jcc(Assembler::below, check_done);
     cmpptr(obj, Address(thread, top));
-    jccb(Assembler::notEqual, inflated_check_lock_stack);
+    jcc(Assembler::notEqual, inflated_check_lock_stack);
     stop("Fast Unlock lock on stack");
     bind(check_done);
     if (UseObjectMonitorTable) {
       movptr(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
     }
     testptr(mark, markWord::monitor_value);
-    jccb(Assembler::notZero, inflated);
+    jcc(Assembler::notZero, inflated);
     stop("Fast Unlock not monitor");
 #endif
 
@@ -556,7 +556,7 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register reg_rax, 
 
     // Check if recursive.
     cmpptr(recursions_address, 0);
-    jccb(Assembler::notZero, recursive);
+    jcc(Assembler::notZero, recursive);
 
     // Set owner to null.
     // Release to satisfy the JMM
@@ -567,11 +567,11 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register reg_rax, 
 
     // Check if the entry_list is empty.
     cmpptr(entry_list_address, NULL_WORD);
-    jccb(Assembler::zero, unlocked);    // If so we are done.
+    jcc(Assembler::zero, unlocked);    // If so we are done.
 
     // Check if there is a successor.
     cmpptr(succ_address, NULL_WORD);
-    jccb(Assembler::notZero, unlocked); // If so we are done.
+    jcc(Assembler::notZero, unlocked); // If so we are done.
 
     // Save the monitor pointer in the current thread, so we can try to
     // reacquire the lock in SharedRuntime::monitor_exit_helper().
