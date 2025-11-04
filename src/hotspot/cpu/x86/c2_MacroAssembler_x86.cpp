@@ -393,7 +393,7 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
   jcc(Assembler::zero, zf_correct);
   jmp(zf_bad_zero);
 #endif
-  jmpb(the_end);
+  jmp(the_end);
 
   bind(slow_path_clear_zf);
   // Set ZF = 0
