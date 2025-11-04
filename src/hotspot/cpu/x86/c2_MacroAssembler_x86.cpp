@@ -338,8 +338,8 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
       // Read monitor from bucket
       movptr(monitor, Address(rax_reg, mark, Address::times_8));
 
-      // Check if empty slot or tomb stone
-      cmpptr(monitor, 1);
+      // Check if empty slot, removed slot or tomb stone
+      cmpptr(monitor, 2);
       jcc(Assembler::belowEqual, slow_path_clear_zf);
 
       // Check if object matches

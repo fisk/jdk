@@ -65,6 +65,10 @@ class ObjectMonitorTable::Table : public CHeapObj<mtObjectMonitor> {
     return (ObjectMonitor*)1;
   }
 
+  static ObjectMonitor* removed_entry() {
+    return (ObjectMonitor*)2;
+  }
+
   // Make sure we leave space for previous versions to relocate too
   bool try_inc_items_count() {
     for (;;) {
@@ -144,7 +148,7 @@ public:
         break;
       }
 
-      if (monitor->object_peek() == obj) {
+      if (monitor != removed_entry() && monitor->object_peek() == obj) {
         // Found matching monitor
         OrderAccess::acquire();
         return monitor;
@@ -209,7 +213,7 @@ public:
         return nullptr;
       }
 
-      if (monitor->object_peek() == obj) {
+      if (monitor != removed_entry() && monitor->object_peek() == obj) {
         // Found matching monitor
         return monitor;
       }
@@ -218,6 +222,39 @@ public:
       if (index == start_index) {
         // No slot to install in this table
         return nullptr;
+      }
+    }
+  }
+
+  void remove(oop obj, ObjectMonitor* old_monitor, int hash) {
+    // Acquire any tomb stones and relocations if prev transitioned to null
+    Table* prev = AtomicAccess::load_acquire(&_prev);
+    if (prev != nullptr) {
+      prev->remove(obj, old_monitor, hash);
+    }
+
+    const size_t start_index = size_t(hash) & _capacity_mask;
+    size_t index = start_index;
+
+    for (;;) {
+      ObjectMonitor* volatile* bucket = _buckets + index;
+      ObjectMonitor* monitor = AtomicAccess::load(bucket);
+
+      if (monitor == nullptr) {
+        // Monitor does not exist in this table
+        return;
+      }
+
+      if (monitor == old_monitor) {
+        // Found matching entry; remove it
+        AtomicAccess::cmpxchg(bucket, monitor, removed_entry());
+        return;
+      }
+
+      index = (index + 1) & _capacity_mask;
+      if (index == start_index) {
+        // Not found
+        return;
       }
     }
   }
@@ -261,7 +298,7 @@ public:
 
       assert(monitor != nullptr, "invariant");
       assert(monitor != tomb_stone(), "invariant");
-      assert(monitor->object_peek() != obj, "invariant");
+      assert(monitor == removed_entry() || monitor->object_peek() != obj, "invariant");
 
       index = (index + 1) & _capacity_mask;
       assert(index != start_index, "should never be full");
@@ -302,7 +339,7 @@ public:
         monitor = result;
       }
 
-      if (monitor != tomb_stone()) {
+      if (monitor != tomb_stone() && monitor != removed_entry()) {
         // A monitor
         oop obj = monitor->object_peek();
         if (!monitor->is_being_async_deflated() && obj != nullptr) {
@@ -357,6 +394,18 @@ ObjectMonitor* ObjectMonitorTable::monitor_put_get(Thread* current, ObjectMonito
 
     return result;
   }
+}
+
+void ObjectMonitorTable::remove_monitor_entry(Thread* current, ObjectMonitor* monitor) {
+  oop obj = monitor->object_peek();
+  if (obj == nullptr) {
+    // Defer removal until subsequent rebuilding
+    return;
+  }
+  const int hash = obj->mark().hash();
+
+  Table* curr = AtomicAccess::load_acquire(&_curr);
+  curr->remove(obj, monitor, hash);
 }
 
 // Before handshake; rehash and unlink tables
@@ -475,6 +524,13 @@ ObjectMonitor* LightweightSynchronizer::add_monitor(JavaThread* current, ObjectM
   monitor->set_hash(hash);
 
   return ObjectMonitorTable::monitor_put_get(current, monitor, obj);
+}
+
+void LightweightSynchronizer::remove_monitor(Thread* current, ObjectMonitor* monitor, oop obj) {
+  assert(UseObjectMonitorTable, "must be");
+  assert(monitor->object_peek() == obj, "must be, cleared objects are removed by is_dead");
+
+  ObjectMonitorTable::remove_monitor_entry(current, monitor);
 }
 
 void LightweightSynchronizer::deflate_mark_word(oop obj) {
@@ -1198,6 +1254,7 @@ ObjectMonitor* LightweightSynchronizer::inflate_and_enter(oop object, BasicLock*
 void LightweightSynchronizer::deflate_monitor(Thread* current, oop obj, ObjectMonitor* monitor) {
   if (obj != nullptr) {
     deflate_mark_word(obj);
+    remove_monitor(current, monitor, obj);
   }
 }
 

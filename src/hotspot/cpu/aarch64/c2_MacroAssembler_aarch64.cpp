@@ -261,8 +261,8 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
       lsl(t1_mark, t1_mark, 3);
       ldr(t1_monitor, Address(t3, t1_mark));
 
-      // Check if empty slot or tomb stone
-      cmp(t1_monitor, (unsigned char)1);
+      // Check if empty slot, removed slot or tomb stone
+      cmp(t1_monitor, (unsigned char)2);
       br(Assembler::LS, slow_path_set_ne);
 
       // Check if object matches
