@@ -62,7 +62,7 @@ class ObjectMonitorTable::Table : public CHeapObj<mtObjectMonitor> {
   volatile size_t _items_count;
 
   static ObjectMonitor* tomb_stone() {
-    return (ObjectMonitor*)-1;
+    return (ObjectMonitor*)1;
   }
 
   // Make sure we leave space for previous versions to relocate too

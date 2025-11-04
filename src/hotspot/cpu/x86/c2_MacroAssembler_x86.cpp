@@ -322,38 +322,30 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
       movptr(monitor, Address(rax_reg, OMCache::oop_to_monitor_difference()));
       jmp(monitor_found);
 
-      // Grab hash code
       bind(lookup_in_table);
 
+      // Grab hash code
       movptr(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
       shrq(mark, markWord::hash_shift);
       andq(mark, markWord::hash_mask);
 
-      // Read the current table
+      // Get the table and calculate bucket
       lea(rax_reg, ExternalAddress(ObjectMonitorTable::current_table_address()));
       movptr(rax_reg, Address(rax_reg, 0));
-
-      // Materialize table index
       andq(monitor, Address(rax_reg, ObjectMonitorTable::table_capacity_mask_offset()));
-
-      // Grab the buckets
       movptr(rax_reg, Address(rax_reg, ObjectMonitorTable::table_buckets_offset()));
 
-      // Check for monitor
+      // Read monitor from bucket
       movptr(monitor, Address(rax_reg, mark, Address::times_8));
 
-      // Check if null or tomb stone
-      cmpptr(monitor, 0);
-      jcc(Assembler::lessEqual, slow_path_clear_zf);
+      // Check if empty slot or tomb stone
+      cmpptr(monitor, 1);
+      jcc(Assembler::belowEqual, slow_path_clear_zf);
 
-      // Read the WeakHandle
+      // Check if object matches
       movptr(rax_reg, Address(monitor, ObjectMonitor::object_offset()));
-
-      // Read the object
       BarrierSetAssembler* bs_asm = BarrierSet::barrier_set()->barrier_set_assembler();
       bs_asm->try_resolve_weak_handle_in_c2(this, rax_reg, slow_path_clear_zf);
-
-      // Did not find monitor at the first searching position; go to the slow path
       cmpptr(rax_reg, obj);
       jcc(Assembler::notEqual, slow_path);
 
