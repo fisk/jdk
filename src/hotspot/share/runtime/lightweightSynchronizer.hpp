@@ -51,8 +51,6 @@ public:
   static address current_table_address();
   static ByteSize table_capacity_mask_offset();
   static ByteSize table_buckets_offset();
-
-  static void print_on(outputStream* st);
 };
 
 class LightweightSynchronizer : AllStatic {

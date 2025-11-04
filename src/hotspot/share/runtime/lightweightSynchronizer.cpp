@@ -399,10 +399,6 @@ ByteSize ObjectMonitorTable::table_buckets_offset() {
   return byte_offset_of(Table, _buckets);
 }
 
-void ObjectMonitorTable::print_on(outputStream* st) {
-  // TODO: Pretty printing?
-}
-
 ObjectMonitor* LightweightSynchronizer::get_or_insert_monitor_from_table(oop object, JavaThread* current, bool* inserted) {
   ObjectMonitor* monitor = get_monitor_from_table(current, object);
   if (monitor != nullptr) {
