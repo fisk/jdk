@@ -43,7 +43,7 @@ inline RegisterMap::WalkContinuation JfrVframeStream::walk_continuation(JavaThre
   //
   // NOTE: Shenandoah GC also seems to require this check - actual details as to why
   //       is unknown but to be filled in by others.
-  return ((UseZGC || UseShenandoahGC) && !StackWatermarkSet::processing_started(jt))
+  return ((UseZGC || UseShenandoahGC) && !StackWatermarkSet::processing_started(jt, StackWatermarkKind::gc))
     ? RegisterMap::WalkContinuation::skip
     : RegisterMap::WalkContinuation::include;
 }

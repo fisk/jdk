@@ -34,6 +34,7 @@
 #include "compiler/compilationPolicy.hpp"
 #include "compiler/compilerDefinitions.inline.hpp"
 #include "gc/shared/collectedHeap.hpp"
+#include "gc/shared/localTLABStackWatermark.hpp"
 #include "gc/shared/memAllocator.hpp"
 #include "interpreter/bytecode.inline.hpp"
 #include "interpreter/bytecodeStream.hpp"
@@ -477,6 +478,10 @@ Deoptimization::UnrollBlock* Deoptimization::fetch_unroll_info_helper(JavaThread
   // catch not yet safe to use frames, the following stack watermark barrier
   // poll will make such frames safe to use.
   StackWatermarkSet::before_unwind(current);
+
+  // Local objects could have been proven not to escape, but after deopt, who
+  // knows. Let's not reuse any recycled space and start with a new TLAB instead.
+  current->retire_local_tlab(nullptr, true);
 
   // Note: there is a safepoint safety issue here. No matter whether we enter
   // via vanilla deopt or uncommon trap we MUST NOT stop at a safepoint once
@@ -1272,11 +1277,11 @@ bool Deoptimization::realloc_objects(JavaThread* thread, frame* fr, RegisterMap*
       assert(sv->field_size() % type2size[ak->element_type()] == 0, "non-integral array length");
       int len = sv->field_size() / type2size[ak->element_type()];
       InternalOOMEMark iom(THREAD);
-      obj = ak->allocate_instance(len, THREAD);
+      obj = ak->allocate_instance(len, false /* local */, THREAD);
     } else if (k->is_objArray_klass()) {
       ObjArrayKlass* ak = ObjArrayKlass::cast(k);
       InternalOOMEMark iom(THREAD);
-      obj = ak->allocate_instance(sv->field_size(), THREAD);
+      obj = ak->allocate_instance(sv->field_size(), false /* local */, THREAD);
     }
 
     if (obj == nullptr) {

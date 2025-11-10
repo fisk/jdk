@@ -1631,6 +1631,12 @@ instanceOop InstanceKlass::allocate_instance(TRAPS) {
   return (instanceOop)Universe::heap()->obj_allocate(this, size, CHECK_NULL);
 }
 
+instanceOop InstanceKlass::allocate_instance_local(TRAPS) {
+  assert(!is_abstract() && !is_interface(), "Should not create this object");
+  size_t size = size_helper();  // Query before forming handle.
+  return (instanceOop)Universe::heap()->obj_allocate_local(this, size, CHECK_NULL);
+}
+
 instanceOop InstanceKlass::allocate_instance(oop java_class, TRAPS) {
   Klass* k = java_lang_Class::as_Klass(java_class);
   if (k == nullptr) {

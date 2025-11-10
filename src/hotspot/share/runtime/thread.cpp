@@ -27,6 +27,7 @@
 #include "classfile/javaClasses.hpp"
 #include "classfile/javaThreadStatus.hpp"
 #include "gc/shared/barrierSet.hpp"
+#include "gc/shared/localTLABStackWatermark.hpp"
 #include "jfr/jfrEvents.hpp"
 #include "jvm.h"
 #include "jvmtifiles/jvmtiEnv.hpp"
@@ -150,11 +151,12 @@ address Thread::stack_base() const {
 
 void Thread::initialize_tlab() {
   if (UseTLAB) {
-    tlab().initialize();
+    tlab().initialize(this);
+    local_tlab().initialize(this);
   }
 }
 
-void Thread::retire_tlab(ThreadLocalAllocStats* stats) {
+void Thread::retire_shared_tlab(ThreadLocalAllocStats* stats) {
   // Sampling and serviceability support
   if (tlab().end() != nullptr) {
     incr_allocated_bytes(tlab().used_bytes());
@@ -165,12 +167,66 @@ void Thread::retire_tlab(ThreadLocalAllocStats* stats) {
   tlab().retire(stats);
 }
 
-void Thread::fill_tlab(HeapWord* start, size_t pre_reserved, size_t new_size) {
-  // Thread allocation sampling support
-  heap_sampler().set_tlab_top_at_sample_start(start);
+void Thread::retire_local_tlab_watermark() {
+  LocalTLABStackWatermark* watermark = static_cast<LocalTLABStackWatermark*>(StackWatermarkSet::get(JavaThread::cast(this), StackWatermarkKind::local_tlab));
+  watermark->retire_tlabs();
+}
 
-  // Fill the TLAB
-  tlab().fill(start, start + pre_reserved, new_size);
+void Thread::retire_local_tlab(ThreadLocalAllocStats* stats, bool watermark) {
+  local_tlab().retire(stats);
+  if (watermark) {
+    retire_local_tlab_watermark();
+  }
+}
+
+void Thread::retire_tlabs(ThreadLocalAllocStats* stats) {
+  retire_shared_tlab(stats);
+  retire_local_tlab(stats, true);
+}
+
+void Thread::fill_tlab(HeapWord* start, size_t pre_reserved, size_t new_size, bool local) {
+  if (local) {
+    // Fill the TLAB
+    local_tlab().fill(start, start + pre_reserved, new_size);
+  } else {
+    // Thread allocation sampling support
+    heap_sampler().set_tlab_top_at_sample_start(start);
+
+    // Fill the TLAB
+    tlab().fill(start, start + pre_reserved, new_size);
+  }
+}
+
+ByteSize Thread::tlab_start_offset(bool local) {
+  if (local) {
+    return byte_offset_of(Thread, _local_tlab) + ThreadLocalAllocBuffer::start_offset();
+  }
+
+  return byte_offset_of(Thread, _tlab) + ThreadLocalAllocBuffer::start_offset();
+}
+
+ByteSize Thread::tlab_end_offset(bool local) {
+  if (local) {
+    return byte_offset_of(Thread, _local_tlab) + ThreadLocalAllocBuffer::end_offset();
+  }
+
+  return byte_offset_of(Thread, _tlab) + ThreadLocalAllocBuffer::end_offset();
+}
+
+ByteSize Thread::tlab_top_offset(bool local) {
+  if (local) {
+    return byte_offset_of(Thread, _local_tlab) + ThreadLocalAllocBuffer::top_offset();
+  }
+
+  return byte_offset_of(Thread, _tlab) + ThreadLocalAllocBuffer::top_offset();
+}
+
+ByteSize Thread::tlab_pf_top_offset(bool local) {
+  if (local) {
+    return byte_offset_of(Thread, _local_tlab) + ThreadLocalAllocBuffer::pf_top_offset();
+  }
+
+  return byte_offset_of(Thread, _tlab) + ThreadLocalAllocBuffer::pf_top_offset();
 }
 
 void Thread::initialize_thread_current() {

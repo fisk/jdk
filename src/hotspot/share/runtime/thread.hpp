@@ -257,6 +257,7 @@ class Thread: public ThreadShadow {
 
  private:
   ThreadLocalAllocBuffer _tlab;                 // Thread-local eden
+  ThreadLocalAllocBuffer _local_tlab;           // Thread-local eden for local objects
   jlong _allocated_bytes;                       // Cumulative number of bytes allocated on
                                                 // the Java heap
   ThreadHeapSampler _heap_sampler;              // For use when sampling the memory.
@@ -406,9 +407,13 @@ class Thread: public ThreadShadow {
   // Thread-Local Allocation Buffer (TLAB) support
   ThreadLocalAllocBuffer& tlab()                 { return _tlab; }
   const ThreadLocalAllocBuffer& tlab() const     { return _tlab; }
+  ThreadLocalAllocBuffer& local_tlab()           { return _local_tlab; } // TODO: Should be const?
   void initialize_tlab();
-  void retire_tlab(ThreadLocalAllocStats* stats = nullptr);
-  void fill_tlab(HeapWord* start, size_t pre_reserved, size_t new_size);
+  void retire_shared_tlab(ThreadLocalAllocStats* stats);
+  void retire_local_tlab_watermark();
+  void retire_local_tlab(ThreadLocalAllocStats* stats, bool watermark);
+  void retire_tlabs(ThreadLocalAllocStats* stats = nullptr);
+  void fill_tlab(HeapWord* start, size_t pre_reserved, size_t new_size, bool local);
 
   jlong allocated_bytes()               { return _allocated_bytes; }
   void incr_allocated_bytes(jlong size) { _allocated_bytes += size; }
@@ -582,10 +587,10 @@ protected:
   static ByteSize stack_base_offset()            { return byte_offset_of(Thread, _stack_base); }
   static ByteSize stack_size_offset()            { return byte_offset_of(Thread, _stack_size); }
 
-  static ByteSize tlab_start_offset()            { return byte_offset_of(Thread, _tlab) + ThreadLocalAllocBuffer::start_offset(); }
-  static ByteSize tlab_end_offset()              { return byte_offset_of(Thread, _tlab) + ThreadLocalAllocBuffer::end_offset(); }
-  static ByteSize tlab_top_offset()              { return byte_offset_of(Thread, _tlab) + ThreadLocalAllocBuffer::top_offset(); }
-  static ByteSize tlab_pf_top_offset()           { return byte_offset_of(Thread, _tlab) + ThreadLocalAllocBuffer::pf_top_offset(); }
+  static ByteSize tlab_start_offset(bool local);
+  static ByteSize tlab_end_offset(bool local);
+  static ByteSize tlab_top_offset(bool local);
+  static ByteSize tlab_pf_top_offset(bool local);
 
   JFR_ONLY(DEFINE_THREAD_LOCAL_OFFSET_JFR;)
 

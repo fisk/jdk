@@ -92,9 +92,10 @@ uintptr_t SafepointMechanism::compute_poll_word(bool armed, uintptr_t stack_wate
 }
 
 void SafepointMechanism::update_poll_values(JavaThread* thread) {
-  assert(thread == Thread::current(), "Must be");
-  assert(thread->thread_state() != _thread_blocked, "Must not be");
-  assert(thread->thread_state() != _thread_in_native, "Must not be");
+  // TODO make usable from outside sometimes
+  //assert(thread == Thread::current(), "Must be");
+  //assert(thread->thread_state() != _thread_blocked, "Must not be");
+  //assert(thread->thread_state() != _thread_in_native, "Must not be");
 
   for (;;) {
     bool armed = has_pending_safepoint(thread);
@@ -117,7 +118,10 @@ void SafepointMechanism::update_poll_values(JavaThread* thread) {
       // poll value, in any way making it less restrictive. Therefore, whenever
       // the frontier of what the mutator allows itself to do is increased,
       // we will catch that here, and ensure a cross modifying fence is used.
-      OrderAccess::cross_modify_fence();
+      // TODO: Relax this to fence only for GC watermark
+      if (Thread::current() == thread) {
+        OrderAccess::cross_modify_fence();
+      }
     }
 
     thread->poll_data()->set_polling_page(poll_page);

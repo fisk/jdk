@@ -98,17 +98,18 @@ protected:
 
   void process_one();
 
-  void update_watermark();
+  virtual void update_watermark();
+  void set_watermark(uintptr_t watermark);
   void yield_processing();
   static bool has_barrier(const frame& f);
-  void ensure_safe(const frame& f);
+  virtual void ensure_safe(const frame& f);
   bool is_frame_safe(const frame& f);
 
   // API for consumers of the stack watermark barrier.
   // The rule for consumers is: do not perform thread transitions
   // or take locks of rank >= special. This is all very special code.
   virtual uint32_t epoch_id() const = 0;
-  virtual void process(const frame& f, RegisterMap& register_map, void* context) = 0;
+  virtual void process(const frame& f, RegisterMap& register_map, void* context) {}
   virtual void start_processing_impl(void* context);
 
   // Set process_on_iteration to false if you don't want to move the
@@ -120,6 +121,8 @@ protected:
 
   bool processing_started(uint32_t state) const;
   bool processing_completed(uint32_t state) const;
+
+  void reset_iterator();
 
 public:
   StackWatermark(JavaThread* jt, StackWatermarkKind kind, uint32_t epoch);

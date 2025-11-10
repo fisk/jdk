@@ -55,7 +55,7 @@ class G1PreEvacuateCollectionSetBatchTask::JavaThreadRetireTLABs : public G1Abst
       BarrierSet::barrier_set()->make_parsable((JavaThread*)thread);
       // Retire TLABs.
       if (UseTLAB) {
-        thread->retire_tlab(&_tlab_stats);
+        thread->retire_tlabs(&_tlab_stats);
       }
       // Flush region pin count cache.
       G1ThreadLocalData::pin_count_cache(thread).flush();

@@ -26,6 +26,7 @@
 #include "classfile/vmClasses.hpp"
 #include "gc/shared/allocTracer.hpp"
 #include "gc/shared/collectedHeap.hpp"
+#include "gc/shared/localTLABStackWatermark.hpp"
 #include "gc/shared/memAllocator.hpp"
 #include "gc/shared/threadLocalAllocBuffer.inline.hpp"
 #include "gc/shared/tlab_globals.hpp"
@@ -37,6 +38,7 @@
 #include "runtime/handles.inline.hpp"
 #include "runtime/javaThread.hpp"
 #include "runtime/sharedRuntime.hpp"
+#include "runtime/stackWatermarkSet.inline.hpp"
 #include "services/lowMemoryDetector.hpp"
 #include "utilities/align.hpp"
 #include "utilities/copy.hpp"
@@ -242,18 +244,27 @@ HeapWord* MemAllocator::mem_allocate_outside_tlab(Allocation& allocation) const 
   _thread->incr_allocated_bytes(size_in_bytes);
   _thread->heap_sampler().inc_outside_tlab_bytes(size_in_bytes);
 
+  if (_local) {
+    LocalTLABStackWatermark* watermark = static_cast<LocalTLABStackWatermark*>(StackWatermarkSet::get(JavaThread::cast(_thread), StackWatermarkKind::local_tlab));
+    watermark->alloc_outside_tlab(mem, mem + _word_size);
+  }
+
   return mem;
 }
 
 HeapWord* MemAllocator::mem_allocate_inside_tlab_fast() const {
-  return _thread->tlab().allocate(_word_size);
+  if (!_local) {
+    return _thread->tlab().allocate(_word_size);
+  }
+
+  return _thread->local_tlab().allocate(_word_size);
 }
 
 HeapWord* MemAllocator::mem_allocate_inside_tlab_slow(Allocation& allocation) const {
   HeapWord* mem = nullptr;
-  ThreadLocalAllocBuffer& tlab = _thread->tlab();
+  ThreadLocalAllocBuffer& tlab = _local ? _thread->local_tlab() : _thread->tlab();
 
-  if (JvmtiExport::should_post_sampled_object_alloc()) {
+  if (!_local && JvmtiExport::should_post_sampled_object_alloc()) {
     // When sampling we artificially set the TLAB end to the sample point.
     // When we hit that point it looks like the TLAB is full, but it's
     // not necessarily the case. Set the real end and retry the allocation.
@@ -283,7 +294,11 @@ HeapWord* MemAllocator::mem_allocate_inside_tlab_slow(Allocation& allocation) co
   tlab.record_refill_waste();
 
   // Retire the current TLAB
-  _thread->retire_tlab();
+  if (_local) {
+    _thread->retire_local_tlab(nullptr, false);
+  } else {
+    _thread->retire_shared_tlab(nullptr);
+  }
 
   // To minimize fragmentation, the last TLAB may be smaller than the rest.
   size_t new_tlab_size = tlab.compute_size(_word_size);
@@ -292,10 +307,24 @@ HeapWord* MemAllocator::mem_allocate_inside_tlab_slow(Allocation& allocation) co
     return nullptr;
   }
 
+  LocalTLABStackWatermark* watermark = !_local ? nullptr : static_cast<LocalTLABStackWatermark*>(StackWatermarkSet::get(JavaThread::cast(_thread), StackWatermarkKind::local_tlab));
+
   // Allocate a new TLAB requesting new_tlab_size. Any size
   // between minimal and new_tlab_size is accepted.
   size_t min_tlab_size = ThreadLocalAllocBuffer::compute_min_size(_word_size);
-  mem = Universe::heap()->allocate_new_tlab(min_tlab_size, new_tlab_size, &allocation._allocated_tlab_size);
+  bool fast_refilled = false;
+  if (_local) {
+    fast_refilled = watermark->try_refill(mem, allocation._allocated_tlab_size, min_tlab_size);
+    if (_local && mem != nullptr) { // TODO: This code looks horrible; clean up
+      watermark->alloc_tlab(mem, mem + allocation._allocated_tlab_size);
+    }
+  }
+  if (!fast_refilled) {
+    mem = Universe::heap()->allocate_new_tlab(min_tlab_size, new_tlab_size, &allocation._allocated_tlab_size);
+    if (_local && mem != nullptr) { // TODO: This code looks horrible; clean up
+      watermark->alloc_tlab(mem, mem + allocation._allocated_tlab_size);
+    }
+  }
   if (mem == nullptr) {
     assert(allocation._allocated_tlab_size == 0,
            "Allocation failed, but actual size was updated. min: %zu"
@@ -318,7 +347,7 @@ HeapWord* MemAllocator::mem_allocate_inside_tlab_slow(Allocation& allocation) co
     Copy::fill_to_words(mem + hdr_size, allocation._allocated_tlab_size - hdr_size, badHeapWordVal);
   }
 
-  _thread->fill_tlab(mem, _word_size, allocation._allocated_tlab_size);
+  _thread->fill_tlab(mem, _word_size, allocation._allocated_tlab_size, _local);
 
   return mem;
 }

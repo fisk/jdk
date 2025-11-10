@@ -482,6 +482,7 @@ JavaThread::JavaThread(MemTag mem_tag) :
   _preemption_cancelled(false),
   _pending_interrupted_exception(false),
   _at_preemptable_init(false),
+  _saved_local_tlab_top(nullptr),
   DEBUG_ONLY(_preempt_init_klass(nullptr) COMMA)
   DEBUG_ONLY(_interp_at_preemptable_vmcall_cnt(0) COMMA)
   DEBUG_ONLY(_interp_redoing_vm_call(false) COMMA)
@@ -947,7 +948,7 @@ void JavaThread::exit(bool destroy_vm, ExitType exit_type) {
   _stack_overflow_state.remove_stack_guard_pages();
 
   if (UseTLAB) {
-    retire_tlab();
+    retire_tlabs();
   }
 
   if (JvmtiEnv::environments_might_exist()) {
@@ -1021,7 +1022,7 @@ void JavaThread::cleanup_failed_attach_current_thread(bool is_daemon) {
   _stack_overflow_state.remove_stack_guard_pages();
 
   if (UseTLAB) {
-    retire_tlab();
+    retire_tlabs();
   }
 
   Threads::remove(this, is_daemon);

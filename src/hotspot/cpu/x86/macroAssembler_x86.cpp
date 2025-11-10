@@ -5009,15 +5009,15 @@ void MacroAssembler::verify_tlab() {
 
     push(t1);
 
-    movptr(t1, Address(r15_thread, in_bytes(JavaThread::tlab_top_offset())));
-    cmpptr(t1, Address(r15_thread, in_bytes(JavaThread::tlab_start_offset())));
+    movptr(t1, Address(r15_thread, in_bytes(JavaThread::tlab_top_offset(false /* local */))));
+    cmpptr(t1, Address(r15_thread, in_bytes(JavaThread::tlab_start_offset(false /* local */))));
     jcc(Assembler::aboveEqual, next);
     STOP("assert(top >= start)");
     should_not_reach_here();
 
     bind(next);
-    movptr(t1, Address(r15_thread, in_bytes(JavaThread::tlab_end_offset())));
-    cmpptr(t1, Address(r15_thread, in_bytes(JavaThread::tlab_top_offset())));
+    movptr(t1, Address(r15_thread, in_bytes(JavaThread::tlab_end_offset(false /* local */))));
+    cmpptr(t1, Address(r15_thread, in_bytes(JavaThread::tlab_top_offset(false /* local */))));
     jcc(Assembler::aboveEqual, ok);
     STOP("assert(top <= end)");
     should_not_reach_here();

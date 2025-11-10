@@ -219,6 +219,7 @@ bool G1ConcurrentRefineSweepState::swap_java_threads_ct() {
       virtual void do_thread(Thread* thread) {
         G1BarrierSet* bs = G1BarrierSet::g1_barrier_set();
         bs->update_card_table_base(thread);
+        JavaThread::cast(thread)->retire_local_tlab(nullptr, true /* watermark */);
       }
     } cl;
     Handshake::execute(&cl);

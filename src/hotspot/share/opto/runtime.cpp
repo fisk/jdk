@@ -297,8 +297,7 @@ void OptoRuntime::complete_monitor_locking_C(oopDesc* obj, BasicLock* lock, Java
 // We failed the fast-path allocation.  Now we need to do a scavenge or GC
 // and try allocation again.
 
-// object allocation
-JRT_BLOCK_ENTRY(void, OptoRuntime::new_instance_C(Klass* klass, JavaThread* current))
+void OptoRuntime::new_instance_impl(Klass* klass, bool local, JavaThread* current) {
   JRT_BLOCK;
 #ifndef PRODUCT
   SharedRuntime::_new_instance_ctr++;         // new instance requires GC
@@ -318,7 +317,12 @@ JRT_BLOCK_ENTRY(void, OptoRuntime::new_instance_C(Klass* klass, JavaThread* curr
   if (!HAS_PENDING_EXCEPTION) {
     // Scavenge and allocate an instance.
     Handle holder(current, klass->klass_holder()); // keep the klass alive
-    oop result = InstanceKlass::cast(klass)->allocate_instance(THREAD);
+    oop result;
+    if (local) {
+      result = InstanceKlass::cast(klass)->allocate_instance_local(THREAD);
+    } else {
+      result = InstanceKlass::cast(klass)->allocate_instance(THREAD);
+    }
     current->set_vm_result_oop(result);
 
     // Pass oops back through thread local storage.  Our apparent type to Java
@@ -332,11 +336,20 @@ JRT_BLOCK_ENTRY(void, OptoRuntime::new_instance_C(Klass* klass, JavaThread* curr
 
   // inform GC that we won't do card marks for initializing writes.
   SharedRuntime::on_slowpath_allocation_exit(current);
+}
+
+// object allocation
+JRT_BLOCK_ENTRY(void, OptoRuntime::new_instance_C(Klass* klass, JavaThread* current))
+  new_instance_impl(klass, false /* local */, current);
+JRT_END
+
+JRT_BLOCK_ENTRY(void, OptoRuntime::new_local_instance_C(Klass* klass, JavaThread* current))
+  new_instance_impl(klass, true /* local */, current);
 JRT_END
 
 
 // array allocation
-JRT_BLOCK_ENTRY(void, OptoRuntime::new_array_C(Klass* array_type, int len, JavaThread* current))
+void OptoRuntime::new_array_impl(Klass* array_type, int len, bool local, JavaThread* current) {
   JRT_BLOCK;
 #ifndef PRODUCT
   SharedRuntime::_new_array_ctr++;            // new array requires GC
@@ -350,14 +363,14 @@ JRT_BLOCK_ENTRY(void, OptoRuntime::new_array_C(Klass* array_type, int len, JavaT
     // The oopFactory likes to work with the element type.
     // (We could bypass the oopFactory, since it doesn't add much value.)
     BasicType elem_type = TypeArrayKlass::cast(array_type)->element_type();
-    result = oopFactory::new_typeArray(elem_type, len, THREAD);
+    result = oopFactory::new_typeArray(elem_type, len, local, THREAD);
   } else {
     // Although the oopFactory likes to work with the elem_type,
     // the compiler prefers the array_type, since it must already have
     // that latter value in hand for the fast path.
     Handle holder(current, array_type->klass_holder()); // keep the array klass alive
     Klass* elem_type = ObjArrayKlass::cast(array_type)->element_klass();
-    result = oopFactory::new_objArray(elem_type, len, THREAD);
+    result = oopFactory::new_objArray(elem_type, len, local, THREAD);
   }
 
   // Pass oops back through thread local storage.  Our apparent type to Java
@@ -370,10 +383,17 @@ JRT_BLOCK_ENTRY(void, OptoRuntime::new_array_C(Klass* array_type, int len, JavaT
 
   // inform GC that we won't do card marks for initializing writes.
   SharedRuntime::on_slowpath_allocation_exit(current);
+}
+
+JRT_BLOCK_ENTRY(void, OptoRuntime::new_array_C(Klass* array_type, int len, JavaThread* current))
+  new_array_impl(array_type, len, false /* local */, current);
 JRT_END
 
-// array allocation without zeroing
-JRT_BLOCK_ENTRY(void, OptoRuntime::new_array_nozero_C(Klass* array_type, int len, JavaThread* current))
+JRT_BLOCK_ENTRY(void, OptoRuntime::new_local_array_C(Klass* array_type, int len, JavaThread* current))
+  new_array_impl(array_type, len, true /* local */, current);
+JRT_END
+
+void OptoRuntime::new_array_nozero_impl(Klass* array_type, int len, bool local, JavaThread* current) {
   JRT_BLOCK;
 #ifndef PRODUCT
   SharedRuntime::_new_array_ctr++;            // new array requires GC
@@ -386,7 +406,7 @@ JRT_BLOCK_ENTRY(void, OptoRuntime::new_array_nozero_C(Klass* array_type, int len
   assert(array_type->is_typeArray_klass(), "should be called only for type array");
   // The oopFactory likes to work with the element type.
   BasicType elem_type = TypeArrayKlass::cast(array_type)->element_type();
-  result = oopFactory::new_typeArray_nozero(elem_type, len, THREAD);
+  result = oopFactory::new_typeArray_nozero(elem_type, len, local, THREAD);
 
   // Pass oops back through thread local storage.  Our apparent type to Java
   // is that we return an oop, but we can block on exit from this routine and
@@ -419,7 +439,15 @@ JRT_BLOCK_ENTRY(void, OptoRuntime::new_array_nozero_C(Klass* array_type, int len
     const size_t aligned_hs = hs_bytes / BytesPerLong;
     Copy::fill_to_aligned_words(obj+aligned_hs, size-aligned_hs);
   }
+}
 
+// array allocation without zeroing
+JRT_BLOCK_ENTRY(void, OptoRuntime::new_array_nozero_C(Klass* array_type, int len, JavaThread* current))
+  new_array_nozero_impl(array_type, len, false /* local */, current);
+JRT_END
+
+JRT_BLOCK_ENTRY(void, OptoRuntime::new_local_array_nozero_C(Klass* array_type, int len, JavaThread* current))
+  new_array_nozero_impl(array_type, len, true /* local */, current);
 JRT_END
 
 // Note: multianewarray for one dimension is handled inline by GraphKit::new_array.
@@ -1860,10 +1888,19 @@ static void trace_exception(outputStream* st, oop exception_oop, address excepti
 // directly from compiled code. Compiled code will call the C++ method following.
 // We can't allow async exception to be installed during  exception processing.
 JRT_ENTRY_NO_ASYNC(address, OptoRuntime::handle_exception_C_helper(JavaThread* current, nmethod* &nm))
+  // TODO: Rather than returing local TLABs when there is an exception, an alternative
+  // is to restore the previous local TLAB top when unwinding for execptions in C2 frames.
+  HeapWord* local_tlab_top = current->local_tlab().top();
+  current->retire_local_tlab_watermark();
+  // TODO: Something isn't working right here. I suspect handle_exception_C_helper is
+  // both called by the callee and the caller of the exception handling code.
+  //current->set_saved_local_tlab_top(local_tlab_top);
+
   // The frame we rethrow the exception to might not have been processed by the GC yet.
   // The stack watermark barrier takes care of detecting that and ensuring the frame
   // has updated oops.
   StackWatermarkSet::after_unwind(current);
+  current->set_saved_local_tlab_top(nullptr);
 
   MACOS_AARCH64_ONLY(os::thread_wx_enable_write());
 

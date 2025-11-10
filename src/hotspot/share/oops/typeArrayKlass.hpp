@@ -47,8 +47,8 @@ class TypeArrayKlass : public ArrayKlass {
   TypeArrayKlass(BasicType type, Symbol* name);
   static TypeArrayKlass* allocate_klass(ClassLoaderData* loader_data, BasicType type, Symbol* name, TRAPS);
 
-  typeArrayOop allocate_common(int length, bool do_zero, TRAPS);
-  typeArrayOop allocate_instance(int length, TRAPS) { return allocate_common(length, true, THREAD); }
+  typeArrayOop allocate_common(int length, bool local, bool do_zero, TRAPS);
+  typeArrayOop allocate_instance(int length, bool local, TRAPS) { return allocate_common(length, local, true, THREAD); }
  public:
   TypeArrayKlass() {} // For dummy objects.
 

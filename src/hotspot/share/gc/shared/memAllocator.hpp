@@ -41,6 +41,7 @@ protected:
   Thread* const        _thread;
   Klass* const         _klass;
   const size_t         _word_size;
+  const bool           _local;
 
   // Allocate from the current thread's TLAB, without taking a new TLAB (no safepoint).
  HeapWord* mem_allocate_inside_tlab_fast() const;
@@ -53,10 +54,11 @@ private:
   HeapWord* mem_allocate_outside_tlab(Allocation& allocation) const;
 
 protected:
-  MemAllocator(Klass* klass, size_t word_size, Thread* thread)
+  MemAllocator(Klass* klass, size_t word_size, bool local, Thread* thread)
     : _thread(thread),
       _klass(klass),
-      _word_size(word_size)
+      _word_size(word_size),
+      _local(local)
   {
     assert(_thread == Thread::current(), "must be");
   }
@@ -83,8 +85,8 @@ public:
 
 class ObjAllocator: public MemAllocator {
 public:
-  ObjAllocator(Klass* klass, size_t word_size, Thread* thread = Thread::current())
-    : MemAllocator(klass, word_size, thread) {}
+  ObjAllocator(Klass* klass, size_t word_size, bool local, Thread* thread = Thread::current())
+    : MemAllocator(klass, word_size, local, thread) {}
 
   virtual oop initialize(HeapWord* mem) const;
 };
@@ -98,9 +100,9 @@ protected:
   void mem_zap_end_padding(HeapWord* mem) const PRODUCT_RETURN;
 
 public:
-  ObjArrayAllocator(Klass* klass, size_t word_size, int length, bool do_zero,
-                    Thread* thread = Thread::current())
-    : MemAllocator(klass, word_size, thread),
+  ObjArrayAllocator(Klass* klass, size_t word_size, int length, bool local,
+                    bool do_zero, Thread* thread = Thread::current())
+    : MemAllocator(klass, word_size, local, thread),
       _length(length),
       _do_zero(do_zero) {}
 
@@ -110,7 +112,7 @@ public:
 class ClassAllocator: public MemAllocator {
 public:
   ClassAllocator(Klass* klass, size_t word_size, Thread* thread = Thread::current())
-    : MemAllocator(klass, word_size, thread) {}
+    : MemAllocator(klass, word_size, false /* local */, thread) {}
 
   virtual oop initialize(HeapWord* mem) const;
 };

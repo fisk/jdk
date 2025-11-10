@@ -89,19 +89,24 @@ TypeArrayKlass::TypeArrayKlass(BasicType type, Symbol* name) : ArrayKlass(name, 
   set_class_loader_data(ClassLoaderData::the_null_class_loader_data());
 }
 
-typeArrayOop TypeArrayKlass::allocate_common(int length, bool do_zero, TRAPS) {
+typeArrayOop TypeArrayKlass::allocate_common(int length, bool local, bool do_zero, TRAPS) {
   assert(log2_element_size() >= 0, "bad scale");
   check_array_allocation_length(length, max_length(), CHECK_NULL);
   size_t size = typeArrayOopDesc::object_size(layout_helper(), length);
-  return (typeArrayOop)Universe::heap()->array_allocate(this, size, length,
-                                                        do_zero, CHECK_NULL);
+  if (local) {
+    return (typeArrayOop)Universe::heap()->array_allocate_local(this, size, length,
+                                                                do_zero, CHECK_NULL);
+  } else {
+    return (typeArrayOop)Universe::heap()->array_allocate(this, size, length,
+                                                          do_zero, CHECK_NULL);
+  }
 }
 
 oop TypeArrayKlass::multi_allocate(int rank, jint* last_size, TRAPS) {
   // For typeArrays this is only called for the last dimension
   assert(rank == 1, "just checking");
   int length = *last_size;
-  return allocate_instance(length, THREAD);
+  return allocate_instance(length, false /* local */, THREAD);
 }
 
 

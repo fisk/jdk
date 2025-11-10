@@ -33,7 +33,7 @@ private:
   void yield_for_safepoint() const;
 
 public:
-  ZObjArrayAllocator(Klass* klass, size_t word_size, int length, bool do_zero, Thread* thread);
+  ZObjArrayAllocator(Klass* klass, size_t word_size, int length, bool local, bool do_zero, Thread* thread);
 };
 
 #endif // SHARE_GC_Z_ZOBJARRAYALLOCATOR_HPP

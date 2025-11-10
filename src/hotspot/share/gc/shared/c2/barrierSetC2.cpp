@@ -754,12 +754,16 @@ void BarrierSetC2::clone(GraphKit* kit, Node* src_base, Node* dst_base, Node* si
 Node* BarrierSetC2::obj_allocate(PhaseMacroExpand* macro, Node* mem, Node* toobig_false, Node* size_in_bytes,
                                  Node*& i_o, Node*& needgc_ctrl,
                                  Node*& fast_oop_ctrl, Node*& fast_oop_rawmem,
-                                 intx prefetch_lines) const {
+                                 intx prefetch_lines, bool local) const {
   assert(UseTLAB, "Only for TLAB enabled allocations");
 
   Node* thread = macro->transform_later(new ThreadLocalNode());
-  Node* tlab_top_adr = macro->basic_plus_adr(macro->top()/*not oop*/, thread, in_bytes(JavaThread::tlab_top_offset()));
-  Node* tlab_end_adr = macro->basic_plus_adr(macro->top()/*not oop*/, thread, in_bytes(JavaThread::tlab_end_offset()));
+  Node* tlab_top_adr = macro->basic_plus_adr(macro->top()/*not oop*/, thread, in_bytes(JavaThread::tlab_top_offset(local)));
+  Node* tlab_end_adr = macro->basic_plus_adr(macro->top()/*not oop*/, thread, in_bytes(JavaThread::tlab_end_offset(local)));
+
+  if (local) {
+    Compile::current()->set_has_local_objects(true);
+  }
 
   // Load TLAB end.
   //
@@ -799,9 +803,11 @@ Node* BarrierSetC2::obj_allocate(PhaseMacroExpand* macro, Node* mem, Node* toobi
   Node* needgc_false = new IfFalseNode(needgc_iff);
   macro->transform_later(needgc_false);
 
-  // Fast path:
-  i_o = macro->prefetch_allocation(i_o, needgc_false, mem,
-                                   old_tlab_top, new_tlab_top, prefetch_lines);
+  if (!local) {
+    i_o = macro->prefetch_allocation(i_o, needgc_false, mem,
+                                     old_tlab_top, new_tlab_top, prefetch_lines,
+                                     local);
+  }
 
   // Store the modified TLAB top back down.
   Node* store_tlab_top = new StorePNode(needgc_false, mem, tlab_top_adr,
@@ -1049,7 +1055,8 @@ bool BarrierSetC2::is_allocation(const Node* node) {
   if (base_mach->ideal_Opcode() != Op_ThreadLocal) {
     return false;
   }
-  return offset == in_bytes(Thread::tlab_top_offset());
+  return offset == in_bytes(Thread::tlab_top_offset(false /* local */)) ||
+         offset == in_bytes(Thread::tlab_top_offset(true /* local */));
 }
 
 void BarrierSetC2::elide_dominated_barriers(Node_List& accesses, Node_List& access_dominators) const {

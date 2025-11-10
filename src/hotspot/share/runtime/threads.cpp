@@ -41,6 +41,7 @@
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/barrierSetNMethod.hpp"
 #include "gc/shared/gcVMOperations.hpp"
+#include "gc/shared/localTLABStackWatermark.hpp"
 #include "gc/shared/oopStorage.hpp"
 #include "gc/shared/oopStorageSet.hpp"
 #include "gc/shared/stringdedup/stringDedup.hpp"
@@ -1087,6 +1088,9 @@ void Threads::add(JavaThread* p, bool force_daemon) {
   // The threads lock must be owned at this point
   assert(Threads_lock->owned_by_self(), "must have threads lock");
   assert(p->monitor_owner_id() != 0, "should be set");
+
+  StackWatermark* const watermark = new LocalTLABStackWatermark(p);
+  StackWatermarkSet::add_watermark(p, watermark);
 
   BarrierSet::barrier_set()->on_thread_attach(p);
 

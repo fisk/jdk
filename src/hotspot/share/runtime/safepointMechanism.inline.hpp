@@ -70,7 +70,7 @@ bool SafepointMechanism::should_process(JavaThread* thread, bool allow_suspend) 
 
   if (global_poll() || // Safepoint
       thread->handshake_state()->has_operation(allow_suspend, false /* check_async_exception */) || // Handshake
-      !StackWatermarkSet::processing_started(thread)) { // StackWatermark processing is not started
+      !StackWatermarkSet::processing_started(thread, StackWatermarkKind::gc)) { // StackWatermark processing is not started
     return true;
   }
 

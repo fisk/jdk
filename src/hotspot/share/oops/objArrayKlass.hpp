@@ -51,7 +51,7 @@ class ObjArrayKlass : public ArrayKlass {
   ObjArrayKlass(int n, Klass* element_klass, Symbol* name);
   static ObjArrayKlass* allocate_klass(ClassLoaderData* loader_data, int n, Klass* k, Symbol* name, TRAPS);
 
-  objArrayOop allocate_instance(int length, TRAPS);
+  objArrayOop allocate_instance(int length, bool local, TRAPS);
 
  protected:
   // Create array_name for element klass

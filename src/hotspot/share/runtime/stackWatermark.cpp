@@ -186,6 +186,9 @@ void StackWatermark::assert_is_frame_safe(const frame& f) {
 // without going through any hooks.
 bool StackWatermark::is_frame_safe(const frame& f) {
   assert(_lock.owned_by_self(), "Must be locked");
+  if (!process_on_iteration()) {
+    return true;
+  }
   uint32_t state = AtomicAccess::load(&_state);
   if (!processing_started(state)) {
     return false;
@@ -239,6 +242,11 @@ void StackWatermark::update_watermark() {
     log_info(stackbarrier)("Finished stack processing iteration for tid %d",
                            _jt->osthread()->thread_id());
   }
+}
+
+void StackWatermark::set_watermark(uintptr_t watermark) {
+  _watermark = watermark;
+  _state = StackWatermarkState::create(0, watermark == 0 /* is_done */);
 }
 
 void StackWatermark::process_one() {
@@ -315,6 +323,15 @@ void StackWatermark::on_safepoint() {
   // stack watermarks (potentially from different threads) are processed,
   // then we have to perform processing of said linked watermarks here.
   process_linked_watermarks();
+}
+
+void StackWatermark::reset_iterator() {
+  delete _iterator;
+  if (_jt->has_last_Java_frame()) {
+    _iterator = new StackWatermarkFramesIterator(*this);
+  } else {
+    _iterator = nullptr;
+  }
 }
 
 void StackWatermark::start_processing() {

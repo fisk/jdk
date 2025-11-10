@@ -48,6 +48,14 @@
 #define STOP(error) block_comment(error); stop(error)
 #endif
 
+int C2_MacroAssembler::preserved_local_tlab_top_offset() {
+  Compile* C = Compile::current();
+  Matcher* matcher = C->matcher();
+  PhaseRegAlloc* ra = C->regalloc();
+  OptoReg::Name preserved_local_tlab_top_slot = OptoReg::add(matcher->_old_SP, -3 * VMRegImpl::slots_per_word);
+  return ra->reg2offset_unchecked(preserved_local_tlab_top_slot);
+}
+
 // C2 compiled method's prolog code.
 void C2_MacroAssembler::verified_entry(int framesize, int stack_bang_size, bool fp_mode_24b, bool is_stub) {
   assert(stack_bang_size >= framesize || stack_bang_size <= 0, "stack bang size incorrect");
@@ -114,6 +122,12 @@ void C2_MacroAssembler::verified_entry(int framesize, int stack_bang_size, bool 
 #endif
 
   if (!is_stub) {
+    // Save current local tlab top
+    if (Compile::current()->has_local_objects()) {
+      movptr(rax, Address(r15_thread, JavaThread::tlab_top_offset(true)));
+      movptr(Address(rsp, preserved_local_tlab_top_offset()), rax);
+    }
+
     BarrierSetAssembler* bs = BarrierSet::barrier_set()->barrier_set_assembler();
     // We put the non-hot code of the nmethod entry barrier out-of-line in a stub.
     Label dummy_slow_path;

@@ -146,7 +146,12 @@ HeapWord* ZCollectedHeap::allocate_new_tlab(size_t min_size, size_t requested_si
 }
 
 oop ZCollectedHeap::array_allocate(Klass* klass, size_t size, int length, bool do_zero, TRAPS) {
-  const ZObjArrayAllocator allocator(klass, size, length, do_zero, THREAD);
+  const ZObjArrayAllocator allocator(klass, size, length, false /* local */, do_zero, THREAD);
+  return allocator.allocate();
+}
+
+oop ZCollectedHeap::array_allocate_local(Klass* klass, size_t size, int length, bool do_zero, TRAPS) {
+  const ZObjArrayAllocator allocator(klass, size, length, true /* local */, do_zero, THREAD);
   return allocator.allocate();
 }
 

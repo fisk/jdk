@@ -335,6 +335,7 @@ class Compile : public Phase {
   bool                  _inlining_progress;     // progress doing incremental inlining?
   bool                  _inlining_incrementally;// Are we doing incremental inlining (post parse)
   bool                  _do_cleanup;            // Cleanup is needed before proceeding with incremental inlining
+  bool                  _has_local_objects;     // Maintain local TLAB top if needed
   bool                  _has_loops;             // True if the method _may_ have some loops
   bool                  _has_split_ifs;         // True if the method _may_ have some split-if
   bool                  _has_unsafe_access;     // True if the method _may_ produce faults in unsafe loads or stores.
@@ -609,6 +610,8 @@ public:
   void          set_freq_inline_size(int n)     { _freq_inline_size = n; }
   int               freq_inline_size() const    { return _freq_inline_size; }
   void          set_max_inline_size(int n)      { _max_inline_size = n; }
+  bool              has_local_objects() const   { return _has_local_objects; }
+  void          set_has_local_objects(bool z)   { _has_local_objects = z; }
   bool              has_loops() const           { return _has_loops; }
   void          set_has_loops(bool z)           { _has_loops = z; }
   bool              has_split_ifs() const       { return _has_split_ifs; }

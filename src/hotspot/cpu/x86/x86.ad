@@ -1953,6 +1953,8 @@ void MachEpilogNode::format(PhaseRegAlloc* ra_, outputStream* st) const
 }
 #endif
 
+#include "runtime/safepointMechanism.inline.hpp"
+
 void MachEpilogNode::emit(C2_MacroAssembler* masm, PhaseRegAlloc* ra_) const
 {
   Compile* C = ra_->C;
@@ -1961,6 +1963,13 @@ void MachEpilogNode::emit(C2_MacroAssembler* masm, PhaseRegAlloc* ra_) const
     // Clear upper bits of YMM registers when current compiled code uses
     // wide vectors to avoid AVX <-> SSE transition penalty during call.
     __ vzeroupper();
+  }
+
+  if (C->is_method_compilation() && C->has_local_objects()) {
+    // Restore current local tlab top
+    __ movptr(rsi, Address(r15_thread, JavaThread::tlab_top_offset(true)));
+    __ movptr(rdi, Address(rsp, __ preserved_local_tlab_top_offset()));
+    __ movptr(Address(r15, JavaThread::tlab_top_offset(true)), rdi);
   }
 
   int framesize = C->output()->frame_size_in_bytes();
@@ -4626,11 +4635,13 @@ encode %{
 //        |        |   in   |  3   area for Intel ret address
 //     Owned by    |preserve|      Empty on Sparc.
 //       SELF      +--------+
-//        |        |  pad2  |  2   pad to align old SP
-//        |        +--------+  1
+//        |        | prev fp|  2   Preserved frame pointer
+//        |        +--------+
+//        |        |  tlab  |  1   Preserved local tlab top
+//        |        +--------+
 //        |        | locks  |  0
 //        |        +--------+----> OptoReg::stack0(), even aligned
-//        |        |  pad1  | 11   pad to align new SP
+//        |        |  pad1  | 11   Pad the stacks
 //        |        +--------+
 //        |        |        | 10
 //        |        | spills |  9   spills

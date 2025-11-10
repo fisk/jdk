@@ -65,9 +65,10 @@ void ZThreadLocalAllocBuffer::publish_statistics() {
 void ZThreadLocalAllocBuffer::retire(JavaThread* thread, ThreadLocalAllocStats* stats) {
   if (UseTLAB) {
     stats->reset();
-    thread->retire_tlab(stats);
+    thread->retire_tlabs(stats);
     if (ResizeTLAB) {
       thread->tlab().resize();
+      thread->local_tlab().resize();
     }
   }
 }

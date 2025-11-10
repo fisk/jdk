@@ -42,6 +42,8 @@ public:
   void verify_int_in_range(uint idx, const TypeInt* t, Register val);
   void verify_long_in_range(uint idx, const TypeLong* t, Register val, Register tmp);
 
+  int preserved_local_tlab_top_offset();
+
   // Generic instructions support for use in .ad files C2 code generation
   void vabsnegd(int opcode, XMMRegister dst, XMMRegister src);
   void vabsnegd(int opcode, XMMRegister dst, XMMRegister src, int vector_len);

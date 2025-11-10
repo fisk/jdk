@@ -129,12 +129,12 @@ void StackWatermarkSet::start_processing(JavaThread* jt, StackWatermarkKind kind
   // will always update the poll values when waking up from a safepoint.
 }
 
-bool StackWatermarkSet::processing_started(JavaThread* jt) {
-  for (StackWatermark* current = head(jt); current != nullptr; current = current->next()) {
-    if (!current->processing_started()) {
-      return false;
-    }
+bool StackWatermarkSet::processing_started(JavaThread* jt, StackWatermarkKind kind) {
+  StackWatermark* watermark = get(jt, kind);
+  if (watermark != nullptr) {
+    return watermark->processing_started();
   }
+
   return true;
 }
 
@@ -151,7 +151,10 @@ uintptr_t StackWatermarkSet::lowest_watermark(JavaThread* jt) {
   uintptr_t max_watermark = uintptr_t(0) - 1;
   uintptr_t watermark = max_watermark;
   for (StackWatermark* current = head(jt); current != nullptr; current = current->next()) {
-    watermark = MIN2(watermark, current->watermark());
+    uintptr_t current_watermark = current->watermark();
+    if (current_watermark != 0) {
+      watermark = MIN2(watermark, current_watermark);
+    }
   }
   if (watermark == max_watermark) {
     return 0;

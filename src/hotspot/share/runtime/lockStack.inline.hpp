@@ -202,7 +202,7 @@ inline bool LockStack::contains(oop o) const {
   verify("pre-contains");
 
   // Can't poke around in thread oops without having started stack watermark processing.
-  assert(StackWatermarkSet::processing_started(get_thread()), "Processing must have started!");
+  assert(StackWatermarkSet::processing_started(get_thread(), StackWatermarkKind::gc), "Processing must have started!");
 
   int end = to_index(_top);
   for (int i = end - 1; i >= 0; i--) {

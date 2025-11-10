@@ -827,6 +827,7 @@ public:
   }
   // allocation
   instanceOop allocate_instance(TRAPS);
+  instanceOop allocate_instance_local(TRAPS);
   static instanceOop allocate_instance(oop cls, TRAPS);
 
   // additional member function to return a handle

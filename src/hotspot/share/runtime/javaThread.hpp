@@ -486,6 +486,10 @@ class JavaThread: public Thread {
   // We use this boolean to mark such calls.
   bool _at_preemptable_init;
 
+  // Preserves what the callee local tlab top was before it was popped to
+  // the saved caller local tlab top value
+  HeapWord* _saved_local_tlab_top;
+
  public:
   bool preemption_cancelled()           { return _preemption_cancelled; }
   void set_preemption_cancelled(bool b) { _preemption_cancelled = b; }
@@ -668,7 +672,7 @@ private:
 
   static ByteSize polling_word_offset() {
     ByteSize offset = byte_offset_of(Thread, _poll_data) +
-                      byte_offset_of(SafepointMechanism::ThreadData, _polling_word);
+      byte_offset_of(SafepointMechanism::ThreadData, _polling_word);
     // At least on x86_64, safepoint polls encode the offset as disp8 imm.
     assert(in_bytes(offset) < 128, "Offset >= 128");
     return offset;
@@ -676,11 +680,18 @@ private:
 
   static ByteSize polling_page_offset() {
     ByteSize offset = byte_offset_of(Thread, _poll_data) +
-                      byte_offset_of(SafepointMechanism::ThreadData, _polling_page);
+      byte_offset_of(SafepointMechanism::ThreadData, _polling_page);
     // At least on x86_64, safepoint polls encode the offset as disp8 imm.
     assert(in_bytes(offset) < 128, "Offset >= 128");
     return offset;
   }
+
+  static ByteSize saved_local_tlab_top_offset() {
+    return byte_offset_of(JavaThread, _saved_local_tlab_top);
+  }
+
+  HeapWord* saved_local_tlab_top() const { return _saved_local_tlab_top; }
+  void set_saved_local_tlab_top(HeapWord* top) { _saved_local_tlab_top = top; }
 
   void set_requires_cross_modify_fence(bool val) PRODUCT_RETURN NOT_PRODUCT({ _requires_cross_modify_fence = val; })
 

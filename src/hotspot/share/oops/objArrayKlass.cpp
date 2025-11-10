@@ -151,18 +151,23 @@ size_t ObjArrayKlass::oop_size(oop obj) const {
   return objArrayOop(obj)->object_size();
 }
 
-objArrayOop ObjArrayKlass::allocate_instance(int length, TRAPS) {
+objArrayOop ObjArrayKlass::allocate_instance(int length, bool local, TRAPS) {
   check_array_allocation_length(length, arrayOopDesc::max_array_length(T_OBJECT), CHECK_NULL);
   size_t size = objArrayOopDesc::object_size(length);
-  return (objArrayOop)Universe::heap()->array_allocate(this, size, length,
-                                                       /* do_zero */ true, THREAD);
+  if (local) {
+    return (objArrayOop)Universe::heap()->array_allocate_local(this, size, length,
+                                                               /* do_zero */ true, THREAD);
+  } else {
+    return (objArrayOop)Universe::heap()->array_allocate(this, size, length,
+                                                         /* do_zero */ true, THREAD);
+  }
 }
 
 oop ObjArrayKlass::multi_allocate(int rank, jint* sizes, TRAPS) {
   int length = *sizes;
   ArrayKlass* ld_klass = lower_dimension();
   // If length < 0 allocate will throw an exception.
-  objArrayOop array = allocate_instance(length, CHECK_NULL);
+  objArrayOop array = allocate_instance(length, false /* local */, CHECK_NULL);
   objArrayHandle h_array (THREAD, array);
   if (rank > 1) {
     if (length != 0) {

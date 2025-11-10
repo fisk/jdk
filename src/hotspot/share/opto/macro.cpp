@@ -1403,7 +1403,7 @@ void PhaseMacroExpand::expand_allocate_common(
       BarrierSetC2* bs = BarrierSet::barrier_set()->barrier_set_c2();
       Node* fast_oop = bs->obj_allocate(this, mem, toobig_false, size_in_bytes, i_o, needgc_ctrl,
                                         fast_oop_ctrl, fast_oop_rawmem,
-                                        prefetch_lines);
+                                        prefetch_lines, alloc->use_local_tlab());
 
       if (initial_slow_test != nullptr) {
         // This completes all paths into the slow merge point
@@ -1814,9 +1814,9 @@ PhaseMacroExpand::initialize_object(AllocateNode* alloc,
 
 // Generate prefetch instructions for next allocations.
 Node* PhaseMacroExpand::prefetch_allocation(Node* i_o, Node*& needgc_false,
-                                        Node*& contended_phi_rawmem,
-                                        Node* old_eden_top, Node* new_eden_top,
-                                        intx lines) {
+                                            Node*& contended_phi_rawmem,
+                                            Node* old_eden_top, Node* new_eden_top,
+                                            intx lines, bool local) {
    enum { fall_in_path = 1, pf_path = 2 };
    if( UseTLAB && AllocatePrefetchStyle == 2 ) {
       // Generate prefetch allocation with watermark check.
@@ -1833,7 +1833,7 @@ Node* PhaseMacroExpand::prefetch_allocation(Node* i_o, Node*& needgc_false,
       transform_later(thread);
 
       Node *eden_pf_adr = new AddPNode( top()/*not oop*/, thread,
-                   _igvn.MakeConX(in_bytes(JavaThread::tlab_pf_top_offset())) );
+                                        _igvn.MakeConX(in_bytes(JavaThread::tlab_pf_top_offset(local))) );
       transform_later(eden_pf_adr);
 
       Node *old_pf_wm = new LoadPNode(needgc_false,
@@ -1966,12 +1966,20 @@ Node* PhaseMacroExpand::prefetch_allocation(Node* i_o, Node*& needgc_false,
 
 
 void PhaseMacroExpand::expand_allocate(AllocateNode *alloc) {
+  bool local = alloc->use_local_tlab();
+  address slow_call_address;  // Address of slow call
+  if (local) {
+    slow_call_address = OptoRuntime::new_local_instance_Java();
+  } else {
+    slow_call_address = OptoRuntime::new_instance_Java();
+  }
   expand_allocate_common(alloc, nullptr,
                          OptoRuntime::new_instance_Type(),
-                         OptoRuntime::new_instance_Java(), nullptr);
+                         slow_call_address, nullptr);
 }
 
 void PhaseMacroExpand::expand_allocate_array(AllocateArrayNode *alloc) {
+  bool local = alloc->use_local_tlab();
   Node* length = alloc->in(AllocateNode::ALength);
   Node* valid_length_test = alloc->in(AllocateNode::ValidLengthTest);
   InitializeNode* init = alloc->initialization();
@@ -1982,9 +1990,17 @@ void PhaseMacroExpand::expand_allocate_array(AllocateArrayNode *alloc) {
       ary_klass_t && ary_klass_t->elem()->isa_klassptr() == nullptr) {
     // Don't zero type array during slow allocation in VM since
     // it will be initialized later by arraycopy in compiled code.
-    slow_call_address = OptoRuntime::new_array_nozero_Java();
+    if (local) {
+      slow_call_address = OptoRuntime::new_local_array_nozero_Java();
+    } else {
+      slow_call_address = OptoRuntime::new_array_nozero_Java();
+    }
   } else {
-    slow_call_address = OptoRuntime::new_array_Java();
+    if (local) {
+      slow_call_address = OptoRuntime::new_local_array_Java();
+    } else {
+      slow_call_address = OptoRuntime::new_array_Java();
+    }
   }
   expand_allocate_common(alloc, length,
                          OptoRuntime::new_array_Type(),

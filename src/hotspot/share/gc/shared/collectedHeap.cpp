@@ -463,7 +463,7 @@ CollectedHeap::fill_with_array(HeapWord* start, size_t words, bool zap)
   const size_t len = payload_size * HeapWordSize / sizeof(jint);
   assert((int)len >= 0, "size too large %zu becomes %d", words, (int)len);
 
-  ObjArrayAllocator allocator(Universe::fillerArrayKlass(), words, (int)len, /* do_zero */ false);
+  ObjArrayAllocator allocator(Universe::fillerArrayKlass(), words, (int)len, false /* local */, /* do_zero */ false);
   allocator.initialize(start);
   if (CDSConfig::is_dumping_heap()) {
     // This array is written into the CDS archive. Make sure it
@@ -483,7 +483,7 @@ CollectedHeap::fill_with_object_impl(HeapWord* start, size_t words, bool zap)
     fill_with_array(start, words, zap);
   } else if (words > 0) {
     assert(words == min_fill_size(), "unaligned size");
-    ObjAllocator allocator(CollectedHeap::filler_object_klass(), words);
+    ObjAllocator allocator(CollectedHeap::filler_object_klass(), words, false /* local */);
     allocator.initialize(start);
   }
 }
@@ -531,9 +531,10 @@ void CollectedHeap::ensure_parsability(bool retire_tlabs) {
     BarrierSet::barrier_set()->make_parsable(thread);
     if (UseTLAB) {
       if (retire_tlabs || ZeroTLAB) {
-        thread->retire_tlab(&stats);
+        thread->retire_tlabs(&stats);
       } else {
         thread->tlab().make_parsable();
+        thread->local_tlab().make_parsable();
       }
     }
   }

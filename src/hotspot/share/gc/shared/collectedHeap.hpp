@@ -289,6 +289,10 @@ protected:
 
   oop obj_allocate(Klass* klass, size_t size, TRAPS);
   virtual oop array_allocate(Klass* klass, size_t size, int length, bool do_zero, TRAPS);
+
+  oop obj_allocate_local(Klass* klass, size_t size, TRAPS);
+  virtual oop array_allocate_local(Klass* klass, size_t size, int length, bool do_zero, TRAPS);
+
   oop class_allocate(Klass* klass, size_t size, TRAPS);
 
   // Utilities for turning raw memory into filler objects.

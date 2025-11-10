@@ -599,6 +599,9 @@ static void assert_frames_in_continuation_are_safe(JavaThread* thread) {
 void FreezeBase::unwind_frames() {
   ContinuationEntry* entry = _cont.entry();
   entry->flush_stack_processing(_thread);
+  // TODO: Do better; we need to retire local tlabs both when mounting and unmounting.
+  // This prototype does not yet have full VT support.
+  _thread->retire_local_tlab(nullptr, true /* watermark */);
   assert_frames_in_continuation_are_safe(_thread);
   JFR_ONLY(Jfr::check_and_process_sample_request(_thread);)
   set_anchor_to_entry(_thread, entry);
@@ -1515,7 +1518,7 @@ public:
                       int argsize_md,
                       ContinuationWrapper& continuation_wrapper,
                       JvmtiSampledObjectAllocEventCollector* jvmti_event_collector)
-    : MemAllocator(klass, word_size, thread),
+    : MemAllocator(klass, word_size, false /* local */, thread),
       _stack_size(stack_size),
       _argsize_md(argsize_md),
       _continuation_wrapper(continuation_wrapper),

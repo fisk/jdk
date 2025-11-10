@@ -46,6 +46,7 @@ class ThreadLocalAllocBuffer: public CHeapObj<mtThread> {
   friend class VMStructs;
   friend class JVMCIVMStructs;
 private:
+  Thread*   _thread;
   HeapWord* _start;                              // address of TLAB
   HeapWord* _top;                                // address after last allocation
   HeapWord* _pf_top;                             // allocation prefetch watermark
@@ -73,7 +74,11 @@ private:
   void set_start(HeapWord* start)                { _start = start; }
   void set_end(HeapWord* end)                    { _end = end; }
   void set_allocation_end(HeapWord* ptr)         { _allocation_end = ptr; }
+
+public: // TODO: Clean up permissions
   void set_top(HeapWord* top)                    { _top = top; }
+
+private:
   void set_pf_top(HeapWord* pf_top)              { _pf_top = pf_top; }
   void set_desired_size(size_t desired_size)     { _desired_size = desired_size; }
   void set_refill_waste_limit(size_t waste)      { _refill_waste_limit = waste;  }
@@ -85,10 +90,12 @@ private:
 
   size_t remaining();
 
+public:
   void invariants() const { assert(top() >= start() && top() <= end(), "invalid tlab"); }
 
   void initialize(HeapWord* start, HeapWord* top, HeapWord* end);
 
+private:
   void insert_filler();
 
   void accumulate_and_reset_statistics(ThreadLocalAllocStats* stats);
@@ -163,7 +170,7 @@ public:
   void resize();
 
   void fill(HeapWord* start, HeapWord* top, size_t new_size);
-  void initialize();
+  void initialize(Thread* thread);
 
   // Support for TLAB sampling
   void set_back_allocation_end();

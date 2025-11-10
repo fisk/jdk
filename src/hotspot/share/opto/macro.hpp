@@ -230,7 +230,7 @@ public:
   Node* prefetch_allocation(Node* i_o,
                             Node*& needgc_false, Node*& contended_phi_rawmem,
                             Node* old_eden_top, Node* new_eden_top,
-                            intx lines);
+                            intx lines, bool local);
   void expand_dtrace_alloc_probe(AllocateNode* alloc, Node* fast_oop, Node*&fast_oop_ctrl, Node*&fast_oop_rawmem);
   void expand_initialize_membar(AllocateNode* alloc, InitializeNode* init, Node*&fast_oop_ctrl, Node*&fast_oop_rawmem);
 };

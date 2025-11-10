@@ -1092,6 +1092,11 @@ public:
     return _is_non_escaping || (((init = initialization()) != nullptr) && init->does_not_escape());
   }
 
+  bool use_local_tlab() {
+    // TODO: Should be does_not_escape_thread(), but I get corrupted exception in javac
+    return _is_non_escaping; // does_not_escape_thread();
+  }
+
   // If object doesn't escape in <.init> method and there is memory barrier
   // inserted at exit of its <.init>, memory barrier for new is not necessary.
   // Inovke this method when MemBar at exit of initializer and post-dominate

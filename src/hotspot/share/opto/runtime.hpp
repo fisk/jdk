@@ -208,12 +208,23 @@ class OptoRuntime : public AllStatic {
   // Implementation of runtime methods
   // =================================
 
+  static void new_instance_impl(Klass* instance_klass, bool local, JavaThread* current);
+  static void new_array_impl(Klass* array_klass, int len, bool local, JavaThread* current);
+  static void new_array_nozero_impl(Klass* array_klass, int len, bool local, JavaThread* current);
+
   // Allocate storage for a Java instance.
   static void new_instance_C(Klass* instance_klass, JavaThread* current);
 
   // Allocate storage for a objArray or typeArray
   static void new_array_C(Klass* array_klass, int len, JavaThread* current);
   static void new_array_nozero_C(Klass* array_klass, int len, JavaThread* current);
+
+  // Allocate storage for a Java instance.
+  static void new_local_instance_C(Klass* instance_klass, JavaThread* current);
+
+  // Allocate storage for a objArray or typeArray
+  static void new_local_array_C(Klass* array_klass, int len, JavaThread* current);
+  static void new_local_array_nozero_C(Klass* array_klass, int len, JavaThread* current);
 
   // Allocate storage for a multi-dimensional arrays
   // Note: needs to be fixed for arbitrary number of dimensions
@@ -282,6 +293,9 @@ private:
   static address new_instance_Java()                     { return _new_instance_Java; }
   static address new_array_Java()                        { return _new_array_Java; }
   static address new_array_nozero_Java()                 { return _new_array_nozero_Java; }
+  static address new_local_instance_Java()               { return _new_local_instance_Java; }
+  static address new_local_array_Java()                  { return _new_local_array_Java; }
+  static address new_local_array_nozero_Java()           { return _new_local_array_nozero_Java; }
   static address multianewarray2_Java()                  { return _multianewarray2_Java; }
   static address multianewarray3_Java()                  { return _multianewarray3_Java; }
   static address multianewarray4_Java()                  { return _multianewarray4_Java; }
@@ -324,6 +338,18 @@ private:
   }
 
   static inline const TypeFunc* new_array_nozero_Type() {
+    return new_array_Type();
+  }
+
+  static inline const TypeFunc* new_local_instance_Type() {
+    return new_instance_Type();
+  }
+
+  static inline const TypeFunc* new_local_array_Type() {
+    return new_array_Type();
+  }
+
+  static inline const TypeFunc* new_local_array_nozero_Type() {
     return new_array_Type();
   }
 

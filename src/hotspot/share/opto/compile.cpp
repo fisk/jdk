@@ -883,15 +883,15 @@ Compile::Compile(ciEnv* ci_env, ciMethod* target, int osr_bci,
   }
 
   // Now that we know the size of all the monitors we can add a fixed slot
-  // for the original deopt pc.
-  int next_slot = fixed_slots() + (sizeof(address) / VMRegImpl::stack_slot_size);
+  // for the original deopt pc and the previous local TLAB top pointer.
+  int next_slot = fixed_slots() + 3 * (sizeof(address) / VMRegImpl::stack_slot_size);
   set_fixed_slots(next_slot);
 
   // Compute when to use implicit null checks. Used by matching trap based
   // nodes and NullCheck optimization.
   set_allowed_deopt_reasons();
 
-  // Now generate code
+  // Now generate codMatcher::_old_SPe
   Code_Gen();
 }
 
@@ -1057,6 +1057,7 @@ void Compile::Init(bool aliasing) {
   env()->set_dependencies(new Dependencies(env()));
 
   _fixed_slots = 0;
+  _has_local_objects = false;
   set_has_split_ifs(false);
   set_has_loops(false); // first approximation
   set_has_stringbuilder(false);
@@ -4124,7 +4125,9 @@ bool Compile::final_graph_reshaping() {
               required_outcnt--;
             }
           } else if (call->entry_point() == OptoRuntime::new_array_Java() ||
-                     call->entry_point() == OptoRuntime::new_array_nozero_Java()) {
+                     call->entry_point() == OptoRuntime::new_array_nozero_Java() ||
+                     call->entry_point() == OptoRuntime::new_local_array_Java() ||
+                     call->entry_point() == OptoRuntime::new_local_array_nozero_Java()) {
             // Check for illegal array length. In such case, the optimizer has
             // detected that the allocation attempt will always result in an
             // exception. There is no fall-through projection of this CatchNode .
@@ -4151,7 +4154,9 @@ bool Compile::final_graph_reshaping() {
     } else if (n->is_PCTable() && n->in(0) && n->in(0)->in(0) && n->in(0)->in(0)->is_Call()) {
       CallNode* call = n->in(0)->in(0)->as_Call();
       if (call->entry_point() == OptoRuntime::new_array_Java() ||
-          call->entry_point() == OptoRuntime::new_array_nozero_Java()) {
+          call->entry_point() == OptoRuntime::new_array_nozero_Java() ||
+          call->entry_point() == OptoRuntime::new_local_array_Java() ||
+          call->entry_point() == OptoRuntime::new_local_array_nozero_Java()) {
         assert(call->is_CallStaticJava(), "static call expected");
         assert(call->req() == call->jvms()->endoff() + 1, "missing extra input");
         uint valid_length_test_input = call->req() - 1;

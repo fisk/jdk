@@ -34,17 +34,27 @@
 #include "utilities/align.hpp"
 
 inline oop CollectedHeap::obj_allocate(Klass* klass, size_t size, TRAPS) {
-  ObjAllocator allocator(klass, size, THREAD);
+  ObjAllocator allocator(klass, size, false /* local */, THREAD);
   return allocator.allocate();
 }
 
 inline oop CollectedHeap::array_allocate(Klass* klass, size_t size, int length, bool do_zero, TRAPS) {
-  ObjArrayAllocator allocator(klass, size, length, do_zero, THREAD);
+  ObjArrayAllocator allocator(klass, size, length, false /* local */, do_zero, THREAD);
   return allocator.allocate();
 }
 
 inline oop CollectedHeap::class_allocate(Klass* klass, size_t size, TRAPS) {
   ClassAllocator allocator(klass, size, THREAD);
+  return allocator.allocate();
+}
+
+inline oop CollectedHeap::obj_allocate_local(Klass* klass, size_t size, TRAPS) {
+  ObjAllocator allocator(klass, size, true /* local */, THREAD);
+  return allocator.allocate();
+}
+
+inline oop CollectedHeap::array_allocate_local(Klass* klass, size_t size, int length, bool do_zero, TRAPS) {
+  ObjArrayAllocator allocator(klass, size, length, true /* local */, do_zero, THREAD);
   return allocator.allocate();
 }
 
