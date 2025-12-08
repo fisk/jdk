@@ -400,7 +400,7 @@ void AOTCodeCache::close() {
   }
 }
 
-class CachedCodeDirectory : public CachedCodeDirectoryInternal {
+class CachedCodeDirectory {
 public:
   uint _aot_code_size;
   char* _aot_code_data;
@@ -409,6 +409,9 @@ public:
     _aot_code_size = size;
     AOTCacheAccess::set_pointer(&_aot_code_data, aot_data);
   }
+
+  void dumptime_init_internal() {}
+  void runtime_init_internal() {}
 
   static CachedCodeDirectory* create();
 };
@@ -4132,4 +4135,3 @@ void AOTCodeReader::print_on(outputStream* st) {
 
   st->print_cr("  name: %s", name);
 }
-

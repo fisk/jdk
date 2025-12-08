@@ -35,6 +35,7 @@
 #include "memory/universe.hpp"
 #include "memory/virtualspace.hpp"
 #include "oops/instanceKlass.hpp"
+#include "oops/oopHandle.inline.hpp"
 
 size_t _aot_code_region_size = 0;
 
@@ -74,12 +75,56 @@ uint AOTCacheAccess::convert_method_to_offset(Method* method) {
 }
 
 #if INCLUDE_CDS_JAVA_HEAP
+typedef ResizeableHashTable<OopHandle, int,
+                            AnyObj::C_HEAP,
+                            mtClassShared,
+                            HeapShared::oop_handle_hash,
+                            HeapShared::oop_handle_equals> PermanentOopTable;
+
+static PermanentOopTable* _dumptime_permanent_oop_table = nullptr;
+static bool _stop_registering_roots = false;
+
+void AOTCacheAccess::stop_registering_roots() {
+  _stop_registering_roots = true;
+}
+
 int AOTCacheAccess::get_archived_object_permanent_index(oop obj) {
-  return HeapShared::get_archived_object_permanent_index(obj);
+  MutexLocker ml(ArchivedObjectTables_lock, Mutex::_no_safepoint_check_flag);
+
+  if (!CDSConfig::is_dumping_heap()) {
+    return -1; // Called by the Leyden old workflow
+  }
+
+  if (_stop_registering_roots) {
+    return -1;
+  }
+
+  if (_dumptime_permanent_oop_table == nullptr) {
+    const int max_table_capacity = 0x3fffffff;
+    _dumptime_permanent_oop_table = new (mtClassShared) PermanentOopTable(8, max_table_capacity);
+  }
+
+  if (java_lang_Class::is_instance(obj)) {
+    obj = HeapShared::scratch_java_mirror(obj);
+  }
+
+  OopHandle oh(Universe::vm_global(), obj);
+  int* root_index = _dumptime_permanent_oop_table->get(oh);
+  if (root_index != nullptr) {
+    oh.release(Universe::vm_global());
+    return *root_index;
+  }
+
+  int new_root_index = HeapShared::append_root(obj);
+  bool success = _dumptime_permanent_oop_table->put_when_absent(oh, new_root_index);
+  assert(success, "invariant");
+  oh.release(Universe::vm_global());
+
+  return new_root_index;
 }
 
 oop AOTCacheAccess::get_archived_object(int permanent_index) {
-  oop o = HeapShared::get_archived_object(permanent_index);
+  oop o = HeapShared::get_root(permanent_index, false /* clear */);
   assert(oopDesc::is_oop_or_null(o), "sanity");
   return o;
 }

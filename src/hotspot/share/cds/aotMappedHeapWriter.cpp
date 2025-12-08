@@ -65,7 +65,7 @@ address AOTMappedHeapWriter::_requested_bottom;
 address AOTMappedHeapWriter::_requested_top;
 
 static size_t _num_strings = 0;
-static size_t _string_bytes = 0; 
+static size_t _string_bytes = 0;
 static size_t _num_packages = 0;
 static size_t _num_protection_domains = 0;
 
@@ -397,7 +397,6 @@ void AOTMappedHeapWriter::copy_source_objs_to_buffer(GrowableArrayCHeap<oop, mtC
     size_t buffer_offset = copy_one_source_obj_to_buffer(src_obj);
     info->set_buffer_offset(buffer_offset);
     assert(buffer_offset <= 0x7fffffff, "sanity");
-    HeapShared::add_to_permanent_oop_table(src_obj, (int)buffer_offset);
 
     OopHandle handle(Universe::vm_global(), src_obj);
     _buffer_offset_to_source_obj_table->put_when_absent(buffer_offset, handle);
