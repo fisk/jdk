@@ -221,9 +221,9 @@ private:
   // Note: this region does NOT exist in the cds archive.
   DumpRegion _pz_region;
 
+  DumpRegion _ac_region; // AOT code
   DumpRegion _rw_region;
   DumpRegion _ro_region;
-  DumpRegion _ac_region; // AOT code
 
   // Combined bitmap to track pointers in both RW and RO regions. This is updated
   // as objects are copied into RW and RO.
@@ -408,7 +408,7 @@ public:
   }
 
   void start_ac_region();
-  void end_ac_region();
+  void start_rw_region();
 
   template <typename T>
   static Array<T>* new_ro_array(int length) {

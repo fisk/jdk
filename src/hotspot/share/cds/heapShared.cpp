@@ -917,8 +917,6 @@ void HeapShared::write_heap(ArchiveMappedHeapInfo* mapped_heap_info, ArchiveStre
     check_special_subgraph_classes();
   }
 
-  AOTCacheAccess::stop_registering_roots();
-
   GrowableArrayCHeap<oop, mtClassShared>* roots = new GrowableArrayCHeap<oop, mtClassShared>(_pending_roots->length());
   for (int i = 0; i < _pending_roots->length(); i++) {
     roots->append(_pending_roots->at(i).resolve());

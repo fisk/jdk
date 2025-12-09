@@ -178,9 +178,9 @@ ArchiveBuilder::ArchiveBuilder() :
   _mapped_static_archive_top(nullptr),
   _buffer_to_requested_delta(0),
   _pz_region("pz", MAX_SHARED_DELTA), // protection zone -- used only during dumping; does NOT exist in cds archive.
+  _ac_region("ac", MAX_SHARED_DELTA),
   _rw_region("rw", MAX_SHARED_DELTA),
   _ro_region("ro", MAX_SHARED_DELTA),
-  _ac_region("ac", MAX_SHARED_DELTA),
   _ptrmap(mtClassShared),
   _rw_ptrmap(mtClassShared),
   _ro_ptrmap(mtClassShared),
@@ -395,7 +395,6 @@ address ArchiveBuilder::reserve_buffer() {
     // We don't want any valid object to be at the very bottom of the archive.
     // See ArchivePtrMarker::mark_pointer().
     _pz_region.allocate(AOTMetaspace::protection_zone_size());
-    start_dump_region(&_rw_region);
   }
 
   return buffer_bottom;
@@ -1039,12 +1038,11 @@ address ArchiveBuilder::offset_to_buffered_address(u4 offset) const {
 }
 
 void ArchiveBuilder::start_ac_region() {
-  ro_region()->pack();
   start_dump_region(&_ac_region);
 }
 
-void ArchiveBuilder::end_ac_region() {
-  _ac_region.pack();
+void ArchiveBuilder::start_rw_region() {
+  start_dump_region(&_rw_region);
 }
 
 #if INCLUDE_CDS_JAVA_HEAP
@@ -1184,9 +1182,9 @@ void ArchiveBuilder::write_archive(FileMapInfo* mapinfo, ArchiveMappedHeapInfo* 
 
   ResourceMark rm;
 
+  write_region(mapinfo, AOTMetaspace::ac, &_ac_region, /*read_only=*/false,/*allow_exec=*/false);
   write_region(mapinfo, AOTMetaspace::rw, &_rw_region, /*read_only=*/false,/*allow_exec=*/false);
   write_region(mapinfo, AOTMetaspace::ro, &_ro_region, /*read_only=*/true, /*allow_exec=*/false);
-  write_region(mapinfo, AOTMetaspace::ac, &_ac_region, /*read_only=*/false,/*allow_exec=*/false);
 
   // Split pointer map into read-write and read-only bitmaps
   ArchivePtrMarker::initialize_rw_ro_ac_maps(&_rw_ptrmap, &_ro_ptrmap, &_ac_ptrmap);
@@ -1242,7 +1240,7 @@ void ArchiveBuilder::print_region_stats(FileMapInfo *mapinfo,
   // Print statistics of all the regions
   const size_t bitmap_used = mapinfo->region_at(AOTMetaspace::bm)->used();
   const size_t bitmap_reserved = mapinfo->region_at(AOTMetaspace::bm)->used_aligned();
-  const size_t total_reserved = _ro_region.reserved()  + _rw_region.reserved() +
+  const size_t total_reserved = _ro_region.reserved()  + _rw_region.reserved() + // TODO: ac region missing?
                                 bitmap_reserved +
                                 _total_heap_region_size;
   const size_t total_bytes = _ro_region.used()  + _rw_region.used() +

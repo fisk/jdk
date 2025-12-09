@@ -786,7 +786,7 @@ void VM_PopulateDumpSharedSpace::doit() {
   MutexLocker ml(DumpTimeTable_lock, Mutex::_no_safepoint_check_flag);
 
   _builder.gather_source_objs();
-  _builder.reserve_buffer();
+  _builder.start_rw_region();
 
   CppVtables::dumptime_init(&_builder);
 
@@ -1197,14 +1197,13 @@ void AOTMetaspace::dump_static_archive_impl(StaticArchiveBuilder& builder, TRAPS
   }
 #endif
 
-  VM_PopulateDumpSharedSpace op(builder);
-  VMThread::execute(&op);
+  builder.reserve_buffer();
 
   if (CDSConfig::is_dumping_final_static_archive()) {
     if (AOTCodeCache::is_caching_enabled()) {
-      // We have just created the final image. Let's run the AOT compiler
+      // Let's run the AOT compiler
       if (AOTPrintTrainingInfo) {
-        tty->print_cr("==================== archived_training_data ** after dumping ====================");
+        tty->print_cr("==================== archived_training_data ** before dumping ====================");
         TrainingData::print_archived_training_data_on(tty);
       }
 
@@ -1220,10 +1219,12 @@ void AOTMetaspace::dump_static_archive_impl(StaticArchiveBuilder& builder, TRAPS
         // Write the contents to aot code region and close AOTCodeCache before packing the region
         AOTCodeCache::close();
         log_info(aot)("Dumped AOT code Cache");
-        builder.end_ac_region();
       }
     }
   }
+
+  VM_PopulateDumpSharedSpace op(builder);
+  VMThread::execute(&op);
 
   bool status = write_static_archive(&builder, op.map_info(), op.mapped_heap_info(), op.streamed_heap_info());
   if (status && CDSConfig::is_dumping_preimage_static_archive()) {

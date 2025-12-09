@@ -83,7 +83,6 @@ public:
   // Used during production run to convert a Method in AOTCache to offset from SharedBaseAddress
   static uint convert_method_to_offset(Method* method);
 
-  static void stop_registering_roots() NOT_CDS_JAVA_HEAP_RETURN;
   static int get_archived_object_permanent_index(oop obj) NOT_CDS_JAVA_HEAP_RETURN_(-1);
   static oop get_archived_object(int permanent_index) NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
 
