@@ -115,6 +115,9 @@ int AOTCacheAccess::get_archived_object_permanent_index(oop obj) {
 }
 
 oop AOTCacheAccess::get_archived_object(int permanent_index) {
+  if (permanent_index < 0) {
+    return nullptr;
+  }
   oop o = HeapShared::get_root(permanent_index, false /* clear */);
   assert(oopDesc::is_oop_or_null(o), "sanity");
   return o;
