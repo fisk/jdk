@@ -240,10 +240,6 @@ unsigned HeapShared::oop_hash(oop const& p) {
   return primitive_hash(cast_from_oop<intptr_t>(p));
 }
 
-unsigned int HeapShared::oop_handle_hash_raw(const OopHandle& oh) {
-  return oop_hash(oh.resolve());
-}
-
 unsigned int HeapShared::oop_handle_hash(const OopHandle& oh) {
   oop o = oh.resolve();
   if (o == nullptr) {
@@ -451,10 +447,6 @@ bool HeapShared::has_been_archived(oop obj) {
 
 int HeapShared::append_root(oop obj) {
   assert(CDSConfig::is_dumping_heap(), "dump-time only");
-  if (obj != nullptr) {
-    assert(has_been_archived(obj), "must be");
-  }
-
   OopHandle oh(Universe::vm_global(), obj);
   return _pending_roots->append(oh);
 }
@@ -919,7 +911,11 @@ void HeapShared::write_heap(ArchiveMappedHeapInfo* mapped_heap_info, ArchiveStre
 
   GrowableArrayCHeap<oop, mtClassShared>* roots = new GrowableArrayCHeap<oop, mtClassShared>(_pending_roots->length());
   for (int i = 0; i < _pending_roots->length(); i++) {
-    roots->append(_pending_roots->at(i).resolve());
+    oop obj = _pending_roots->at(i).resolve();
+    if (obj != nullptr) {
+      assert(has_been_archived(obj), "must be");
+    }
+    roots->append(obj);
   }
 
   if (HeapShared::is_writing_mapping_mode()) {
@@ -2089,13 +2085,18 @@ size_t HeapShared::_num_total_recorded_klasses = 0;
 size_t HeapShared::_num_total_verifications = 0;
 
 bool HeapShared::has_been_seen_during_subgraph_recording(oop obj) {
-  return _seen_objects_table->get(obj) != nullptr;
+  OopHandle oh(Universe::vm_global(), obj);
+  bool result = _seen_objects_table->get(oh) != nullptr;
+  oh.release(Universe::vm_global());
+  return result;
 }
 
 void HeapShared::set_has_been_seen_during_subgraph_recording(oop obj) {
   assert(!has_been_seen_during_subgraph_recording(obj), "sanity");
-  _seen_objects_table->put_when_absent(obj, true);
+  OopHandle oh(Universe::vm_global(), obj);
+  _seen_objects_table->put_when_absent(oh, true);
   _seen_objects_table->maybe_grow();
+  oh.release(Universe::vm_global());
   ++ _num_new_walked_objs;
 }
 

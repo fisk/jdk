@@ -82,12 +82,21 @@ typedef ResizeableHashTable<OopHandle, int,
                             HeapShared::oop_handle_equals> PermanentOopTable;
 
 static PermanentOopTable* _dumptime_permanent_oop_table = nullptr;
+static bool _stop_registering_roots = false;
+
+void AOTCacheAccess::stop_registering_roots() {
+  _stop_registering_roots = true;
+}
 
 int AOTCacheAccess::get_archived_object_permanent_index(oop obj) {
   MutexLocker ml(ArchivedObjectTables_lock, Mutex::_no_safepoint_check_flag);
 
   if (!CDSConfig::is_dumping_heap()) {
     return -1; // Called by the Leyden old workflow
+  }
+
+  if (_stop_registering_roots) {
+    return -1;
   }
 
   if (_dumptime_permanent_oop_table == nullptr) {
@@ -108,6 +117,7 @@ int AOTCacheAccess::get_archived_object_permanent_index(oop obj) {
 
   int new_root_index = HeapShared::append_root(obj);
   bool success = _dumptime_permanent_oop_table->put_when_absent(oh, new_root_index);
+  _dumptime_permanent_oop_table->maybe_grow();
   assert(success, "invariant");
   oh.release(Universe::vm_global());
 

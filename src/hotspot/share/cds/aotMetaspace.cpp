@@ -662,7 +662,22 @@ void AOTMetaspace::rewrite_bytecodes_and_calculate_fingerprints(Thread* thread, 
   }
 }
 
-class VM_PopulateDumpSharedSpace : public VM_Operation {
+class VM_PopulateDumpSharedSpacePrologue : public VM_Operation {
+private:
+  StaticArchiveBuilder& _builder;
+
+public:
+
+  VM_PopulateDumpSharedSpacePrologue(StaticArchiveBuilder& b) :
+    VM_Operation(), _builder(b) {}
+
+  bool skip_operation() const { return false; }
+
+  VMOp_Type type() const { return VMOp_PopulateDumpSharedSpace; }
+  void doit();   // outline because gdb sucks
+}; // class VM_PopulateDumpSharedSpacePrologue
+
+class VM_PopulateDumpSharedSpaceEpilogue : public VM_Operation {
 private:
   ArchiveMappedHeapInfo _mapped_heap_info;
   ArchiveStreamedHeapInfo _streamed_heap_info;
@@ -679,7 +694,7 @@ private:
 
 public:
 
-  VM_PopulateDumpSharedSpace(StaticArchiveBuilder& b) :
+  VM_PopulateDumpSharedSpaceEpilogue(StaticArchiveBuilder& b) :
     VM_Operation(), _mapped_heap_info(), _streamed_heap_info(), _map_info(nullptr), _builder(b) {}
 
   bool skip_operation() const { return false; }
@@ -690,7 +705,7 @@ public:
   FileMapInfo* map_info() const { return _map_info; }
   void doit();   // outline because gdb sucks
   bool allow_nested_vm_operations() const { return true; }
-}; // class VM_PopulateDumpSharedSpace
+}; // class VM_PopulateDumpSharedSpacePrologue
 
 class StaticArchiveBuilder : public ArchiveBuilder {
 public:
@@ -720,49 +735,7 @@ public:
   }
 };
 
-char* VM_PopulateDumpSharedSpace::dump_early_read_only_tables() {
-  ArchiveBuilder::OtherROAllocMark mark;
-
-  CDS_JAVA_HEAP_ONLY(Modules::dump_archived_module_info());
-
-  DumpRegion* ro_region = ArchiveBuilder::current()->ro_region();
-  char* start = ro_region->top();
-  WriteClosure wc(ro_region);
-  AOTMetaspace::early_serialize(&wc);
-  return start;
-}
-
-char* VM_PopulateDumpSharedSpace::dump_read_only_tables(AOTClassLocationConfig*& cl_config) {
-  ArchiveBuilder::OtherROAllocMark mark;
-
-  SystemDictionaryShared::write_to_archive();
-  cl_config = AOTClassLocationConfig::dumptime()->write_to_archive();
-  AOTClassLinker::write_to_archive();
-  if (CDSConfig::is_dumping_preimage_static_archive()) {
-    FinalImageRecipes::record_recipes();
-  }
-
-  TrainingData::dump_training_data();
-
-  AOTMetaspace::write_method_handle_intrinsics();
-
-  // Write lambform lines into archive
-  LambdaFormInvokers::dump_static_archive_invokers();
-
-  if (CDSConfig::is_dumping_adapters()) {
-    AdapterHandlerLibrary::dump_aot_adapter_table();
-  }
-
-  // Write the other data to the output array.
-  DumpRegion* ro_region = ArchiveBuilder::current()->ro_region();
-  char* start = ro_region->top();
-  WriteClosure wc(ro_region);
-  AOTMetaspace::serialize(&wc);
-
-  return start;
-}
-
-void VM_PopulateDumpSharedSpace::doit() {
+void VM_PopulateDumpSharedSpacePrologue::doit() {
   CDSConfig::set_is_at_aot_safepoint(true);
 
   if (!CDSConfig::is_dumping_final_static_archive()) {
@@ -795,9 +768,64 @@ void VM_PopulateDumpSharedSpace::doit() {
   _builder.dump_ro_metadata();
   _builder.relocate_metaspaceobj_embedded_pointers();
 
+  CDSConfig::set_is_at_aot_safepoint(false);
+}
+
+char* VM_PopulateDumpSharedSpaceEpilogue::dump_early_read_only_tables() {
+  ArchiveBuilder::OtherROAllocMark mark;
+
+  CDS_JAVA_HEAP_ONLY(Modules::dump_archived_module_info());
+
+  DumpRegion* ro_region = ArchiveBuilder::current()->ro_region();
+  char* start = ro_region->top();
+  WriteClosure wc(ro_region);
+  AOTMetaspace::early_serialize(&wc);
+  return start;
+}
+
+char* VM_PopulateDumpSharedSpaceEpilogue::dump_read_only_tables(AOTClassLocationConfig*& cl_config) {
+  ArchiveBuilder::OtherROAllocMark mark;
+
+  SystemDictionaryShared::write_to_archive();
+  cl_config = AOTClassLocationConfig::dumptime()->write_to_archive();
+  AOTClassLinker::write_to_archive();
+  if (CDSConfig::is_dumping_preimage_static_archive()) {
+    FinalImageRecipes::record_recipes();
+  }
+
+  TrainingData::dump_training_data();
+
+  AOTMetaspace::write_method_handle_intrinsics();
+
+  // Write lambform lines into archive
+  LambdaFormInvokers::dump_static_archive_invokers();
+
+  if (CDSConfig::is_dumping_adapters()) {
+    AdapterHandlerLibrary::dump_aot_adapter_table();
+  }
+
+  // Write the other data to the output array.
+  DumpRegion* ro_region = ArchiveBuilder::current()->ro_region();
+  char* start = ro_region->top();
+  WriteClosure wc(ro_region);
+  AOTMetaspace::serialize(&wc);
+
+  return start;
+}
+
+void VM_PopulateDumpSharedSpaceEpilogue::doit() {
+  CDSConfig::set_is_at_aot_safepoint(true);
+
+  AOTCacheAccess::stop_registering_roots();
+  DEBUG_ONLY(SystemDictionaryShared::NoClassLoadingMark nclm);
+  MutexLocker ml(DumpTimeTable_lock, Mutex::_no_safepoint_check_flag);
+
+  AOTArtifactFinder::find_heap_artifacts();
+
   log_info(aot)("Make classes shareable");
   _builder.make_klasses_shareable();
   AOTMetaspace::make_method_handle_intrinsics_shareable();
+
 
   dump_java_heap_objects();
   dump_shared_symbol_table(_builder.symbols());
@@ -1199,6 +1227,9 @@ void AOTMetaspace::dump_static_archive_impl(StaticArchiveBuilder& builder, TRAPS
 
   builder.reserve_buffer();
 
+  VM_PopulateDumpSharedSpacePrologue prologue_op(builder);
+  VMThread::execute(&prologue_op);
+
   if (CDSConfig::is_dumping_final_static_archive()) {
     if (AOTCodeCache::is_caching_enabled()) {
       // Let's run the AOT compiler
@@ -1223,10 +1254,13 @@ void AOTMetaspace::dump_static_archive_impl(StaticArchiveBuilder& builder, TRAPS
     }
   }
 
-  VM_PopulateDumpSharedSpace op(builder);
-  VMThread::execute(&op);
+  VM_PopulateDumpSharedSpaceEpilogue epilogue_op(builder);
+  VMThread::execute(&epilogue_op);
 
-  bool status = write_static_archive(&builder, op.map_info(), op.mapped_heap_info(), op.streamed_heap_info());
+  bool status = write_static_archive(&builder,
+                                     epilogue_op.map_info(),
+                                     epilogue_op.mapped_heap_info(),
+                                     epilogue_op.streamed_heap_info());
   if (status && CDSConfig::is_dumping_preimage_static_archive()) {
     tty->print_cr("%s AOTConfiguration recorded: %s",
                   CDSConfig::has_temp_aot_config_file() ? "Temporary" : "", AOTConfiguration);
@@ -1424,7 +1458,7 @@ bool AOTMetaspace::try_link_class(JavaThread* current, InstanceKlass* ik) {
   }
 }
 
-void VM_PopulateDumpSharedSpace::dump_java_heap_objects() {
+void VM_PopulateDumpSharedSpaceEpilogue::dump_java_heap_objects() {
   if (CDSConfig::is_dumping_heap()) {
     HeapShared::write_heap(&_mapped_heap_info, &_streamed_heap_info);
   } else if (!CDSConfig::is_dumping_preimage_static_archive()) {

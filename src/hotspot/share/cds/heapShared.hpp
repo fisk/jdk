@@ -321,7 +321,6 @@ public:
   static void debug_trace();
   static unsigned oop_hash(oop const& p);
   static unsigned oop_handle_hash(OopHandle const& oh);
-  static unsigned oop_handle_hash_raw(OopHandle const& oh);
   static bool oop_handle_equals(const OopHandle& a, const OopHandle& b);
   static unsigned string_oop_hash(oop const& string) {
     return java_lang_String::hash_code(string);
@@ -361,7 +360,7 @@ private:
   typedef ResizeableHashTable<OopHandle, CachedOopInfo,
       AnyObj::C_HEAP,
       mtClassShared,
-      HeapShared::oop_handle_hash_raw,
+      HeapShared::oop_handle_hash,
       HeapShared::oop_handle_equals> ArchivedObjectCache;
   static ArchivedObjectCache* _archived_object_cache;
 
@@ -418,10 +417,11 @@ private:
   // !UseCompressedOops only: used to relocate pointers to the archived objects
   static ptrdiff_t _runtime_delta;
 
-  typedef ResizeableHashTable<oop, bool,
-      AnyObj::C_HEAP,
-      mtClassShared,
-      HeapShared::oop_hash> SeenObjectsTable;
+  typedef ResizeableHashTable<OopHandle, bool,
+                              AnyObj::C_HEAP,
+                              mtClassShared,
+                              HeapShared::oop_handle_hash,
+                              HeapShared::oop_handle_equals> SeenObjectsTable;
 
   static SeenObjectsTable *_seen_objects_table;
   // The "special subgraph" contains all the archived objects that are reachable

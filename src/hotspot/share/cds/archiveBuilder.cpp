@@ -178,9 +178,9 @@ ArchiveBuilder::ArchiveBuilder() :
   _mapped_static_archive_top(nullptr),
   _buffer_to_requested_delta(0),
   _pz_region("pz", MAX_SHARED_DELTA), // protection zone -- used only during dumping; does NOT exist in cds archive.
-  _ac_region("ac", MAX_SHARED_DELTA),
   _rw_region("rw", MAX_SHARED_DELTA),
   _ro_region("ro", MAX_SHARED_DELTA),
+  _ac_region("ac", MAX_SHARED_DELTA),
   _ptrmap(mtClassShared),
   _rw_ptrmap(mtClassShared),
   _ro_ptrmap(mtClassShared),
@@ -269,7 +269,7 @@ void ArchiveBuilder::gather_klasses_and_symbols() {
   ResourceMark rm;
 
   AOTArtifactFinder::initialize();
-  AOTArtifactFinder::find_artifacts();
+  AOTArtifactFinder::find_metaspace_artifacts();
 
   aot_log_info(aot)("Gathering classes and symbols ... ");
   GatherKlassesAndSymbols doit(this);
@@ -1182,9 +1182,9 @@ void ArchiveBuilder::write_archive(FileMapInfo* mapinfo, ArchiveMappedHeapInfo* 
 
   ResourceMark rm;
 
-  write_region(mapinfo, AOTMetaspace::ac, &_ac_region, /*read_only=*/false,/*allow_exec=*/false);
   write_region(mapinfo, AOTMetaspace::rw, &_rw_region, /*read_only=*/false,/*allow_exec=*/false);
   write_region(mapinfo, AOTMetaspace::ro, &_ro_region, /*read_only=*/true, /*allow_exec=*/false);
+  write_region(mapinfo, AOTMetaspace::ac, &_ac_region, /*read_only=*/false,/*allow_exec=*/false);
 
   // Split pointer map into read-write and read-only bitmaps
   ArchivePtrMarker::initialize_rw_ro_ac_maps(&_rw_ptrmap, &_ro_ptrmap, &_ac_ptrmap);
