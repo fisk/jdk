@@ -286,6 +286,7 @@ public:
   static bool is_subgraph_root_class(InstanceKlass* ik);
 
   // Scratch objects for archiving Klass::java_mirror()
+  static void retain_hash_code(oop orig, oop scratch) NOT_CDS_JAVA_HEAP_RETURN;
   static oop scratch_java_mirror(BasicType t)     NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
   static oop scratch_java_mirror(Klass* k)        NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
   static oop scratch_java_mirror(oop java_mirror) NOT_CDS_JAVA_HEAP_RETURN_(nullptr);
@@ -479,7 +480,6 @@ private:
   static void resolve_or_init(Klass* k, bool do_init, TRAPS);
   static void init_archived_fields_for(Klass* k, const ArchivedKlassSubGraphInfoRecord* record);
 
-  static bool has_been_archived(oop orig_obj);
   static void prepare_resolved_references();
   static void archive_strings();
   static void archive_subgraphs();
@@ -564,6 +564,7 @@ private:
 
   // Dump-time only. Returns the index of the root, which can be used at run time to read
   // the root using get_root(index, ...).
+  static bool has_been_archived(oop orig_obj);
   static int append_root(oop obj);
   static GrowableArrayCHeap<OopHandle, mtClassShared>* pending_roots() { return _pending_roots; }
 

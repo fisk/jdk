@@ -56,7 +56,7 @@ size_t AOTStreamedHeapWriter::_roots_offset;
 size_t AOTStreamedHeapWriter::_forwarding_offset;
 size_t AOTStreamedHeapWriter::_root_highest_object_index_table_offset;
 
-GrowableArrayCHeap<oop, mtClassShared>* AOTStreamedHeapWriter::_source_objs;
+GrowableArrayCHeap<OopHandle, mtClassShared>* AOTStreamedHeapWriter::_source_objs;
 
 AOTStreamedHeapWriter::BufferOffsetToSourceObjectTable* AOTStreamedHeapWriter::_buffer_offset_to_source_obj_table;
 AOTStreamedHeapWriter::SourceObjectToDFSOrderTable* AOTStreamedHeapWriter::_dfs_order_table;
@@ -71,20 +71,18 @@ void AOTStreamedHeapWriter::init() {
     _buffer_offset_to_source_obj_table = new (mtClassShared) BufferOffsetToSourceObjectTable(8, max_table_capacity);
 
     int initial_source_objs_capacity = 10000;
-    _source_objs = new GrowableArrayCHeap<oop, mtClassShared>(initial_source_objs_capacity);
+    _source_objs = new GrowableArrayCHeap<OopHandle, mtClassShared>(initial_source_objs_capacity);
   }
 }
 
 void AOTStreamedHeapWriter::delete_tables_with_raw_oops() {
-  delete _source_objs;
-  _source_objs = nullptr;
-
   delete _dfs_order_table;
   _dfs_order_table = nullptr;
 }
 
 void AOTStreamedHeapWriter::add_source_obj(oop src_obj) {
-  _source_objs->append(src_obj);
+  OopHandle handle(Universe::vm_global(), src_obj);
+  _source_objs->append(handle);
 }
 
 class FollowOopIterateClosure: public BasicOopIterateClosure {
@@ -111,9 +109,9 @@ private:
   }
 };
 
-int AOTStreamedHeapWriter::cmp_dfs_order(oop* o1, oop* o2) {
-  int* o1_dfs = _dfs_order_table->get(*o1);
-  int* o2_dfs = _dfs_order_table->get(*o2);
+int AOTStreamedHeapWriter::cmp_dfs_order(OopHandle* o1, OopHandle* o2) {
+  int* o1_dfs = _dfs_order_table->get(o1->resolve());
+  int* o2_dfs = _dfs_order_table->get(o2->resolve());
   return *o1_dfs - *o2_dfs;
 }
 
@@ -124,7 +122,7 @@ void AOTStreamedHeapWriter::order_source_objs(GrowableArrayCHeap<oop, mtClassSha
   _dfs_to_archive_object_table = NEW_C_HEAP_ARRAY(size_t, (size_t)_source_objs->length() + 1, mtClassShared);
 
   for (int i = 0; i < _source_objs->length(); ++i) {
-    oop obj = _source_objs->at(i);
+    oop obj = _source_objs->at(i).resolve();
     _dfs_order_table->put(cast_from_oop<void*>(obj), -1);
     _dfs_order_table->maybe_grow();
   }
@@ -270,7 +268,7 @@ bool AOTStreamedHeapWriter::is_dumped_interned_string(oop obj) {
 
 void AOTStreamedHeapWriter::copy_source_objs_to_buffer(GrowableArrayCHeap<oop, mtClassShared>* roots) {
   for (int i = 0; i < _source_objs->length(); i++) {
-    oop src_obj = _source_objs->at(i);
+    oop src_obj = _source_objs->at(i).resolve();
     HeapShared::CachedOopInfo* info = HeapShared::get_cached_oop_info(src_obj);
     assert(info != nullptr, "must be");
     size_t buffer_offset = copy_one_source_obj_to_buffer(src_obj);
@@ -459,7 +457,7 @@ void AOTStreamedHeapWriter::map_embedded_oops(ArchiveStreamedHeapInfo* heap_info
   heap_info->oopmap()->resize(heap_region_byte_size / oopmap_unit);
 
   for (int i = 0; i < _source_objs->length(); i++) {
-    oop src_obj = _source_objs->at(i);
+    oop src_obj = _source_objs->at(i).resolve();
     HeapShared::CachedOopInfo* info = HeapShared::get_cached_oop_info(src_obj);
     assert(info != nullptr, "must be");
     address buffered_obj = offset_to_buffered_address<address>(info->buffer_offset());

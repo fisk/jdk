@@ -55,7 +55,7 @@ class AOTStreamedHeapWriter : AllStatic {
   // Offset to dfs bounds information
   static size_t _root_highest_object_index_table_offset;
 
-  static GrowableArrayCHeap<oop, mtClassShared>* _source_objs;
+  static GrowableArrayCHeap<OopHandle, mtClassShared>* _source_objs;
 
   typedef ResizeableHashTable<size_t, OopHandle,
                               AnyObj::C_HEAP,
@@ -71,7 +71,7 @@ class AOTStreamedHeapWriter : AllStatic {
   static int* _roots_highest_dfs;
   static size_t* _dfs_to_archive_object_table;
 
-  static int cmp_dfs_order(oop* o1, oop* o2);
+  static int cmp_dfs_order(OopHandle* o1, OopHandle* o2);
 
   static void allocate_buffer();
   static void ensure_buffer_space(size_t min_bytes);

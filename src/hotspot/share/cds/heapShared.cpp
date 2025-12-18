@@ -630,8 +630,11 @@ void HeapShared::init_scratch_objects_for_basic_type_mirrors(TRAPS) {
   for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
     BasicType bt = (BasicType)i;
     if (!is_reference_type(bt)) {
-      oop m = java_lang_Class::create_basic_type_mirror(type2name(bt), bt, CHECK);
-      _scratch_basic_type_mirrors[i] = OopHandle(Universe::vm_global(), m);
+      oop scratch_mirror = java_lang_Class::create_basic_type_mirror(type2name(bt), bt, CHECK);
+      oop orig_mirror = Universe::java_mirror(bt);
+      // Ensure the identity hash code of the scratch mirror and original mirror match
+      HeapShared::retain_hash_code(orig_mirror, scratch_mirror);
+      _scratch_basic_type_mirrors[i] = OopHandle(Universe::vm_global(), scratch_mirror);
     }
   }
 }
@@ -672,6 +675,9 @@ oop HeapShared::scratch_java_mirror(Klass* k) {
 }
 
 void HeapShared::set_scratch_java_mirror(Klass* k, oop mirror) {
+  // Ensure the identity hash code of the scratch mirror and original mirror match
+  HeapShared::retain_hash_code(k->java_mirror(), mirror);
+
   _scratch_objects_table->set_oop(k, mirror);
 }
 
@@ -794,22 +800,21 @@ void HeapShared::copy_and_rescan_aot_inited_mirror(InstanceKlass* ik) {
   }
 }
 
-void HeapShared::copy_java_mirror(oop orig_mirror, oop scratch_m) {
-  // We need to retain the identity_hash, because it may have been used by some hashtables
-  // in the shared heap.
-  if (!orig_mirror->fast_no_hash_check()) {
-    intptr_t src_hash = orig_mirror->identity_hash();
-    if (UseCompactObjectHeaders) {
-      narrowKlass nk = CompressedKlassPointers::encode(orig_mirror->klass());
-      scratch_m->set_mark(markWord::prototype().set_narrow_klass(nk).copy_set_hash(src_hash));
-    } else {
-      scratch_m->set_mark(markWord::prototype().copy_set_hash(src_hash));
-    }
-    assert(scratch_m->mark().is_unlocked(), "sanity");
-
-    DEBUG_ONLY(intptr_t archived_hash = scratch_m->identity_hash());
-    assert(src_hash == archived_hash, "Different hash codes: original " INTPTR_FORMAT ", archived " INTPTR_FORMAT, src_hash, archived_hash);
+void HeapShared::retain_hash_code(oop orig, oop scratch) {
+  intptr_t src_hash = orig->identity_hash();
+  if (UseCompactObjectHeaders) {
+    narrowKlass nk = CompressedKlassPointers::encode(orig->klass());
+    scratch->set_mark(markWord::prototype().set_narrow_klass(nk).copy_set_hash(src_hash));
+  } else {
+    scratch->set_mark(markWord::prototype().copy_set_hash(src_hash));
   }
+  assert(scratch->mark().is_unlocked(), "sanity");
+}
+
+void HeapShared::copy_java_mirror(oop orig_mirror, oop scratch_m) {
+  DEBUG_ONLY(intptr_t src_hash = orig_mirror->identity_hash());
+  DEBUG_ONLY(intptr_t archived_hash = scratch_m->identity_hash());
+  assert(src_hash == archived_hash, "Different hash codes: original " INTPTR_FORMAT ", archived " INTPTR_FORMAT, src_hash, archived_hash);
 
   if (CDSConfig::is_dumping_aot_linked_classes()) {
     java_lang_Class::set_module(scratch_m, java_lang_Class::module(orig_mirror));
@@ -919,7 +924,6 @@ void HeapShared::write_heap(ArchiveMappedHeapInfo* mapped_heap_info, ArchiveStre
   }
 
   if (HeapShared::is_writing_mapping_mode()) {
-    StringTable::write_shared_table();
     AOTMappedHeapWriter::write(roots, mapped_heap_info);
   } else {
     assert(HeapShared::is_writing_streaming_mode(), "are there more modes?");
@@ -927,9 +931,6 @@ void HeapShared::write_heap(ArchiveMappedHeapInfo* mapped_heap_info, ArchiveStre
   }
 
   delete roots;
-
-  ArchiveBuilder::OtherROAllocMark mark;
-  write_subgraph_info_table();
 }
 
 void HeapShared::scan_java_mirror(oop orig_mirror) {
@@ -2096,7 +2097,6 @@ void HeapShared::set_has_been_seen_during_subgraph_recording(oop obj) {
   OopHandle oh(Universe::vm_global(), obj);
   _seen_objects_table->put_when_absent(oh, true);
   _seen_objects_table->maybe_grow();
-  oh.release(Universe::vm_global());
   ++ _num_new_walked_objs;
 }
 
@@ -2393,12 +2393,10 @@ bool HeapShared::is_dumped_interned_string(oop o) {
   }
 }
 
-// These tables should be used only within the CDS safepoint, so
+// These tables should be used only within the epilogue safepoint, so
 // delete them before we exit the safepoint. Otherwise the table will
 // contain bad oops after a GC.
 void HeapShared::delete_tables_with_raw_oops() {
-  assert(_seen_objects_table == nullptr, "should have been deleted");
-
   if (is_writing_mapping_mode()) {
     AOTMappedHeapWriter::delete_tables_with_raw_oops();
   } else {

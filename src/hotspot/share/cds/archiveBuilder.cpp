@@ -269,7 +269,7 @@ void ArchiveBuilder::gather_klasses_and_symbols() {
   ResourceMark rm;
 
   AOTArtifactFinder::initialize();
-  AOTArtifactFinder::find_metaspace_artifacts();
+  AOTArtifactFinder::find_artifacts();
 
   aot_log_info(aot)("Gathering classes and symbols ... ");
   GatherKlassesAndSymbols doit(this);

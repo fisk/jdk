@@ -134,7 +134,7 @@ private:
   static address _requested_top;
 
   static GrowableArrayCHeap<NativePointerInfo, mtClassShared>* _native_pointers;
-  static GrowableArrayCHeap<oop, mtClassShared>* _source_objs;
+  static GrowableArrayCHeap<OopHandle, mtClassShared>* _source_objs;
   static DumpedInternedStrings *_dumped_interned_strings;
 
   // We sort _source_objs_order to minimize the number of bits in ptrmap and oopmap.

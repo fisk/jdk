@@ -70,7 +70,7 @@ static size_t _num_packages = 0;
 static size_t _num_protection_domains = 0;
 
 GrowableArrayCHeap<AOTMappedHeapWriter::NativePointerInfo, mtClassShared>* AOTMappedHeapWriter::_native_pointers;
-GrowableArrayCHeap<oop, mtClassShared>* AOTMappedHeapWriter::_source_objs;
+GrowableArrayCHeap<OopHandle, mtClassShared>* AOTMappedHeapWriter::_source_objs;
 GrowableArrayCHeap<AOTMappedHeapWriter::HeapObjOrder, mtClassShared>* AOTMappedHeapWriter::_source_objs_order;
 
 AOTMappedHeapWriter::BufferOffsetToSourceObjectTable*
@@ -98,22 +98,20 @@ void AOTMappedHeapWriter::init() {
     _requested_top = nullptr;
 
     _native_pointers = new GrowableArrayCHeap<NativePointerInfo, mtClassShared>(2048);
-    _source_objs = new GrowableArrayCHeap<oop, mtClassShared>(10000);
+    _source_objs = new GrowableArrayCHeap<OopHandle, mtClassShared>(10000);
 
     guarantee(MIN_GC_REGION_ALIGNMENT <= G1HeapRegion::min_region_size_in_words() * HeapWordSize, "must be");
   }
 }
 
 void AOTMappedHeapWriter::delete_tables_with_raw_oops() {
-  delete _source_objs;
-  _source_objs = nullptr;
-
   delete _dumped_interned_strings;
   _dumped_interned_strings = nullptr;
 }
 
 void AOTMappedHeapWriter::add_source_obj(oop src_obj) {
-  _source_objs->append(src_obj);
+  OopHandle handle(Universe::vm_global(), src_obj);
+  _source_objs->append(handle);
 }
 
 void AOTMappedHeapWriter::write(GrowableArrayCHeap<oop, mtClassShared>* roots,
@@ -373,7 +371,7 @@ void AOTMappedHeapWriter::sort_source_objs() {
   _source_objs_order = new GrowableArrayCHeap<HeapObjOrder, mtClassShared>(len);
 
   for (int i = 0; i < len; i++) {
-    oop o = _source_objs->at(i);
+    oop o = _source_objs->at(i).resolve();
     int rank = oop_sorting_rank(o);
     HeapObjOrder os = {i, rank};
     _source_objs_order->append(os);
@@ -391,7 +389,7 @@ void AOTMappedHeapWriter::copy_source_objs_to_buffer(GrowableArrayCHeap<oop, mtC
   sort_source_objs();
   for (int i = 0; i < _source_objs_order->length(); i++) {
     int src_obj_index = _source_objs_order->at(i)._index;
-    oop src_obj = _source_objs->at(src_obj_index);
+    oop src_obj = _source_objs->at(src_obj_index).resolve();
     HeapShared::CachedOopInfo* info = HeapShared::get_cached_oop_info(src_obj);
     assert(info != nullptr, "must be");
     size_t buffer_offset = copy_one_source_obj_to_buffer(src_obj);
@@ -739,7 +737,7 @@ void AOTMappedHeapWriter::relocate_embedded_oops(GrowableArrayCHeap<oop, mtClass
 
   for (int i = 0; i < _source_objs_order->length(); i++) {
     int src_obj_index = _source_objs_order->at(i)._index;
-    oop src_obj = _source_objs->at(src_obj_index);
+    oop src_obj = _source_objs->at(src_obj_index).resolve();
     HeapShared::CachedOopInfo* info = HeapShared::get_cached_oop_info(src_obj);
     assert(info != nullptr, "must be");
     oop requested_obj = requested_obj_from_buffer_offset(info->buffer_offset());

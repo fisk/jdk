@@ -108,6 +108,10 @@ int AOTCacheAccess::get_archived_object_permanent_index(oop obj) {
     obj = HeapShared::scratch_java_mirror(obj);
   }
 
+  if (!HeapShared::has_been_archived(obj)) {
+    return -1;
+  }
+
   OopHandle oh(Universe::vm_global(), obj);
   int* root_index = _dumptime_permanent_oop_table->get(oh);
   if (root_index != nullptr) {
@@ -119,7 +123,6 @@ int AOTCacheAccess::get_archived_object_permanent_index(oop obj) {
   bool success = _dumptime_permanent_oop_table->put_when_absent(oh, new_root_index);
   _dumptime_permanent_oop_table->maybe_grow();
   assert(success, "invariant");
-  oh.release(Universe::vm_global());
 
   return new_root_index;
 }

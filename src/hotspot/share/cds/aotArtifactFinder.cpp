@@ -69,15 +69,17 @@ void AOTArtifactFinder::dispose() {
   _pending_aot_inited_classes = nullptr;
 }
 
-// Find all Klasses that should be included in the AOT cache. See aotArtifactFinder.hpp
-void AOTArtifactFinder::find_metaspace_artifacts() {
+// Find all Klasses and oops that should be included in the AOT cache. See aotArtifactFinder.hpp
+void AOTArtifactFinder::find_artifacts() {
   // Some classes might have been marked as excluded as a side effect of running
   // AOTConstantPoolResolver. Make sure we check all the remaining ones.
   //
   // Note, if a class is not excluded, it does NOT mean it will be automatically included
   // into the AOT cache -- that will be decided by the code below.
   SystemDictionaryShared::finish_exclusion_checks();
+  AOTReferenceObjSupport::init_keep_alive_objs_table();
 
+  start_scanning_for_oops();
 
   // Add the primitive array classes
   for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
@@ -86,6 +88,29 @@ void AOTArtifactFinder::find_metaspace_artifacts() {
       add_cached_type_array_class(Universe::typeArrayKlass(bt));
     }
   }
+
+#if INCLUDE_CDS_JAVA_HEAP
+  // Add the mirrors that aren't associated with a Klass
+  //    - primitive mirrors (E.g., "int.class" in Java code)
+  //    - mirror of fillerArrayKlass
+  if (CDSConfig::is_dumping_heap()) {
+    for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
+      BasicType bt = (BasicType)i;
+      if (!is_reference_type(bt)) {
+        oop orig_mirror = Universe::java_mirror(bt);
+        oop scratch_mirror = HeapShared::scratch_java_mirror(bt);
+        HeapShared::scan_java_mirror(orig_mirror);
+        log_trace(aot, heap, mirror)(
+            "Archived %s mirror object from " PTR_FORMAT,
+            type2name(bt), p2i(scratch_mirror));
+        Universe::set_archived_basic_type_mirror_index(bt, HeapShared::append_root(scratch_mirror));
+      }
+    }
+
+    // Universe::fillerArrayKlass() isn't in the class hierarchy, so handle it specially.
+    HeapShared::scan_java_mirror(Universe::fillerArrayKlass()->java_mirror());
+  }
+#endif
 
   // Add all the InstanceKlasses (and their array classes) that are always included.
   SystemDictionaryShared::dumptime_table()->iterate_all_live_classes([&] (InstanceKlass* ik, DumpTimeClassInfo& info) {
@@ -118,6 +143,16 @@ void AOTArtifactFinder::find_metaspace_artifacts() {
     }
   });
 
+#if INCLUDE_CDS_JAVA_HEAP
+  // Keep scanning until we discover no more class that need to be AOT-initialized.
+  if (CDSConfig::is_initing_classes_at_dump_time()) {
+    while (_pending_aot_inited_classes->length() > 0) {
+      InstanceKlass* ik = _pending_aot_inited_classes->pop();
+      HeapShared::copy_and_rescan_aot_inited_mirror(ik);
+    }
+  }
+#endif
+
   // Exclude all the (hidden) classes that have not been discovered by the code above.
   SystemDictionaryShared::dumptime_table()->iterate_all_live_classes([&] (InstanceKlass* k, DumpTimeClassInfo& info) {
     if (!info.is_excluded() && _seen_classes->get(k) == nullptr) {
@@ -131,57 +166,9 @@ void AOTArtifactFinder::find_metaspace_artifacts() {
     }
   });
 
-  TrainingData::cleanup_training_data();
-}
-
-void AOTArtifactFinder::find_heap_artifacts() {
-  AOTReferenceObjSupport::init_keep_alive_objs_table();
-
-#if INCLUDE_CDS_JAVA_HEAP
-  start_scanning_for_oops();
-
-  // Add the mirrors that aren't associated with a Klass
-  //    - primitive mirrors (E.g., "int.class" in Java code)
-  //    - mirror of fillerArrayKlass
-  if (CDSConfig::is_dumping_heap()) {
-    for (int i = T_BOOLEAN; i < T_VOID+1; i++) {
-      BasicType bt = (BasicType)i;
-      if (!is_reference_type(bt)) {
-        oop orig_mirror = Universe::java_mirror(bt);
-        oop scratch_mirror = HeapShared::scratch_java_mirror(bt);
-        HeapShared::scan_java_mirror(orig_mirror);
-        log_trace(aot, heap, mirror)(
-                                     "Archived %s mirror object from " PTR_FORMAT,
-                                     type2name(bt), p2i(scratch_mirror));
-        Universe::set_archived_basic_type_mirror_index(bt, HeapShared::append_root(scratch_mirror));
-      }
-    }
-
-    // Universe::fillerArrayKlass() isn't in the class hierarchy, so handle it specially.
-    HeapShared::scan_java_mirror(Universe::fillerArrayKlass()->java_mirror());
-
-    for (int i = 0; i < _all_cached_classes->length(); ++i) {
-      Klass* k = _all_cached_classes->at(i);
-      if (k->is_typeArray_klass()) {
-        scan_oops_in_array_class(TypeArrayKlass::cast(k));
-      } else if (k->is_objArray_klass()) {
-        scan_oops_in_array_class(ObjArrayKlass::cast(k));
-      } else {
-        scan_oops_in_instance_class(InstanceKlass::cast(k));
-      }
-    }
-  }
-
-  // Keep scanning until we discover no more class that need to be AOT-initialized.
-  if (CDSConfig::is_initing_classes_at_dump_time()) {
-    while (_pending_aot_inited_classes->length() > 0) {
-      InstanceKlass* ik = _pending_aot_inited_classes->pop();
-      HeapShared::copy_and_rescan_aot_inited_mirror(ik);
-    }
-  }
-
   end_scanning_for_oops();
-#endif
+
+  TrainingData::cleanup_training_data();
 }
 
 void AOTArtifactFinder::start_scanning_for_oops() {
@@ -270,6 +257,7 @@ void AOTArtifactFinder::add_cached_instance_class(InstanceKlass* ik) {
       // The following are not appliable to unregistered classes
       return;
     }
+    scan_oops_in_instance_class(ik);
     if (ik->is_hidden() && CDSConfig::is_initing_classes_at_dump_time()) {
       bool succeed = AOTClassLinker::try_add_candidate(ik);
       guarantee(succeed, "All cached hidden classes must be aot-linkable");
@@ -283,6 +271,7 @@ void AOTArtifactFinder::add_cached_type_array_class(TypeArrayKlass* tak) {
   _seen_classes->put_if_absent(tak, &created);
   if (created) {
     append_to_all_cached_classes(tak);
+    scan_oops_in_array_class(tak);
   }
 }
 
@@ -300,6 +289,7 @@ void AOTArtifactFinder::scan_oops_in_instance_class(InstanceKlass* ik) {
 #if INCLUDE_CDS_JAVA_HEAP
   if (CDSConfig::is_dumping_heap()) {
     HeapShared::scan_java_class(ik);
+    scan_oops_in_array_class(ik->array_klasses());
   }
 #endif
 }

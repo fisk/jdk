@@ -83,8 +83,7 @@ class AOTArtifactFinder : AllStatic {
   static void append_to_all_cached_classes(Klass* k);
 public:
   static void initialize();
-  static void find_metaspace_artifacts();
-  static void find_heap_artifacts();
+  static void find_artifacts();
   static void add_cached_class(Klass* k);
   static void add_aot_inited_class(InstanceKlass* ik);
   static void all_cached_classes_do(MetaspaceClosure* it);
