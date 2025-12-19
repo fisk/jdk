@@ -2522,9 +2522,15 @@ void HeapShared::remap_dumped_metadata(oop src_obj, address archived_object) {
       native_ptr = RegeneratedClasses::get_regenerated_object(native_ptr);
     }
 
-    address buffered_native_ptr = ArchiveBuilder::current()->get_buffered_addr((address)native_ptr);
-    address requested_native_ptr = ArchiveBuilder::current()->to_requested(buffered_native_ptr);
-    *buffered_field_addr = (Metadata*)requested_native_ptr;
+    // TODO: Looks like C2 creates array klasses after dumping metadata, causing pointers
+    // from archived element types to their not archived array types. Filter for now.
+    if (ArchiveBuilder::current()->has_been_archived((address)native_ptr)) {
+      address buffered_native_ptr = ArchiveBuilder::current()->get_buffered_addr((address)native_ptr);
+      address requested_native_ptr = ArchiveBuilder::current()->to_requested(buffered_native_ptr);
+      *buffered_field_addr = (Metadata*)requested_native_ptr;
+    } else {
+      *buffered_field_addr = nullptr;
+    }
   });
 }
 
