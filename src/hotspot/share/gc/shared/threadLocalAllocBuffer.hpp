@@ -91,7 +91,8 @@ private:
   size_t remaining();
 
 public:
-  void invariants() const { assert(top() >= start() && top() <= end(), "invalid tlab"); }
+  void invariants() const { assert(top() >= start() && top() <= end(), "invalid tlab start=%p top=%p end=%p",
+    start(), top(), end()); }
 
   void initialize(HeapWord* start, HeapWord* top, HeapWord* end);
 

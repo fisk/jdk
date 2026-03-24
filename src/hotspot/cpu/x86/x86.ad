@@ -1966,10 +1966,13 @@ void MachEpilogNode::emit(C2_MacroAssembler* masm, PhaseRegAlloc* ra_) const
   }
 
   if (C->is_method_compilation() && C->has_local_objects()) {
+    // Stash this away for mixed frames, but do not kill tail-call args.
+    if (do_polling()) {
+      __ movptr(rscratch2, Address(r15_thread, JavaThread::tlab_top_offset(true)));
+    }
     // Restore current local tlab top
-    __ movptr(rsi, Address(r15_thread, JavaThread::tlab_top_offset(true)));
-    __ movptr(rdi, Address(rsp, __ preserved_local_tlab_top_offset()));
-    __ movptr(Address(r15, JavaThread::tlab_top_offset(true)), rdi);
+    __ movptr(rscratch1, Address(rsp, __ preserved_local_tlab_top_offset()));
+    __ movptr(Address(r15_thread, JavaThread::tlab_top_offset(true)), rscratch1);
   }
 
   int framesize = C->output()->frame_size_in_bytes();

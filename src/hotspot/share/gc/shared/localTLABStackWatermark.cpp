@@ -35,18 +35,41 @@
 frame LocalTLABStackWatermark::top_frame(const frame& top) {
   frame f = _jt->last_frame();
 
+#if 1
+  int count = 0;
+#endif
   RegisterMap map(_jt,
                   RegisterMap::UpdateMap::skip,
                   RegisterMap::ProcessFrames::skip,
                   RegisterMap::WalkContinuation::skip);
   while (top.id() != f.id()) {
+#if 1
+    ++count;
+#endif
     f = f.sender(&map);
   }
+#if 1
+assert(count <= 2, "frame %d not top?", count);
+#endif
 
+#if 1
+assert(has_barrier(f), "!");
+assert(has_barrier(top), "!");
+assert(f.equal(top), "!");
+#endif
   while (!has_barrier(f)) {
+#if 1
+    ++count;
+#endif
     f = f.sender(&map);
   }
 
+#if 1
+assert(count <= 2, "frame %d not top?", count);
+#endif
+#if 1
+assert(has_barrier(f), "!");
+#endif
   return f;
 }
 
@@ -66,6 +89,9 @@ frame LocalTLABStackWatermark::top_frame() {
     f = f.sender(&map);
   }
 
+#if 1
+assert(has_barrier(f), "!");
+#endif
   return f;
 }
 
@@ -101,7 +127,7 @@ void LocalTLABStackWatermark::update_watermark() {
   if (watermark == max_watermark) {
     watermark = 0;
   }
-  set_watermark(watermark);
+  set_watermark0(watermark);
   SafepointMechanism::update_poll_values(_jt);
 }
 
@@ -110,14 +136,23 @@ bool LocalTLABStackWatermark::is_mixed_frame(const frame& fr) {
     return false;
   }
 
+#if 1
+assert(has_barrier(fr), "!");
+#endif
   return uintptr_t(fr.real_fp()) >= _retired_fp_watermark;
 }
 
 void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
   if (!is_above_watermark(uintptr_t(after_unwind_frame.real_fp()), watermark())) {
     // Not above the watermark yet; we are good
+#if 1
+assert(_jt->saved_local_tlab_top() == nullptr, "stale saved_local_tlab_top, ensure_safe w/o watermark?");
+#endif
     return;
   }
+#if 1
+assert(has_barrier(after_unwind_frame), "!");
+#endif
 
   frame f = top_frame(after_unwind_frame);
   uintptr_t fp = reinterpret_cast<uintptr_t>(f.real_fp());
@@ -274,6 +309,14 @@ void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
   _jt->local_tlab().initialize(tlab_start, tlab_top, tlab_end);
   _jt->local_tlab().invariants();
   update_watermark();
+#if 0
+assert(_jt->saved_local_tlab_top() == nullptr, "stale saved_local_tlab_top after ensure_safe?");
+assert(!is_above_watermark(uintptr_t(after_unwind_frame.real_fp()), watermark()), "still above watermark?!?");
+#endif
+#if 1
+_jt->set_saved_local_tlab_top(nullptr);
+assert(!is_above_watermark(sp, watermark()), "still above watermark?!?");
+#endif
 }
 
 bool LocalTLABStackWatermark::try_refill(HeapWord*& start, size_t& size, size_t min_size) {

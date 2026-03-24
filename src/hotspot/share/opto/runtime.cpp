@@ -332,6 +332,11 @@ void OptoRuntime::new_instance_impl(Klass* klass, bool local, JavaThread* curren
   }
 
   deoptimize_caller_frame(current, HAS_PENDING_EXCEPTION);
+#if 1
+  if (local) {
+    StackWatermarkSet::after_unwind(current);
+  }
+#endif
   JRT_BLOCK_END;
 
   // inform GC that we won't do card marks for initializing writes.
@@ -379,6 +384,11 @@ void OptoRuntime::new_array_impl(Klass* array_type, int len, bool local, JavaThr
   // fetch the oop from TLS after any possible GC.
   deoptimize_caller_frame(current, HAS_PENDING_EXCEPTION);
   current->set_vm_result_oop(result);
+#if 1
+  if (local) {
+    StackWatermarkSet::after_unwind(current);
+  }
+#endif
   JRT_BLOCK_END;
 
   // inform GC that we won't do card marks for initializing writes.
@@ -1888,7 +1898,8 @@ static void trace_exception(outputStream* st, oop exception_oop, address excepti
 // directly from compiled code. Compiled code will call the C++ method following.
 // We can't allow async exception to be installed during  exception processing.
 JRT_ENTRY_NO_ASYNC(address, OptoRuntime::handle_exception_C_helper(JavaThread* current, nmethod* &nm))
-  // TODO: Rather than returing local TLABs when there is an exception, an alternative
+#if 0
+  // TODO: Rather than retiring local TLABs when there is an exception, an alternative
   // is to restore the previous local TLAB top when unwinding for execptions in C2 frames.
   HeapWord* local_tlab_top = current->local_tlab().top();
   current->retire_local_tlab_watermark();
@@ -1901,6 +1912,7 @@ JRT_ENTRY_NO_ASYNC(address, OptoRuntime::handle_exception_C_helper(JavaThread* c
   // has updated oops.
   StackWatermarkSet::after_unwind(current);
   current->set_saved_local_tlab_top(nullptr);
+#endif
 
   MACOS_AARCH64_ONLY(os::thread_wx_enable_write());
 

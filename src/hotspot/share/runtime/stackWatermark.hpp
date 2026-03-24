@@ -99,7 +99,8 @@ protected:
   void process_one();
 
   virtual void update_watermark();
-  void set_watermark(uintptr_t watermark);
+  void set_watermark0(uintptr_t watermark);
+  void set_watermark(const frame& f);
   void yield_processing();
   static bool has_barrier(const frame& f);
   virtual void ensure_safe(const frame& f);

@@ -43,7 +43,8 @@ class StackWatermarkFramesIterator : public CHeapObj<mtThread> {
   StackWatermark& _owner;
   bool _is_done;
 
-  void set_watermark(uintptr_t sp);
+  void set_watermark0(uintptr_t sp);
+  void set_watermark(const frame& f);
   RegisterMap& register_map();
   frame& current();
   void next();
@@ -57,7 +58,7 @@ public:
   bool has_next() const;
 };
 
-void StackWatermarkFramesIterator::set_watermark(uintptr_t sp) {
+void StackWatermarkFramesIterator::set_watermark0(uintptr_t sp) {
   assert(sp != 0, "Sanity check");
 
   if (!has_next()) {
@@ -72,6 +73,12 @@ void StackWatermarkFramesIterator::set_watermark(uintptr_t sp) {
     _callee = _caller;
     _caller = sp;
   }
+}
+
+void StackWatermarkFramesIterator::set_watermark(const frame& f) {
+  assert(StackWatermark::has_barrier(f), "!");
+  uintptr_t sp = reinterpret_cast<uintptr_t>(f.sp());
+  set_watermark0(sp);
 }
 
 // This class encapsulates various marks we need to deal with calling the
@@ -102,7 +109,8 @@ void StackWatermarkFramesIterator::process_one(void* context) {
     _owner.process(f, register_map(), context);
     next();
     if (frame_has_barrier) {
-      set_watermark(sp);
+//    set_watermark(sp);
+      set_watermark(f);
       break;
     }
   }
@@ -123,7 +131,8 @@ void StackWatermarkFramesIterator::process_all(void* context) {
     _owner.process(f, register_map(), context);
     next();
     if (frame_has_barrier) {
-      set_watermark(sp);
+//    set_watermark(sp);
+      set_watermark(f);
       if (++i == frames_per_poll_gc) {
         // Yield every N frames so mutator can progress faster.
         i = 0;
@@ -244,9 +253,15 @@ void StackWatermark::update_watermark() {
   }
 }
 
-void StackWatermark::set_watermark(uintptr_t watermark) {
+void StackWatermark::set_watermark0(uintptr_t watermark) {
   _watermark = watermark;
   _state = StackWatermarkState::create(0, watermark == 0 /* is_done */);
+}
+
+void StackWatermark::set_watermark(const frame& f) {
+  assert(has_barrier(f), "!");
+  uintptr_t sp = reinterpret_cast<uintptr_t>(f.sp());
+  set_watermark0(sp);
 }
 
 void StackWatermark::process_one() {

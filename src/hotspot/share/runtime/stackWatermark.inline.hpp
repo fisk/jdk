@@ -36,6 +36,7 @@ static inline bool is_above_watermark(uintptr_t sp, uintptr_t watermark) {
   if (watermark == 0) {
     return false;
   }
+// TODO: use frame::is_older()?
   return sp > watermark;
 }
 
@@ -54,9 +55,9 @@ inline bool StackWatermark::has_barrier(const frame& f) {
     if (nm->is_compiled_by_c1() || nm->is_compiled_by_c2()) {
       return true;
     }
-    if (nm->is_native_method()) {
-      return true;
-    }
+  }
+  if (f.is_native_frame()) {
+    return true;
   }
   return false;
 }
@@ -73,6 +74,11 @@ inline bool StackWatermark::processing_completed(uint32_t state) const {
 inline void StackWatermark::ensure_safe(const frame& f) {
   assert(processing_started(), "Processing should already have started");
 
+#if 1
+if (!has_barrier(f)) {
+  assert_is_frame_safe(f);
+}
+#endif
   if (processing_completed_acquire()) {
     return;
   }
@@ -86,33 +92,70 @@ inline void StackWatermark::ensure_safe(const frame& f) {
   assert_is_frame_safe(f);
 }
 
+#if 0
+static bool is_good_frame(const frame& f) {
+if (f.is_java_frame()) return true;
+if (f.is_native_frame()) return true;
+if (f.is_entry_frame()) return true;
+if (f.is_upcall_stub_frame()) return true;
+CodeBlob* cb = f.cb();
+if (cb != nullptr) {
+  if (cb->is_uncommon_trap_stub()) return true;
+  if (cb->is_deoptimization_stub()) return true;
+}
+return false;
+}
+#endif
+
 inline void StackWatermark::before_unwind() {
   frame f = _jt->last_frame();
+#if 1
+assert(f.is_interpreted_frame() || f.is_native_frame() || !has_barrier(f), "!");
+assert_is_frame_safe(f);
+#endif
 
   // Skip any stub frames etc up until the frame that triggered before_unwind().
   RegisterMap map(_jt,
                   RegisterMap::UpdateMap::skip,
                   RegisterMap::ProcessFrames::skip,
                   RegisterMap::WalkContinuation::skip);
-  if (f.is_safepoint_blob_frame() || f.is_runtime_frame()) {
+  if (!has_barrier(f)) {
     f = f.sender(&map);
   }
+#if 1
+assert(!f.is_compiled_frame(), "!");
+#endif
 
   assert_is_frame_safe(f);
   assert(!f.is_runtime_frame(), "should have skipped all runtime stubs");
+#if 1
+assert(has_barrier(f), "!");
+#endif
 
   // before_unwind() potentially exposes a new frame. The new exposed frame is
   // always the caller of the top frame.
   if (!f.is_first_frame()) {
     f = f.sender(&map);
+#if 1
+if (!has_barrier(f)) {
+  assert_is_frame_safe(f);
+}
+#endif
+#if 1
+assert(has_barrier(f), "redundant before_unwind?"); // should we skip more frames until we find has_barrier()?
+#endif
     ensure_safe(f);
   }
 }
 
 inline void StackWatermark::after_unwind() {
   frame f = _jt->last_frame();
+#if 1
+assert(f.is_interpreted_frame() || f.is_native_frame() || !has_barrier(f), "!");
+assert_is_frame_safe(f);
+#endif
 
-  if (f.is_safepoint_blob_frame() || f.is_runtime_frame()) {
+  if (!has_barrier(f)) {
     // Skip safepoint blob.
     RegisterMap map(_jt,
                     RegisterMap::UpdateMap::skip,
@@ -120,8 +163,15 @@ inline void StackWatermark::after_unwind() {
                     RegisterMap::WalkContinuation::skip);
     f = f.sender(&map);
   }
-
   assert(!f.is_runtime_frame(), "should have skipped all runtime stubs");
+#if 1
+assert(has_barrier(f), "!");
+#endif
+#if 1
+if (!has_barrier(f)) {
+  assert_is_frame_safe(f);
+}
+#endif
 
   // after_unwind() potentially exposes the top frame.
   ensure_safe(f);

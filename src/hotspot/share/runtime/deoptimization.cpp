@@ -474,10 +474,13 @@ bool Deoptimization::deoptimize_objects_internal(JavaThread* thread, GrowableArr
 // This is factored, since it is both called from a JRT_LEAF (deoptimization) and a JRT_ENTRY (uncommon_trap)
 Deoptimization::UnrollBlock* Deoptimization::fetch_unroll_info_helper(JavaThread* current, int exec_mode) {
   JFR_ONLY(Jfr::check_and_process_sample_request(current);)
+
+#if 0
   // When we get here we are about to unwind the deoptee frame. In order to
   // catch not yet safe to use frames, the following stack watermark barrier
   // poll will make such frames safe to use.
   StackWatermarkSet::before_unwind(current);
+#endif
 
   // Local objects could have been proven not to escape, but after deopt, who
   // knows. Let's not reuse any recycled space and start with a new TLAB instead.
@@ -878,6 +881,13 @@ static bool falls_through(Bytecodes::Code bc) {
 JRT_LEAF(BasicType, Deoptimization::unpack_frames(JavaThread* thread, int exec_mode))
   assert(thread == JavaThread::current(), "pre-condition");
 
+#if 1
+  // We did this already in fetch_unroll_info_helper for the compiled frame,
+  // but now that we are in the interpreted frame, we might need to reset the
+  // watermarks, etc.
+  thread->retire_local_tlab(nullptr, true);
+  StackWatermarkSet::after_unwind(thread);
+#endif
   // We are already active in the special DeoptResourceMark any ResourceObj's we
   // allocate will be freed at the end of the routine.
 

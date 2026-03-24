@@ -1263,7 +1263,8 @@ void JavaThread::check_special_condition_for_native_trans(JavaThread *thread) {
   // After returning from native, it could be that the stack frames are not
   // yet safe to use. We catch such situations in the subsequent stack watermark
   // barrier, which will trap unsafe stack frames.
-  StackWatermarkSet::before_unwind(thread);
+  StackWatermarkSet::after_unwind(thread);  // native method frame
+  StackWatermarkSet::before_unwind(thread); // caller frame
 }
 
 #ifndef PRODUCT

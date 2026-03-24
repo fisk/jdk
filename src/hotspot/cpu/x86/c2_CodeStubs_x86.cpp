@@ -31,7 +31,8 @@
 #define __ masm.
 
 int C2SafepointPollStub::max_size() const {
-  return 33;
+  Compile* C = Compile::current();
+  return 30 + ((C->is_method_compilation() && C->has_local_objects()) ? 3 : 0);
 }
 
 void C2SafepointPollStub::emit(C2_MacroAssembler& masm) {
@@ -46,7 +47,7 @@ void C2SafepointPollStub::emit(C2_MacroAssembler& masm) {
   __ lea(rscratch1, safepoint_pc);
   Compile* C = Compile::current();
   if (C->is_method_compilation() && C->has_local_objects()) {
-    __ movptr(Address(r15_thread, JavaThread::saved_local_tlab_top_offset()), rsi);
+    __ movptr(Address(r15_thread, JavaThread::saved_local_tlab_top_offset()), rscratch2);
   }
   __ movptr(Address(r15_thread, JavaThread::saved_exception_pc_offset()), rscratch1);
   __ jump(callback_addr);

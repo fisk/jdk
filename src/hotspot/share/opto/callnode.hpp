@@ -1093,6 +1093,11 @@ public:
   }
 
   bool use_local_tlab() {
+#if 1
+    if (UseNewCode) {
+      return does_not_escape_thread();
+    }
+#endif
     // TODO: Should be does_not_escape_thread(), but I get corrupted exception in javac
     return _is_non_escaping; // does_not_escape_thread();
   }
