@@ -39,6 +39,7 @@ inline oop CollectedHeap::obj_allocate(Klass* klass, size_t size, TRAPS) {
 }
 
 inline oop CollectedHeap::array_allocate(Klass* klass, size_t size, int length, bool do_zero, TRAPS) {
+  assert(!klass->is_unrefined_objArray_klass(), "ObjArrayKlass must never be used to allocate array instances directly");
   ObjArrayAllocator allocator(klass, size, length, false /* local */, do_zero, THREAD);
   return allocator.allocate();
 }
@@ -54,6 +55,7 @@ inline oop CollectedHeap::obj_allocate_local(Klass* klass, size_t size, TRAPS) {
 }
 
 inline oop CollectedHeap::array_allocate_local(Klass* klass, size_t size, int length, bool do_zero, TRAPS) {
+  assert(!klass->is_unrefined_objArray_klass(), "ObjArrayKlass must never be used to allocate array instances directly");
   ObjArrayAllocator allocator(klass, size, length, true /* local */, do_zero, THREAD);
   return allocator.allocate();
 }

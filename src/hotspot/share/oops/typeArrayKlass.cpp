@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,6 +38,7 @@
 #include "oops/oop.inline.hpp"
 #include "oops/typeArrayKlass.inline.hpp"
 #include "oops/typeArrayOop.inline.hpp"
+#include "runtime/arguments.hpp"
 #include "runtime/handles.inline.hpp"
 #include "utilities/macros.hpp"
 
@@ -75,10 +76,14 @@ TypeArrayKlass* TypeArrayKlass::allocate_klass(ClassLoaderData* loader_data, Bas
 }
 
 u2 TypeArrayKlass::compute_modifier_flags() const {
-  return JVM_ACC_ABSTRACT | JVM_ACC_FINAL | JVM_ACC_PUBLIC;
+  u2 identity_flag = (Arguments::is_valhalla_enabled()) ? JVM_ACC_IDENTITY : 0;
+
+  return JVM_ACC_ABSTRACT | JVM_ACC_FINAL | JVM_ACC_PUBLIC
+                    | identity_flag;
 }
 
-TypeArrayKlass::TypeArrayKlass(BasicType type, Symbol* name) : ArrayKlass(name, Kind) {
+TypeArrayKlass::TypeArrayKlass(BasicType type, Symbol* name)
+    : ArrayKlass(1, name, Kind, ArrayProperties::Default()) {
   set_layout_helper(array_layout_helper(type));
   assert(is_array_klass(), "sanity");
   assert(is_typeArray_klass(), "sanity");
@@ -95,15 +100,14 @@ typeArrayOop TypeArrayKlass::allocate_common(int length, bool local, bool do_zer
   size_t size = typeArrayOopDesc::object_size(layout_helper(), length);
   if (local) {
     return (typeArrayOop)Universe::heap()->array_allocate_local(this, size, length,
-                                                                do_zero, CHECK_NULL);
+                                                                do_zero, THREAD);
   } else {
     return (typeArrayOop)Universe::heap()->array_allocate(this, size, length,
-                                                          do_zero, CHECK_NULL);
+                                                          do_zero, THREAD);
   }
 }
 
 oop TypeArrayKlass::multi_allocate(int rank, jint* last_size, TRAPS) {
-  // For typeArrays this is only called for the last dimension
   assert(rank == 1, "just checking");
   int length = *last_size;
   return allocate_instance(length, false /* local */, THREAD);
