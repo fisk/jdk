@@ -316,7 +316,7 @@ HeapWord* MemAllocator::mem_allocate_inside_tlab_slow(Allocation& allocation) co
   bool fast_refilled = false;
   if (_local) {
     fast_refilled = watermark->try_refill(mem, allocation._allocated_tlab_size, min_tlab_size);
-    if (_local && mem != nullptr) { // TODO: This code looks horrible; clean up
+    if (fast_refilled && mem != nullptr) { // TODO: This code looks horrible; clean up
       watermark->alloc_tlab(mem, mem + allocation._allocated_tlab_size);
     }
   }
