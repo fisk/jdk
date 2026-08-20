@@ -297,13 +297,15 @@ assert(has_barrier(after_unwind_frame), "!");
     }
   }
 
-  if (fp > _retired_fp_watermark) {
-    log_info(stackbarrier)("Unwinding into Retired Caller for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
-    _retired_sp_watermark = sp;
-    _retired_fp_watermark = fp;
-  } else if (fp > _retired_sp_watermark) {
-    log_info(stackbarrier)("Unwinding into Retired Callee for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
-    _retired_sp_watermark = sp;
+  if (_retired_fp_watermark != 0) {
+    if (fp > _retired_fp_watermark) {
+      log_info(stackbarrier)("Unwinding into Retired Caller for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
+      _retired_sp_watermark = sp;
+      _retired_fp_watermark = fp;
+    } else if (fp > _retired_sp_watermark) {
+      log_info(stackbarrier)("Unwinding into Retired Callee for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
+      _retired_sp_watermark = sp;
+    }
   }
 
   _jt->local_tlab().initialize(tlab_start, tlab_top, tlab_end);
