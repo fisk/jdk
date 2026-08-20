@@ -30,7 +30,7 @@
 #include "runtime/osThread.hpp"
 #include "runtime/registerMap.hpp"
 #include "runtime/stackWatermark.inline.hpp"
-#include "runtime/safepointMechanism.hpp"
+#include "runtime/safepointMechanism.inline.hpp"
 
 frame LocalTLABStackWatermark::top_frame(const frame& top) {
   frame f = _jt->last_frame();
@@ -128,7 +128,13 @@ void LocalTLABStackWatermark::update_watermark() {
     watermark = 0;
   }
   set_watermark0(watermark);
-  SafepointMechanism::update_poll_values(_jt);
+  if (Thread::current() == _jt) {
+    SafepointMechanism::update_poll_values(_jt);
+  } else {
+    // A remote thread is never allowed to relax the arm value, because
+    // it could racingly be updated in the opposite way.
+    SafepointMechanism::arm_local_poll_release(_jt);
+  }
 }
 
 bool LocalTLABStackWatermark::is_mixed_frame(const frame& fr) {

@@ -92,8 +92,8 @@ uintptr_t SafepointMechanism::compute_poll_word(bool armed, uintptr_t stack_wate
 }
 
 void SafepointMechanism::update_poll_values(JavaThread* thread) {
-  // TODO make usable from outside sometimes
-  //assert(thread == Thread::current(), "Must be");
+  assert(thread == Thread::current(),
+         "only the owning thread may recompute its poll values");
   //assert(thread->thread_state() != _thread_blocked, "Must not be");
   //assert(thread->thread_state() != _thread_in_native, "Must not be");
 
