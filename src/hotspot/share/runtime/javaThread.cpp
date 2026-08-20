@@ -376,7 +376,7 @@ JavaThread::JavaThread(MemTag mem_tag) :
   _preemption_cancelled(false),
   _pending_interrupted_exception(false),
   _at_preemptable_init(false),
-  _saved_local_tlab_top(nullptr),
+  _saved_local_tlab_top((HeapWord*)-1),
   DEBUG_ONLY(_preempt_init_klass(nullptr) COMMA)
   DEBUG_ONLY(_interp_at_preemptable_vmcall_cnt(0) COMMA)
   DEBUG_ONLY(_interp_redoing_vm_call(false) COMMA)

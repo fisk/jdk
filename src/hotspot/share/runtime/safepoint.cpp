@@ -831,7 +831,7 @@ void ThreadSafepointState::handle_polling_page_exception() {
     StackWatermarkSet::after_unwind(self);
     // TODO: Not pretty to have this code placed here. See if we can find a
     // better abstraction.
-    self->set_saved_local_tlab_top(nullptr);
+    self->set_saved_local_tlab_top((HeapWord*)-1);
 
     // Process pending operation
     SafepointMechanism::process_if_requested_with_exit_check(self, true /* check asyncs */);

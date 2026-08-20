@@ -145,8 +145,8 @@ assert(has_barrier(fr), "!");
 void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
   if (!is_above_watermark(uintptr_t(after_unwind_frame.real_fp()), watermark())) {
     // Not above the watermark yet; we are good
-#if 1
-assert(_jt->saved_local_tlab_top() == nullptr, "stale saved_local_tlab_top, ensure_safe w/o watermark?");
+#if 0
+  assert(_jt->saved_local_tlab_top() == (HeapWord*)-1, "stale saved_local_tlab_top, ensure_safe w/o watermark?");
 #endif
     return;
   }
@@ -197,8 +197,8 @@ assert(has_barrier(after_unwind_frame), "!");
       tlab_start = _jt->local_tlab().start();
       tlab_end = _jt->local_tlab().end();
       tlab_top = _jt->saved_local_tlab_top();
-      if (tlab_top == nullptr && tlab_start != nullptr) {
-        // Unwind without restore apparently
+      if (tlab_top == ((HeapWord*)-1)) {
+        // Unwind without restore (no local objects)
         tlab_top = _jt->local_tlab().top();
       }
       log_info(stackbarrier)("Mixed to mixed for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
@@ -314,7 +314,6 @@ assert(_jt->saved_local_tlab_top() == nullptr, "stale saved_local_tlab_top after
 assert(!is_above_watermark(uintptr_t(after_unwind_frame.real_fp()), watermark()), "still above watermark?!?");
 #endif
 #if 1
-_jt->set_saved_local_tlab_top(nullptr);
 assert(!is_above_watermark(sp, watermark()), "still above watermark?!?");
 #endif
 }
@@ -349,8 +348,6 @@ bool LocalTLABStackWatermark::try_refill(HeapWord*& start, size_t& size, size_t 
 }
 
 void LocalTLABStackWatermark::retire_tlabs() {
-  _jt->set_saved_local_tlab_top(nullptr);
-
   // Frames above this watermark (all) should not reuse previously used TLABs
   LocalTLAB* entry = _used_head;
   while (entry != nullptr) {
@@ -399,8 +396,6 @@ void LocalTLABStackWatermark::retire_tlabs() {
 }
 
 void LocalTLABStackWatermark::alloc_tlab(HeapWord* start, HeapWord* end) {
-  _jt->set_saved_local_tlab_top(nullptr);
-
   assert(_jt->has_last_Java_frame(), "only compiled frames allocating local objects");
   frame f = top_frame();
 
@@ -435,8 +430,6 @@ void LocalTLABStackWatermark::alloc_tlab(HeapWord* start, HeapWord* end) {
 
 // Local objects outside the TLAB need to be cleared before unwinding
 void LocalTLABStackWatermark::alloc_outside_tlab(HeapWord* start, HeapWord* end) {
-  _jt->set_saved_local_tlab_top(nullptr);
-
   assert(_jt->has_last_Java_frame(), "only compiled frames allocating local objects");
   frame f = top_frame();
 
