@@ -99,7 +99,6 @@ LocalTLABStackWatermark::LocalTLABStackWatermark(JavaThread* jt)
   : StackWatermark(jt, StackWatermarkKind::local_tlab, 0),
     _used_head(nullptr),
     _unused_head(nullptr),
-    _used_object_head(nullptr), // TODO: LocalTLAB -> LocalObjects
     _retired_sp_watermark(0),
     _retired_fp_watermark(0),
     _vertical_start(nullptr),
@@ -117,9 +116,6 @@ void LocalTLABStackWatermark::update_watermark() {
   uintptr_t watermark = max_watermark;
   if (_used_head != nullptr) {
     watermark = MIN2(watermark, _used_head->_sp_watermark);
-  }
-  if (_used_object_head != nullptr) {
-    watermark = MIN2(watermark, _used_object_head->_sp_watermark);
   }
   if (_retired_sp_watermark != 0) {
     watermark = MIN2(watermark, _retired_sp_watermark);
@@ -167,31 +163,6 @@ assert(has_barrier(after_unwind_frame), "!");
   log_info(stackbarrier)("Unwinding for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
 
   bool is_mixed = is_mixed_frame(f);
-
-  for (;;) {
-    LocalTLAB* head = _used_object_head;
-    if (head == nullptr) {
-      break;
-    }
-
-    if (fp > head->_fp_watermark) {
-      // Popping large local object; unlink edges to other local objects that might get freed
-      log_info(stackbarrier)("Unwinding with local object for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
-      // There was a previous used TLAB in the stack; make it current so previous tops make sense
-      _used_object_head = head->_prev;
-
-      delete head;
-    } else {
-      log_info(stackbarrier)("Unwinding from fishy frame with local object for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
-      for (LocalTLAB* curr = head; curr != nullptr; curr = curr->_prev) {
-        assert(fp <= curr->_fp_watermark, "unsorted watermarks");
-        if (fp > curr->_sp_watermark) {
-          curr->_sp_watermark = sp;
-        }
-      }
-      break;
-    }
-  }
 
   HeapWord* tlab_start;
   HeapWord* tlab_end;
@@ -365,14 +336,6 @@ void LocalTLABStackWatermark::retire_tlabs() {
   }
   _used_head = nullptr;
 
-  entry = _used_object_head;
-  while (entry != nullptr) {
-    LocalTLAB* next = entry->_prev;
-    delete entry;
-    entry = next;
-  }
-  _used_object_head = nullptr;
-
   entry = _unused_head;
   while (entry != nullptr) {
     LocalTLAB* next = entry->_prev;
@@ -434,27 +397,4 @@ void LocalTLABStackWatermark::alloc_tlab(HeapWord* start, HeapWord* end) {
 
   update_watermark();
   log_info(stackbarrier)("Allocated %s TLAB for tid %d: [%lx, %lx), watermark: %lx, [%lx, %lx)", is_mixed_frame(f) ? "MIXED" : "NEW", _jt->osthread()->thread_id(), fp, sp, watermark(), p2i(start), p2i(end));
-}
-
-// Local objects outside the TLAB need to be cleared before unwinding
-void LocalTLABStackWatermark::alloc_outside_tlab(HeapWord* start, HeapWord* end) {
-  assert(_jt->has_last_Java_frame(), "only compiled frames allocating local objects");
-  frame f = top_frame();
-
-  uintptr_t sp = uintptr_t(f.sp());
-  uintptr_t fp = uintptr_t(f.real_fp());
-
-  if (!is_mixed_frame(f)) {
-    // Horizontal allocations for new frames
-    LocalTLAB* entry = new LocalTLAB();
-    entry->_sp_watermark = sp;
-    entry->_fp_watermark = fp;
-    entry->_prev = _used_object_head;
-    entry->_start = start;
-    entry->_end = end;
-    _used_object_head = entry;
-  }
-
-  update_watermark();
-  log_info(stackbarrier)("Allocated %s object for tid %d: [%lx, %lx), watermark: %lx, [%lx, %lx)", is_mixed_frame(f) ? "MIXED" : "NEW", _jt->osthread()->thread_id(), fp, sp, watermark(), p2i(start), p2i(end));
 }

@@ -245,11 +245,6 @@ HeapWord* MemAllocator::mem_allocate_outside_tlab(Allocation& allocation) const 
   _thread->incr_allocated_bytes(size_in_bytes);
   _thread->heap_sampler().inc_outside_tlab_bytes(size_in_bytes);
 
-  if (_local) {
-    LocalTLABStackWatermark* watermark = static_cast<LocalTLABStackWatermark*>(StackWatermarkSet::get(JavaThread::cast(_thread), StackWatermarkKind::local_tlab));
-    watermark->alloc_outside_tlab(mem, mem + _word_size);
-  }
-
   return mem;
 }
 

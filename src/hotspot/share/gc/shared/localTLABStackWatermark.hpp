@@ -47,8 +47,6 @@ private:
   LocalTLAB* _used_head;
   LocalTLAB* _unused_head;
 
-  LocalTLAB* _used_object_head;
-
   uintptr_t _retired_sp_watermark;
   uintptr_t _retired_fp_watermark;
 
@@ -73,7 +71,6 @@ public:
 
   void retire_tlabs();
   void alloc_tlab(HeapWord* start, HeapWord* end);
-  void alloc_outside_tlab(HeapWord* start, HeapWord* end);
   bool try_refill(HeapWord*& start, size_t& size, size_t min_size);
 };
 
