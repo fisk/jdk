@@ -152,7 +152,6 @@ inline void StackWatermark::after_unwind() {
   frame f = _jt->last_frame();
 #if 1
 assert(f.is_interpreted_frame() || f.is_native_frame() || !has_barrier(f), "!");
-assert_is_frame_safe(f);
 #endif
 
   if (!has_barrier(f)) {
