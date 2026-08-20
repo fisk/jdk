@@ -410,7 +410,7 @@ class Thread: public ThreadShadow {
   void initialize_tlab();
   void retire_shared_tlab(ThreadLocalAllocStats* stats);
   void retire_local_tlab_watermark();
-  void retire_local_tlab(ThreadLocalAllocStats* stats, bool watermark);
+  void retire_local_tlab(bool watermark);
   void retire_tlabs(ThreadLocalAllocStats* stats = nullptr);
   void fill_tlab(HeapWord* start, size_t pre_reserved, size_t new_size, bool local);
 

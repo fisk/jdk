@@ -597,7 +597,7 @@ void FreezeBase::unwind_frames() {
   entry->flush_stack_processing(_thread);
   // TODO: Do better; we need to retire local tlabs both when mounting and unmounting.
   // This prototype does not yet have full VT support.
-  _thread->retire_local_tlab(nullptr, true /* watermark */);
+  _thread->retire_local_tlab(true /* watermark */);
   assert_frames_in_continuation_are_safe(_thread);
   JFR_ONLY(Jfr::check_and_process_sample_request(_thread);)
   set_anchor_to_entry(_thread, entry);

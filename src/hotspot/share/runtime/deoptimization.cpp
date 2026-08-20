@@ -533,7 +533,7 @@ Deoptimization::UnrollBlock* Deoptimization::fetch_unroll_info_helper(JavaThread
 
   // Local objects could have been proven not to escape, but after deopt, who
   // knows. Let's not reuse any recycled space and start with a new TLAB instead.
-  current->retire_local_tlab(nullptr, true);
+  current->retire_local_tlab(true);
 
   // Note: there is a safepoint safety issue here. No matter whether we enter
   // via vanilla deopt or uncommon trap we MUST NOT stop at a safepoint once
@@ -917,7 +917,7 @@ JRT_LEAF(BasicType, Deoptimization::unpack_frames(JavaThread* thread, int exec_m
   // We did this already in fetch_unroll_info_helper for the compiled frame,
   // but now that we are in the interpreted frame, we might need to reset the
   // watermarks, etc.
-  thread->retire_local_tlab(nullptr, true);
+  thread->retire_local_tlab(true);
   StackWatermarkSet::after_unwind(thread);
 #endif
   // We are already active in the special DeoptResourceMark any ResourceObj's we

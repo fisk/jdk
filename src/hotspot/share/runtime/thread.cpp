@@ -172,8 +172,16 @@ void Thread::retire_local_tlab_watermark() {
   watermark->retire_tlabs();
 }
 
-void Thread::retire_local_tlab(ThreadLocalAllocStats* stats, bool watermark) {
-  local_tlab().retire(stats);
+void Thread::retire_local_tlab(bool watermark) {
+  // Local TLAB allocations cannot use the conventional TLAB statistics. The
+  // two TLABs cannot independently sample the single thread-wide requested-
+  // byte counter. Keep the refill counters within a local-TLAB epoch for
+  // compute_size(), but discard them when that epoch is retired.
+  if (watermark) {
+    local_tlab().retire_and_discard_statistics();
+  } else {
+    local_tlab().retire();
+  }
   if (watermark) {
     retire_local_tlab_watermark();
   }
@@ -181,7 +189,7 @@ void Thread::retire_local_tlab(ThreadLocalAllocStats* stats, bool watermark) {
 
 void Thread::retire_tlabs(ThreadLocalAllocStats* stats) {
   retire_shared_tlab(stats);
-  retire_local_tlab(stats, true);
+  retire_local_tlab(true);
 }
 
 void Thread::fill_tlab(HeapWord* start, size_t pre_reserved, size_t new_size, bool local) {

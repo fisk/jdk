@@ -174,6 +174,9 @@ public:
   // Retire an in-use tlab and optionally collect statistics.
   void retire(ThreadLocalAllocStats* stats = nullptr);
 
+  // Retire an in-use tlab and discard the statistics collected for it.
+  void retire_and_discard_statistics();
+
   // Record refill waste before allocating (refilling) with a new TLAB.
   void record_refill_waste();
 

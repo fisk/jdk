@@ -68,7 +68,6 @@ void ZThreadLocalAllocBuffer::retire(JavaThread* thread, ThreadLocalAllocStats* 
     thread->retire_tlabs(stats);
     if (ResizeTLAB) {
       thread->tlab().resize();
-      thread->local_tlab().resize();
     }
   }
 }

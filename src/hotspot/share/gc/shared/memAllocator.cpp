@@ -291,7 +291,7 @@ HeapWord* MemAllocator::mem_allocate_inside_tlab_slow(Allocation& allocation) co
 
   // Retire the current TLAB
   if (_local) {
-    _thread->retire_local_tlab(nullptr, false);
+    _thread->retire_local_tlab(false);
   } else {
     _thread->retire_shared_tlab(nullptr);
   }

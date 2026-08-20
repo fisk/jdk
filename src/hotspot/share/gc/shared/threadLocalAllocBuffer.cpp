@@ -155,6 +155,11 @@ void ThreadLocalAllocBuffer::retire(ThreadLocalAllocStats* stats) {
   }
 }
 
+void ThreadLocalAllocBuffer::retire_and_discard_statistics() {
+  retire();
+  reset_statistics();
+}
+
 void ThreadLocalAllocBuffer::record_refill_waste() {
   _refill_waste += (unsigned int)remaining();
 }
