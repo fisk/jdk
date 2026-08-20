@@ -146,7 +146,7 @@ void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
   if (!is_above_watermark(uintptr_t(after_unwind_frame.real_fp()), watermark())) {
     // Not above the watermark yet; we are good
 #if 0
-  assert(_jt->saved_local_tlab_top() == (HeapWord*)-1, "stale saved_local_tlab_top, ensure_safe w/o watermark?");
+  assert(_jt->saved_local_tlab_top() == JavaThread::no_saved_local_tlab_top(), "stale saved_local_tlab_top, ensure_safe w/o watermark?");
 #endif
     return;
   }
@@ -197,7 +197,7 @@ assert(has_barrier(after_unwind_frame), "!");
       tlab_start = _jt->local_tlab().start();
       tlab_end = _jt->local_tlab().end();
       tlab_top = _jt->saved_local_tlab_top();
-      if (tlab_top == ((HeapWord*)-1)) {
+      if (tlab_top == JavaThread::no_saved_local_tlab_top()) {
         // Unwind without restore (no local objects)
         tlab_top = _jt->local_tlab().top();
       }

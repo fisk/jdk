@@ -630,8 +630,10 @@ private:
     return byte_offset_of(JavaThread, _saved_local_tlab_top);
   }
 
+  static HeapWord* no_saved_local_tlab_top() { return (HeapWord*)-1; }
   HeapWord* saved_local_tlab_top() const { return _saved_local_tlab_top; }
   void set_saved_local_tlab_top(HeapWord* top) { _saved_local_tlab_top = top; }
+  void clear_saved_local_tlab_top() { _saved_local_tlab_top = no_saved_local_tlab_top(); }
 
   void set_requires_cross_modify_fence(bool val) PRODUCT_RETURN NOT_PRODUCT({ _requires_cross_modify_fence = val; })
 

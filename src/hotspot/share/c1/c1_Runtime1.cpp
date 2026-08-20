@@ -677,6 +677,7 @@ JRT_ENTRY_NO_ASYNC(static address, exception_handler_for_pc_helper(JavaThread* c
     // frame has been unwound. It instead builds its own stub frame, to call the
     // runtime. But the throwing frame has already been unwound here.
     StackWatermarkSet::after_unwind(current);
+    current->clear_saved_local_tlab_top();
   }
 
   nm = CodeCache::find_nmethod(pc);

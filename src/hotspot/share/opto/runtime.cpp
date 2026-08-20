@@ -341,7 +341,7 @@ void OptoRuntime::new_instance_impl(Klass* klass, bool local, JavaThread* curren
   }
 
   deoptimize_caller_frame(current, HAS_PENDING_EXCEPTION);
-#if 1
+#if 0 // TODO: Not sure why this would be a thing?
   if (local) {
     StackWatermarkSet::after_unwind(current);
   }
@@ -401,7 +401,7 @@ void OptoRuntime::new_array_impl(Klass* array_type, int len, oopDesc* init_val, 
   // fetch the oop from TLS after any possible GC.
   deoptimize_caller_frame(current, HAS_PENDING_EXCEPTION);
   current->set_vm_result_oop(result);
-#if 1
+#if 0 // TODO: Not sure why this would be a thing?
   if (local) {
     StackWatermarkSet::after_unwind(current);
   }
@@ -441,9 +441,10 @@ void OptoRuntime::new_array_nozero_impl(Klass* array_type, int len, bool local, 
   // fetch the oop from TLS after any possible GC.
   deoptimize_caller_frame(current, HAS_PENDING_EXCEPTION);
   current->set_vm_result_oop(result);
-  if (local) {
-    StackWatermarkSet::after_unwind(current);
-  }
+  // TODO: Not sure why this would be a thing?
+  //if (local) {
+  //  StackWatermarkSet::after_unwind(current);
+  //}
   JRT_BLOCK_END;
 
 
@@ -1994,6 +1995,7 @@ JRT_ENTRY_NO_ASYNC(address, OptoRuntime::handle_exception_C_helper(JavaThread* c
     // The exception blob's from-callee entry is used only after a Java frame
     // has been removed. The newly exposed frame is walkable here.
     StackWatermarkSet::after_unwind(current);
+    current->clear_saved_local_tlab_top();
   }
 
   MACOS_AARCH64_ONLY(os::thread_wx_enable_write());

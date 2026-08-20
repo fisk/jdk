@@ -509,6 +509,7 @@ JRT_ENTRY(address, InterpreterRuntime::exception_handler_for_exception(JavaThrea
   // into the interpreter. Any deferred stack processing is notified of
   // the event via the StackWatermarkSet.
   StackWatermarkSet::after_unwind(current);
+  current->clear_saved_local_tlab_top();
 
   LastFrameAccessor last_frame(current);
   Handle             h_exception(current, exception);
