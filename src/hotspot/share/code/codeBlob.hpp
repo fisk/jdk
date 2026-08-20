@@ -725,11 +725,14 @@ class UncommonTrapBlob: public SingletonBlob {
 
 class ExceptionBlob: public SingletonBlob {
  private:
+  int _from_callee_offset;
+
   // Creation support
   ExceptionBlob(
     CodeBuffer* cb,
     int         size,
     OopMapSet*  oop_maps,
+    int         from_callee_offset,
     int         frame_size
   );
 
@@ -738,8 +741,11 @@ class ExceptionBlob: public SingletonBlob {
   static ExceptionBlob* create(
     CodeBuffer* cb,
     OopMapSet*  oop_maps,
+    int         from_callee_offset,
     int         frame_size
   );
+
+  address from_callee_entry_point() const { return code_begin() + _from_callee_offset; }
 
   void post_restore_impl() {
     trace_new_stub(this, "ExceptionBlob");

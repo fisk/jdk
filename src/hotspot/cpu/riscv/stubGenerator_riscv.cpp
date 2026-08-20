@@ -566,7 +566,7 @@ class StubGenerator: public StubCodeGenerator {
     __ mv(x9, ra);
     BLOCK_COMMENT("call exception_handler_for_return_address");
     __ call_VM_leaf(CAST_FROM_FN_PTR(address,
-                         SharedRuntime::exception_handler_for_return_address),
+                         SharedRuntime::exception_handler_for_return_address_current),
                     xthread, c_rarg1);
     // we should not really care that ra is no longer the callee
     // address. we saved the value the handler needs in x9 so we can

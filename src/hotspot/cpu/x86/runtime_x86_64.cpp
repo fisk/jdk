@@ -288,6 +288,12 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
 
 
   address start = __ pc();
+  Label common_entry;
+  __ movl(rscratch2, 0);
+  __ jmp(common_entry);
+  int from_callee_offset = __ pc() - start;
+  __ movl(rscratch2, 1);
+  __ bind(common_entry);
 
   // Exception pc is 'return address' for stack walker
   __ push_ppx(rdx);
@@ -321,6 +327,7 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   address the_pc = __ pc();
   __ set_last_Java_frame(noreg, noreg, the_pc, rscratch1);
   __ mov(c_rarg0, r15_thread);
+  __ mov(c_rarg1, rscratch2);
   __ andptr(rsp, -(StackAlignmentInBytes));    // Align stack
   __ call(RuntimeAddress(CAST_FROM_FN_PTR(address, OptoRuntime::handle_exception_C)));
 
@@ -374,7 +381,7 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   masm->flush();
 
   // Set exception blob
-  ExceptionBlob* ex_blob = ExceptionBlob::create(&buffer, oop_maps, SimpleRuntimeFrame::framesize >> 1);
+  ExceptionBlob* ex_blob = ExceptionBlob::create(&buffer, oop_maps, from_callee_offset, SimpleRuntimeFrame::framesize >> 1);
   AOTCodeCache::store_code_blob(*ex_blob, AOTCodeEntry::C2Blob, BlobId::c2_exception_id);
   return ex_blob;
 }

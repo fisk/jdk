@@ -220,6 +220,12 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   int framesize_in_slots = framesize_in_bytes / sizeof(jint);
 
   int start = __ offset();
+  Label common_entry;
+  __ mov(R1, 0);
+  __ b(common_entry);
+  int from_callee_offset = __ offset() - start;
+  __ mov(R1, 1);
+  __ bind(common_entry);
 
   __ str(Rexception_obj, Address(Rthread, JavaThread::exception_oop_offset()));
   __ str(Rexception_pc, Address(Rthread, JavaThread::exception_pc_offset()));
@@ -282,7 +288,7 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   // make sure all code is generated
   masm->flush();
 
-  return ExceptionBlob::create(&buffer, oop_maps, framesize_in_words);
+  return ExceptionBlob::create(&buffer, oop_maps, from_callee_offset, framesize_in_words);
 }
 
 #endif // COMPILER2

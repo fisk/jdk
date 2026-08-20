@@ -272,7 +272,7 @@ class StubGenerator: public StubCodeGenerator {
     __ mov(c_rarg0, Rthread);
     __ mov(c_rarg1, Rexception_pc);
     __ call_VM_leaf(CAST_FROM_FN_PTR(address,
-                         SharedRuntime::exception_handler_for_return_address),
+                         SharedRuntime::exception_handler_for_return_address_current),
                          c_rarg0, c_rarg1);
     __ ldr(Rexception_obj, Address(Rthread, Thread::pending_exception_offset()));
     const Register Rzero = __ zero_register(Rtemp); // Rtemp OK (cleared by above call)

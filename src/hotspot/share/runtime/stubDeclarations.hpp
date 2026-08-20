@@ -240,6 +240,7 @@
   do_stub(monitor_notify, 0, false, false)                             \
   do_stub(monitor_notifyAll, 0, false, false)                          \
   do_stub(rethrow, 2, true, true)                                      \
+  do_stub(rethrow_current, 2, true, true)                              \
   do_stub(slow_arraycopy, 0, false, false)                             \
   do_stub(register_finalizer, 0, false, false)                         \
   do_stub(load_unknown_inline, 0, true, false)                         \

@@ -1114,8 +1114,8 @@ void Parse::catch_inline_exceptions(SafePointNode* ex_map) {
     jvms()->set_should_reexecute(true);
 
     make_runtime_call(RC_NO_LEAF | RC_MUST_THROW,
-                      OptoRuntime::rethrow_Type(),
-                      OptoRuntime::rethrow_stub(),
+                      OptoRuntime::rethrow_current_Type(),
+                      OptoRuntime::rethrow_current_stub(),
                       nullptr, nullptr,
                       ex_node);
   }

@@ -272,6 +272,7 @@ void Matcher::match( ) {
         OptoReg::Name opto_parm_reg = OptoReg::as_OptoReg(parm_reg);
         assert(can_be_java_arg(opto_parm_reg) ||
                C->stub_function() == CAST_FROM_FN_PTR(address, OptoRuntime::rethrow_C) ||
+               C->stub_function() == CAST_FROM_FN_PTR(address, OptoRuntime::rethrow_current_C) ||
                opto_parm_reg == inline_cache_reg(),
                "parameters in register must be preserved by runtime stubs");
       }

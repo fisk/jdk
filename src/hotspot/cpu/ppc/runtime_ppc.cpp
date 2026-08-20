@@ -78,6 +78,12 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   InterpreterMacroAssembler* masm = new InterpreterMacroAssembler(&buffer);
 
   address start = __ pc();
+  Label common_entry;
+  __ li(R5_ARG3, 0);
+  __ b(common_entry);
+  int from_callee_offset = __ pc() - start;
+  __ li(R5_ARG3, 1);
+  __ bind(common_entry);
 
   int frame_size_in_bytes = frame::native_abi_reg_args_size;
   OopMap* map = new OopMap(frame_size_in_bytes / sizeof(jint), 0);
@@ -101,6 +107,7 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   __ set_last_Java_frame(/*sp=*/R1_SP, noreg);
 
   __ mr(R3_ARG1, R16_thread);
+  __ mr(R4_ARG2, R5_ARG3);
   __ call_c((address) OptoRuntime::handle_exception_C);
   address calls_return_pc = __ last_calls_return_pc();
 # ifdef ASSERT
@@ -145,8 +152,8 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   masm->flush();
 
   // Set exception blob.
-  return ExceptionBlob::create(&buffer, oop_maps,
-                                          frame_size_in_bytes/wordSize);
+  return ExceptionBlob::create(&buffer, oop_maps, from_callee_offset,
+                               frame_size_in_bytes/wordSize);
 }
 
 #endif // COMPILER2

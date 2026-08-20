@@ -76,6 +76,13 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   MacroAssembler* masm = new MacroAssembler(&buffer);
 
   Register handle_exception = Z_ARG5;
+  address start = __ pc();
+  Label common_entry;
+  __ z_lghi(Z_ARG3, 0);
+  __ z_bru(common_entry);
+  int from_callee_offset = __ pc() - start;
+  __ z_lghi(Z_ARG3, 1);
+  __ bind(common_entry);
 
   __ z_stg(Z_ARG1/*exception oop*/, Address(Z_thread, JavaThread::exception_oop_offset()));
   __ z_stg(Z_ARG2/*issuing pc*/,    Address(Z_thread, JavaThread::exception_pc_offset()));
@@ -106,7 +113,8 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   __ set_last_Java_frame(/*sp=*/Z_SP, /*pc=*/Z_R1);
 
   // This call can lead to deoptimization of the nmethod holding the handler.
-  __ z_lgr(Z_ARG1, Z_thread);   // argument of C function
+  __ z_lgr(Z_ARG1, Z_thread);   // first argument of C function
+  __ z_lgr(Z_ARG2, Z_ARG3);     // exception arrived from an unwound callee
   __ call_c(CAST_FROM_FN_PTR(address, OptoRuntime::handle_exception_C));
 
   __ z_lgr(handle_exception, Z_RET);
@@ -147,5 +155,5 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
 
   // Set exception blob.
   OopMapSet *oop_maps = nullptr;
-  return ExceptionBlob::create(&buffer, oop_maps, frame_size/wordSize);
+  return ExceptionBlob::create(&buffer, oop_maps, from_callee_offset, frame_size/wordSize);
 }

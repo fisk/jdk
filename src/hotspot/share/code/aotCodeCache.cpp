@@ -1928,7 +1928,7 @@ void AOTCodeAddressTable::init_extrs() {
 
   {
     // Required by initial stubs
-    ADD_EXTERNAL_ADDRESS(SharedRuntime::exception_handler_for_return_address); // used by forward_exception
+    ADD_EXTERNAL_ADDRESS(SharedRuntime::exception_handler_for_return_address_current); // used by forward_exception
     ADD_EXTERNAL_ADDRESS(CompressedOops::base_addr()); // used by call_stub
     ADD_EXTERNAL_ADDRESS(Thread::current); // used by call_stub
     ADD_EXTERNAL_ADDRESS(SharedRuntime::throw_StackOverflowError);
@@ -2093,6 +2093,7 @@ void AOTCodeAddressTable::init_extrs() {
     ADD_EXTERNAL_ADDRESS(OptoRuntime::monitor_notify_C);
     ADD_EXTERNAL_ADDRESS(OptoRuntime::monitor_notifyAll_C);
     ADD_EXTERNAL_ADDRESS(OptoRuntime::rethrow_C);
+    ADD_EXTERNAL_ADDRESS(OptoRuntime::rethrow_current_C);
     ADD_EXTERNAL_ADDRESS(OptoRuntime::slow_arraycopy_C);
     ADD_EXTERNAL_ADDRESS(OptoRuntime::register_finalizer_C);
     ADD_EXTERNAL_ADDRESS(OptoRuntime::load_unknown_inline_C);

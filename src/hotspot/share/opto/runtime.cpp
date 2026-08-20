@@ -1989,22 +1989,12 @@ static void trace_exception(outputStream* st, oop exception_oop, address excepti
 // The method is an entry that is always called by a C++ method not
 // directly from compiled code. Compiled code will call the C++ method following.
 // We can't allow async exception to be installed during  exception processing.
-JRT_ENTRY_NO_ASYNC(address, OptoRuntime::handle_exception_C_helper(JavaThread* current, nmethod* &nm))
-#if 0
-  // TODO: Rather than retiring local TLABs when there is an exception, an alternative
-  // is to restore the previous local TLAB top when unwinding for execptions in C2 frames.
-  HeapWord* local_tlab_top = current->local_tlab().top();
-  current->retire_local_tlab_watermark();
-  // TODO: Something isn't working right here. I suspect handle_exception_C_helper is
-  // both called by the callee and the caller of the exception handling code.
-  //current->set_saved_local_tlab_top(local_tlab_top);
-
-  // The frame we rethrow the exception to might not have been processed by the GC yet.
-  // The stack watermark barrier takes care of detecting that and ensuring the frame
-  // has updated oops.
-  StackWatermarkSet::after_unwind(current);
-  current->set_saved_local_tlab_top(nullptr);
-#endif
+JRT_ENTRY_NO_ASYNC(address, OptoRuntime::handle_exception_C_helper(JavaThread* current, nmethod* &nm, bool from_callee))
+  if (from_callee) {
+    // The exception blob's from-callee entry is used only after a Java frame
+    // has been removed. The newly exposed frame is walkable here.
+    StackWatermarkSet::after_unwind(current);
+  }
 
   MACOS_AARCH64_ONLY(os::thread_wx_enable_write());
 
@@ -2126,7 +2116,7 @@ JRT_END
 // will do the normal VM entry. We do it this way so that we can see if the nmethod
 // we looked up the handler for has been deoptimized in the meantime. If it has been
 // we must not use the handler and instead return the deopt blob.
-address OptoRuntime::handle_exception_C(JavaThread* current) {
+address OptoRuntime::handle_exception_C(JavaThread* current, int from_callee) {
 //
 // We are in Java not VM and in debug mode we have a NoHandleMark
 //
@@ -2140,7 +2130,7 @@ address OptoRuntime::handle_exception_C(JavaThread* current) {
     // Enter the VM
 
     ResetNoHandleMark rnhm;
-    handler_address = handle_exception_C_helper(current, nm);
+    handler_address = handle_exception_C_helper(current, nm, from_callee != 0);
   }
 
   // Back in java: Use no oops, DON'T safepoint
@@ -2204,6 +2194,23 @@ address OptoRuntime::rethrow_C(oopDesc* exception, JavaThread* thread, address r
   thread->set_vm_result_oop(exception);
   // Frame not compiled (handles deoptimization blob)
   return SharedRuntime::raw_exception_handler_for_return_address(thread, ret_pc);
+}
+
+address OptoRuntime::rethrow_current_C(oopDesc* exception, JavaThread* thread, address ret_pc) {
+  AARCH64_PORT_ONLY(ret_pc = pauth_strip_verifiable(ret_pc));
+
+#ifndef PRODUCT
+  SharedRuntime::_rethrow_ctr++;
+#endif
+  assert(exception != nullptr, "should have thrown a NullPointerException");
+#ifdef ASSERT
+  if (!(exception->is_a(vmClasses::Throwable_klass()))) {
+    ShouldNotReachHere();
+  }
+#endif
+
+  thread->set_vm_result_oop(exception);
+  return SharedRuntime::raw_exception_handler_for_return_address_current(thread, ret_pc);
 }
 
 static const TypeFunc* make_rethrow_Type() {

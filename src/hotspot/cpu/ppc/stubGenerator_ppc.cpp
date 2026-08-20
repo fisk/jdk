@@ -459,7 +459,7 @@ class StubGenerator: public StubCodeGenerator {
     __ push_frame_reg_args(0, R0);
     // Find exception handler.
     __ call_VM_leaf(CAST_FROM_FN_PTR(address,
-                     SharedRuntime::exception_handler_for_return_address),
+                     SharedRuntime::exception_handler_for_return_address_current),
                     R16_thread,
                     R4_ARG2);
     // Copy handler's address.

@@ -579,7 +579,8 @@ Node *RegionNode::Ideal(PhaseGVN *phase, bool can_reshape) {
       }
       if( n->is_Proj() ) {      // Remove useless rethrows
         Node *call = n->in(0);
-        if (call->is_Call() && call->as_Call()->entry_point() == OptoRuntime::rethrow_stub()) {
+        if (call->is_Call() && (call->as_Call()->entry_point() == OptoRuntime::rethrow_stub() ||
+             call->as_Call()->entry_point() == OptoRuntime::rethrow_current_stub())) {
           set_req(i, call->in(0));
           modified = true;
           i--;
@@ -3604,7 +3605,8 @@ const Type* CatchNode::Value(PhaseGVN* phase) const {
     if( i10->is_Call() ) {
       CallNode *call = i10->as_Call();
       // Rethrows always throw exceptions, never return
-      if (call->entry_point() == OptoRuntime::rethrow_stub()) {
+      if ((call->entry_point() == OptoRuntime::rethrow_stub() ||
+          call->entry_point() == OptoRuntime::rethrow_current_stub())) {
         f[CatchProjNode::fall_through_index] = Type::TOP;
       } else if (call->is_AllocateArray()) {
         Node* klass_node = call->in(AllocateNode::KlassNode);
@@ -3664,7 +3666,8 @@ Node* CatchProjNode::Identity(PhaseGVN* phase) {
       !(proj->is_Proj() &&      // AND NOT a rethrow
         proj->in(0)->is_Call() &&
         (call = proj->in(0)->as_Call()) &&
-        call->entry_point() == OptoRuntime::rethrow_stub()))
+        (call->entry_point() == OptoRuntime::rethrow_stub() ||
+          call->entry_point() == OptoRuntime::rethrow_current_stub())))
     return this;
 
   // Search for any other path being control

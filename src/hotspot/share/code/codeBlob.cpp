@@ -745,16 +745,21 @@ ExceptionBlob::ExceptionBlob(
   CodeBuffer* cb,
   int         size,
   OopMapSet*  oop_maps,
+  int         from_callee_offset,
   int         frame_size
 )
   : SingletonBlob("ExceptionBlob", CodeBlobKind::Exception, cb,
-                  size, sizeof(ExceptionBlob), frame_size, oop_maps)
-{}
+                  size, sizeof(ExceptionBlob), frame_size, oop_maps),
+    _from_callee_offset(from_callee_offset)
+{
+  assert(code_contains(from_callee_entry_point()), "must be PC inside codeblob");
+}
 
 
 ExceptionBlob* ExceptionBlob::create(
   CodeBuffer* cb,
   OopMapSet*  oop_maps,
+  int         from_callee_offset,
   int         frame_size)
 {
   ExceptionBlob* blob = nullptr;
@@ -762,7 +767,7 @@ ExceptionBlob* ExceptionBlob::create(
   ThreadInVMfromUnknown __tiv;  // get to VM state in case we block on CodeCache_lock
   {
     MutexLocker mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
-    blob = new (size, false) ExceptionBlob(cb, size, oop_maps, frame_size);
+    blob = new (size, false) ExceptionBlob(cb, size, oop_maps, from_callee_offset, frame_size);
   }
 
   trace_new_stub(blob, "ExceptionBlob");

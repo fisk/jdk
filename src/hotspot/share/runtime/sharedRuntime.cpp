@@ -571,7 +571,7 @@ JRT_END
 // The continuation address is the entry point of the exception handler of the
 // previous frame depending on the return address.
 
-address SharedRuntime::raw_exception_handler_for_return_address(JavaThread* current, address return_address) {
+static address raw_exception_handler_for_return_address(JavaThread* current, address return_address, bool from_callee) {
   // Note: This is called when we have unwound the frame of the callee that did
   // throw an exception. So far, no check has been performed by the StackWatermarkSet.
   // Notably, the stack is not walkable at this point, and hence the check must
@@ -612,7 +612,8 @@ address SharedRuntime::raw_exception_handler_for_return_address(JavaThread* curr
       // * exception_handler_for_pc_helper via Runtime1::handle_exception_from_callee_id for C1 code
 #ifdef COMPILER2
       if (nm->compiler_type() == compiler_c2) {
-        return OptoRuntime::exception_blob()->entry_point();
+        ExceptionBlob* exception_blob = OptoRuntime::exception_blob();
+        return from_callee ? exception_blob->from_callee_entry_point() : exception_blob->entry_point();
       }
 #endif // COMPILER2
       return nm->exception_begin();
@@ -652,8 +653,20 @@ address SharedRuntime::raw_exception_handler_for_return_address(JavaThread* curr
 }
 
 
+address SharedRuntime::raw_exception_handler_for_return_address(JavaThread* current, address return_address) {
+  return ::raw_exception_handler_for_return_address(current, return_address, true /* from_callee */);
+}
+
+address SharedRuntime::raw_exception_handler_for_return_address_current(JavaThread* current, address return_address) {
+  return ::raw_exception_handler_for_return_address(current, return_address, false /* from_callee */);
+}
+
 JRT_LEAF(address, SharedRuntime::exception_handler_for_return_address(JavaThread* current, address return_address))
-  return raw_exception_handler_for_return_address(current, return_address);
+  return ::raw_exception_handler_for_return_address(current, return_address, true /* from_callee */);
+JRT_END
+
+JRT_LEAF(address, SharedRuntime::exception_handler_for_return_address_current(JavaThread* current, address return_address))
+  return ::raw_exception_handler_for_return_address(current, return_address, false /* from_callee */);
 JRT_END
 
 

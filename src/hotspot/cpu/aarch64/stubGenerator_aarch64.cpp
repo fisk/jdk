@@ -727,7 +727,7 @@ class StubGenerator: public StubCodeGenerator {
     __ mov(r19, lr);
     BLOCK_COMMENT("call exception_handler_for_return_address");
     __ call_VM_leaf(CAST_FROM_FN_PTR(address,
-                         SharedRuntime::exception_handler_for_return_address),
+                         SharedRuntime::exception_handler_for_return_address_current),
                     rthread, c_rarg1);
 
     // we should not really care that lr is no longer the callee

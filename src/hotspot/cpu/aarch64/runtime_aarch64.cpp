@@ -309,6 +309,12 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   // make sure we do so before running this
 
   address start = __ pc();
+  Label common_entry;
+  __ movw(r2, 0);
+  __ b(common_entry);
+  int from_callee_offset = __ pc() - start;
+  __ movw(r2, 1);
+  __ bind(common_entry);
 
   // push rfp and retaddr by hand
   // Exception pc is 'return address' for stack walker
@@ -339,6 +345,7 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   address the_pc = __ pc();
   __ set_last_Java_frame(sp, noreg, the_pc, rscratch1);
   __ mov(c_rarg0, rthread);
+  __ mov(c_rarg1, r2);
   __ lea(rscratch1, RuntimeAddress(CAST_FROM_FN_PTR(address, OptoRuntime::handle_exception_C)));
   __ blr(rscratch1);
   // handle_exception_C is a special VM call which does not require an explicit
@@ -395,7 +402,7 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   masm->flush();
 
   // Set exception blob
-  ExceptionBlob* ex_blob = ExceptionBlob::create(&buffer, oop_maps, SimpleRuntimeFrame::framesize >> 1);
+  ExceptionBlob* ex_blob = ExceptionBlob::create(&buffer, oop_maps, from_callee_offset, SimpleRuntimeFrame::framesize >> 1);
   AOTCodeCache::store_code_blob(*ex_blob, AOTCodeEntry::C2Blob, BlobId::c2_exception_id);
   return ex_blob;
 }

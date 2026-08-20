@@ -260,9 +260,10 @@ private:
   static void throw_null_exception_C(JavaThread* thread);
 
   // Exception handling
-  static address handle_exception_C       (JavaThread* current);
-  static address handle_exception_C_helper(JavaThread* current, nmethod*& nm);
+  static address handle_exception_C       (JavaThread* current, int from_callee);
+  static address handle_exception_C_helper(JavaThread* current, nmethod*& nm, bool from_callee);
   static address rethrow_C                (oopDesc* exception, JavaThread *thread, address return_pc );
+  static address rethrow_current_C        (oopDesc* exception, JavaThread *thread, address return_pc );
   static void deoptimize_caller_frame     (JavaThread *thread);
   static void deoptimize_caller_frame     (JavaThread *thread, bool doit);
   static bool is_deoptimized_caller_frame (JavaThread *thread);
@@ -330,6 +331,7 @@ private:
 
   // Exception handling
   static address rethrow_stub()             { return _rethrow_Java; }
+  static address rethrow_current_stub()     { return _rethrow_current_Java; }
 
 
   // Type functions
@@ -425,6 +427,10 @@ private:
   static inline const TypeFunc* rethrow_Type() {
     assert(_rethrow_Type != nullptr, "should be initialized");
     return _rethrow_Type;
+  }
+
+  static inline const TypeFunc* rethrow_current_Type() {
+    return rethrow_Type();
   }
 
   static inline const TypeFunc* Math_D_D_Type() {

@@ -543,7 +543,7 @@ address StubGenerator::generate_forward_exception() {
   __ movptr(c_rarg0, Address(rsp, 0));
   BLOCK_COMMENT("call exception_handler_for_return_address");
   __ call_VM_leaf(CAST_FROM_FN_PTR(address,
-                       SharedRuntime::exception_handler_for_return_address),
+                       SharedRuntime::exception_handler_for_return_address_current),
                   r15_thread, c_rarg0);
   __ mov(rbx, rax);
 

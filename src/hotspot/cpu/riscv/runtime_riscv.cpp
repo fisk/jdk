@@ -294,6 +294,12 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   // make sure we do so before running this
 
   address start = __ pc();
+  Label common_entry;
+  __ li(x12, 0);
+  __ j(common_entry);
+  int from_callee_offset = __ pc() - start;
+  __ li(x12, 1);
+  __ bind(common_entry);
 
   // push fp and retaddr by hand
   // Exception pc is 'return address' for stack walker
@@ -325,6 +331,7 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   address the_pc = __ pc();
   __ set_last_Java_frame(sp, noreg, the_pc, t0);
   __ mv(c_rarg0, xthread);
+  __ mv(c_rarg1, x12);
   __ rt_call(CAST_FROM_FN_PTR(address, OptoRuntime::handle_exception_C));
 
   // handle_exception_C is a special VM call which does not require an explicit
@@ -380,6 +387,6 @@ ExceptionBlob* OptoRuntime::generate_exception_blob() {
   masm->flush();
 
   // Set exception blob
-  return ExceptionBlob::create(&buffer, oop_maps, SimpleRuntimeFrame::framesize >> 1);
+  return ExceptionBlob::create(&buffer, oop_maps, from_callee_offset, SimpleRuntimeFrame::framesize >> 1);
 }
 #endif // COMPILER2

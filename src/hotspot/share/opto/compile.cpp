@@ -4847,7 +4847,8 @@ bool Compile::final_graph_reshaping() {
       if (n->is_PCTable() && n->in(0) && n->in(0)->in(0)) {
         if (n->in(0)->in(0)->is_Call()) {
           CallNode* call = n->in(0)->in(0)->as_Call();
-          if (call->entry_point() == OptoRuntime::rethrow_stub()) {
+          if ((call->entry_point() == OptoRuntime::rethrow_stub() ||
+              call->entry_point() == OptoRuntime::rethrow_current_stub())) {
             required_outcnt--;      // Rethrow always has 1 less kid
           } else if (call->req() > TypeFunc::Parms &&
                      call->is_CallDynamicJava()) {
