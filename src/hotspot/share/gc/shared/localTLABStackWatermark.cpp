@@ -147,14 +147,10 @@ assert(has_barrier(fr), "!");
 void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
   if (!is_above_watermark(uintptr_t(after_unwind_frame.real_fp()), watermark())) {
     // Not above the watermark yet; we are good
-#if 0
-  assert(_jt->saved_local_tlab_top() == JavaThread::no_saved_local_tlab_top(), "stale saved_local_tlab_top, ensure_safe w/o watermark?");
-#endif
     return;
   }
-#if 1
-assert(has_barrier(after_unwind_frame), "!");
-#endif
+
+  assert(has_barrier(after_unwind_frame), "Should have stack watermark barrier");
 
   frame f = top_frame(after_unwind_frame);
   uintptr_t fp = reinterpret_cast<uintptr_t>(f.real_fp());
@@ -288,13 +284,7 @@ assert(has_barrier(after_unwind_frame), "!");
   _jt->local_tlab().initialize(tlab_start, tlab_top, tlab_end);
   _jt->local_tlab().invariants();
   update_watermark();
-#if 0
-assert(_jt->saved_local_tlab_top() == nullptr, "stale saved_local_tlab_top after ensure_safe?");
-assert(!is_above_watermark(uintptr_t(after_unwind_frame.real_fp()), watermark()), "still above watermark?!?");
-#endif
-#if 1
-assert(!is_above_watermark(sp, watermark()), "still above watermark?!?");
-#endif
+  assert(!is_above_watermark(sp, watermark()), "still above watermark?");
 }
 
 bool LocalTLABStackWatermark::try_refill(HeapWord** start, size_t* size, size_t min_size) {
