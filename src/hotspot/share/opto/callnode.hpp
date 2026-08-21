@@ -1214,14 +1214,9 @@ public:
     return _is_non_escaping || (((init = initialization()) != nullptr) && init->does_not_escape());
   }
 
+  // Provably not escaping objects can be allocated in the local TLAB.
   bool use_local_tlab() {
-#if 1
-    if (UseNewCode) {
-      return does_not_escape_thread();
-    }
-#endif
-    // TODO: Should be does_not_escape_thread(), but I get corrupted exception in javac
-    return _is_non_escaping; // does_not_escape_thread();
+    return does_not_escape_thread();
   }
 
   // If object doesn't escape in <.init> method and there is memory barrier

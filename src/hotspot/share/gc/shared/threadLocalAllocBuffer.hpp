@@ -89,10 +89,7 @@ private:
   void set_end(HeapWord* end)                    { _end = end; }
   void set_allocation_end(HeapWord* ptr)         { _allocation_end = ptr; }
 
-public: // TODO: Clean up permissions
   void set_top(HeapWord* top)                    { _top = top; }
-
-private:
   void set_pf_top(HeapWord* pf_top)              { _pf_top = pf_top; }
   void set_desired_size(size_t desired_size)     { _desired_size = desired_size; }
   void set_refill_waste_limit(size_t waste)      { _refill_waste_limit = waste;  }

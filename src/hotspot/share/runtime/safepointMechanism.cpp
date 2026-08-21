@@ -118,10 +118,7 @@ void SafepointMechanism::update_poll_values(JavaThread* thread) {
       // poll value, in any way making it less restrictive. Therefore, whenever
       // the frontier of what the mutator allows itself to do is increased,
       // we will catch that here, and ensure a cross modifying fence is used.
-      // TODO: Relax this to fence only for GC watermark
-      if (Thread::current() == thread) {
-        OrderAccess::cross_modify_fence();
-      }
+      OrderAccess::cross_modify_fence();
     }
 
     thread->poll_data()->set_polling_page(poll_page);
