@@ -626,10 +626,8 @@ private:
     return offset;
   }
 
-  static ByteSize saved_local_tlab_top_offset() {
-    return byte_offset_of(JavaThread, _saved_local_tlab_top);
-  }
-
+  // Provably local objects support
+  static ByteSize saved_local_tlab_top_offset() { return byte_offset_of(JavaThread, _saved_local_tlab_top); }
   static HeapWord* no_saved_local_tlab_top() { return (HeapWord*)-1; }
   HeapWord* saved_local_tlab_top() const { return _saved_local_tlab_top; }
   void set_saved_local_tlab_top(HeapWord* top) { _saved_local_tlab_top = top; }

@@ -404,9 +404,10 @@ class Thread: public ThreadShadow {
   void set_metadata_handles(GrowableArray<Metadata*>* handles){ _metadata_handles = handles; }
 
   // Thread-Local Allocation Buffer (TLAB) support
-  ThreadLocalAllocBuffer& tlab()                 { return _tlab; }
-  const ThreadLocalAllocBuffer& tlab() const     { return _tlab; }
-  ThreadLocalAllocBuffer& local_tlab()           { return _local_tlab; } // TODO: Should be const?
+  ThreadLocalAllocBuffer& tlab()                   { return _tlab; }
+  const ThreadLocalAllocBuffer& tlab() const       { return _tlab; }
+  ThreadLocalAllocBuffer& local_tlab()             { return _local_tlab; }
+  const ThreadLocalAllocBuffer& local_tlab() const { return _local_tlab; }
   void initialize_tlab();
   void retire_shared_tlab(ThreadLocalAllocStats* stats);
   void retire_local_tlab_watermark();
