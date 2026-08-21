@@ -36,7 +36,7 @@ static inline bool is_above_watermark(uintptr_t sp, uintptr_t watermark) {
   if (watermark == 0) {
     return false;
   }
-// TODO: use frame::is_older()?
+
   return sp > watermark;
 }
 
@@ -74,11 +74,6 @@ inline bool StackWatermark::processing_completed(uint32_t state) const {
 inline void StackWatermark::ensure_safe(const frame& f) {
   assert(processing_started(), "Processing should already have started");
 
-#if 1
-if (!has_barrier(f)) {
-  assert_is_frame_safe(f);
-}
-#endif
   if (processing_completed_acquire()) {
     return;
   }
@@ -92,27 +87,10 @@ if (!has_barrier(f)) {
   assert_is_frame_safe(f);
 }
 
-#if 0
-static bool is_good_frame(const frame& f) {
-if (f.is_java_frame()) return true;
-if (f.is_native_frame()) return true;
-if (f.is_entry_frame()) return true;
-if (f.is_upcall_stub_frame()) return true;
-CodeBlob* cb = f.cb();
-if (cb != nullptr) {
-  if (cb->is_uncommon_trap_stub()) return true;
-  if (cb->is_deoptimization_stub()) return true;
-}
-return false;
-}
-#endif
-
 inline void StackWatermark::before_unwind() {
   frame f = _jt->last_frame();
-#if 1
-assert(f.is_interpreted_frame() || f.is_native_frame() || !has_barrier(f), "!");
-assert_is_frame_safe(f);
-#endif
+
+  assert_is_frame_safe(f);
 
   // Skip any stub frames etc up until the frame that triggered before_unwind().
   RegisterMap map(_jt,
@@ -122,37 +100,21 @@ assert_is_frame_safe(f);
   if (!has_barrier(f)) {
     f = f.sender(&map);
   }
-#if 1
-assert(!f.is_compiled_frame(), "!");
-#endif
 
   assert_is_frame_safe(f);
   assert(!f.is_runtime_frame(), "should have skipped all runtime stubs");
-#if 1
-assert(has_barrier(f), "!");
-#endif
+  assert(has_barrier(f), "Should have stack watermark barrier");
 
   // before_unwind() potentially exposes a new frame. The new exposed frame is
   // always the caller of the top frame.
   if (!f.is_first_frame()) {
     f = f.sender(&map);
-#if 1
-if (!has_barrier(f)) {
-  assert_is_frame_safe(f);
-}
-#endif
-#if 1
-assert(has_barrier(f), "redundant before_unwind?"); // should we skip more frames until we find has_barrier()?
-#endif
     ensure_safe(f);
   }
 }
 
 inline void StackWatermark::after_unwind() {
   frame f = _jt->last_frame();
-#if 1
-assert(f.is_interpreted_frame() || f.is_native_frame() || !has_barrier(f), "!");
-#endif
 
   if (!has_barrier(f)) {
     // Skip safepoint blob.
@@ -163,14 +125,7 @@ assert(f.is_interpreted_frame() || f.is_native_frame() || !has_barrier(f), "!");
     f = f.sender(&map);
   }
   assert(!f.is_runtime_frame(), "should have skipped all runtime stubs");
-#if 1
-assert(has_barrier(f), "!");
-#endif
-#if 1
-if (!has_barrier(f)) {
-  assert_is_frame_safe(f);
-}
-#endif
+  assert(has_barrier(f), "Should have stack watermark barrier");
 
   // after_unwind() potentially exposes the top frame.
   ensure_safe(f);
