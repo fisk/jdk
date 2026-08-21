@@ -122,7 +122,6 @@ JavaCallWrapper::~JavaCallWrapper() {
     // StackWatermark barriers. Therefore, we process any such deferred unwind
     // requests here.
     StackWatermarkSet::after_unwind(_thread);
-    _thread->clear_saved_local_tlab_top();
   }
 }
 

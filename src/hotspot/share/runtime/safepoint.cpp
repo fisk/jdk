@@ -829,9 +829,6 @@ void ThreadSafepointState::handle_polling_page_exception() {
     // One condition for that is that the top frame is not yet safe to use.
     // The following stack watermark barrier poll will catch such situations.
     StackWatermarkSet::after_unwind(self);
-    // TODO: Not pretty to have this code placed here. See if we can find a
-    // better abstraction.
-    self->clear_saved_local_tlab_top();
 
     // Process pending operation
     SafepointMechanism::process_if_requested_with_exit_check(self, true /* check asyncs */);

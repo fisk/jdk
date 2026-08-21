@@ -62,6 +62,7 @@ private:
   // Only trigger when unwinding
   virtual bool process_on_iteration() { return false; }
   virtual void update_watermark();
+  virtual void after_unwind();
 
   frame top_frame(const frame& top);
   frame top_frame();

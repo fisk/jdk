@@ -383,3 +383,11 @@ HeapWord* LocalTLABStackWatermark::allocate_new_tlab(size_t min_tlab_size, size_
 
   return mem;
 }
+
+void LocalTLABStackWatermark::after_unwind() {
+  StackWatermark::after_unwind();
+
+  // After unwinding from a C2 frame, we should clear the saved local TLAB top
+  // This essentially consumes the information used by our normal after_unwind processing
+  _jt->clear_saved_local_tlab_top();
+}

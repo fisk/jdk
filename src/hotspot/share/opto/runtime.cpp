@@ -1981,7 +1981,6 @@ JRT_ENTRY_NO_ASYNC(address, OptoRuntime::handle_exception_C_helper(JavaThread* c
     // The exception blob's from-callee entry is used only after a Java frame
     // has been removed. The newly exposed frame is walkable here.
     StackWatermarkSet::after_unwind(current);
-    current->clear_saved_local_tlab_top();
   }
 
   MACOS_AARCH64_ONLY(os::thread_wx_enable_write());

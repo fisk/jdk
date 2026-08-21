@@ -148,7 +148,7 @@ public:
   bool processing_completed_acquire() const;
 
   void before_unwind();
-  void after_unwind();
+  virtual void after_unwind();
 
   void on_iteration(const frame& f);
   void on_safepoint();

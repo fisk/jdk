@@ -298,7 +298,6 @@ JRT_BLOCK_ENTRY(Deoptimization::UnrollBlock*, Deoptimization::fetch_unroll_info(
     // frame. That throw might have deferred stack watermark checking until
     // after unwinding. So we deal with such deferred requests here.
     StackWatermarkSet::after_unwind(current);
-    current->clear_saved_local_tlab_top();
   }
 
   return fetch_unroll_info_helper(current, exec_mode);
