@@ -199,6 +199,7 @@ void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
           tlab_start = _vertical_start;
           tlab_end = _vertical_end - ThreadLocalAllocBuffer::alignment_reserve();
           tlab_top = tlab_start;
+          delete head;
         } else {
           // Recycle the memory
           head->_sp_watermark = 0;
