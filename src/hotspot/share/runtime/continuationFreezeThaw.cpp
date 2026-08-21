@@ -595,9 +595,10 @@ static void assert_frames_in_continuation_are_safe(JavaThread* thread) {
 void FreezeBase::unwind_frames() {
   ContinuationEntry* entry = _cont.entry();
   entry->flush_stack_processing(_thread);
-  // TODO: Do better; we need to retire local tlabs both when mounting and unmounting.
-  // This prototype does not yet have full VT support.
+
+  // Freezing breaks the stack shape of local object TLABs
   _thread->retire_local_tlab(true /* watermark */);
+
   assert_frames_in_continuation_are_safe(_thread);
   JFR_ONLY(Jfr::check_and_process_sample_request(_thread);)
   set_anchor_to_entry(_thread, entry);
@@ -2179,6 +2180,9 @@ inline intptr_t* Thaw<ConfigT>::thaw(Continuation::thaw_kind kind) {
   stackChunkOop chunk = _cont.tail();
   assert(chunk != nullptr, "guaranteed by prepare_thaw");
   assert(!chunk->is_empty(), "guaranteed by prepare_thaw");
+
+  // Make sure frames thawed know their local objects are not reclaimable
+  _thread->retire_local_tlab(true /* watermark */);
 
   _barriers = chunk->requires_barriers();
   return (LIKELY(can_thaw_fast(chunk))) ? thaw_fast(chunk)
