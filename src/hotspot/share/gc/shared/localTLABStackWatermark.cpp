@@ -35,41 +35,20 @@
 frame LocalTLABStackWatermark::top_frame(const frame& top) {
   frame f = _jt->last_frame();
 
-#if 1
-  int count = 0;
-#endif
   RegisterMap map(_jt,
                   RegisterMap::UpdateMap::skip,
                   RegisterMap::ProcessFrames::skip,
                   RegisterMap::WalkContinuation::skip);
   while (top.id() != f.id()) {
-#if 1
-    ++count;
-#endif
     f = f.sender(&map);
   }
-#if 1
-assert(count <= 2, "frame %d not top?", count);
-#endif
 
-#if 1
-assert(has_barrier(f), "!");
-assert(has_barrier(top), "!");
-assert(f.equal(top), "!");
-#endif
   while (!has_barrier(f)) {
-#if 1
-    ++count;
-#endif
     f = f.sender(&map);
   }
 
-#if 1
-assert(count <= 2, "frame %d not top?", count);
-#endif
-#if 1
-assert(has_barrier(f), "!");
-#endif
+  assert(has_barrier(f), "The top frame must have stack watermark barriers");
+
   return f;
 }
 
@@ -89,9 +68,8 @@ frame LocalTLABStackWatermark::top_frame() {
     f = f.sender(&map);
   }
 
-#if 1
-assert(has_barrier(f), "!");
-#endif
+  assert(has_barrier(f), "The top frame must have stack watermark barriers");
+
   return f;
 }
 
@@ -107,8 +85,6 @@ LocalTLABStackWatermark::LocalTLABStackWatermark(JavaThread* jt)
 
 void LocalTLABStackWatermark::start_processing_impl(void* context) {
   ShouldNotReachHere();
-  reset_iterator();
-  update_watermark();
 }
 
 void LocalTLABStackWatermark::update_watermark() {
@@ -138,9 +114,8 @@ bool LocalTLABStackWatermark::is_mixed_frame(const frame& fr) {
     return false;
   }
 
-#if 1
-assert(has_barrier(fr), "!");
-#endif
+  assert(has_barrier(fr), "Must have stack watermark barrier");
+
   return uintptr_t(fr.real_fp()) >= _retired_fp_watermark;
 }
 
