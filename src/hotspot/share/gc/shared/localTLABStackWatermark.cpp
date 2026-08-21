@@ -222,7 +222,7 @@ void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
           _vertical_start = head->_start;
           _vertical_end = head->_end;
           tlab_start = _vertical_start;
-          tlab_end = _vertical_end;
+          tlab_end = _vertical_end - ThreadLocalAllocBuffer::alignment_reserve();
           tlab_top = tlab_start;
         } else {
           // Recycle the memory
