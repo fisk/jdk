@@ -4685,7 +4685,7 @@ encode %{
 //        |        |   in   |  3   area for Intel ret address
 //     Owned by    |preserve|      Empty on Sparc.
 //       SELF      +--------+
-//        |        | prev fp|  2   Preserved frame pointer
+//        |        |  pad2  |  2   pad to align old SP
 //        |        +--------+
 //        |        |  tlab  |  1   Preserved local tlab top
 //        |        +--------+

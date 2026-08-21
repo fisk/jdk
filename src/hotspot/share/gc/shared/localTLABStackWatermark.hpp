@@ -66,12 +66,14 @@ private:
   frame top_frame(const frame& top);
   frame top_frame();
 
+  bool try_refill(HeapWord** start, size_t* size, size_t min_size);
+  void register_allocated_tlab(HeapWord* start, HeapWord* end);
+
 public:
   LocalTLABStackWatermark(JavaThread* jt);
 
   void retire_tlabs();
-  void alloc_tlab(HeapWord* start, HeapWord* end);
-  bool try_refill(HeapWord*& start, size_t& size, size_t min_size);
+  HeapWord* allocate_new_tlab(size_t min_tlab_size, size_t new_tlab_size, size_t* size);
 };
 
 #endif // SHARE_GC_SHARED_LOCALTLABSTACKWATERMARK_HPP

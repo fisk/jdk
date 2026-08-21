@@ -303,24 +303,16 @@ HeapWord* MemAllocator::mem_allocate_inside_tlab_slow(Allocation& allocation) co
     return nullptr;
   }
 
-  LocalTLABStackWatermark* watermark = !_local ? nullptr : static_cast<LocalTLABStackWatermark*>(StackWatermarkSet::get(JavaThread::cast(_thread), StackWatermarkKind::local_tlab));
-
   // Allocate a new TLAB requesting new_tlab_size. Any size
   // between minimal and new_tlab_size is accepted.
   size_t min_tlab_size = ThreadLocalAllocBuffer::compute_min_size(_word_size);
-  bool fast_refilled = false;
-  if (_local) {
-    fast_refilled = watermark->try_refill(mem, allocation._allocated_tlab_size, min_tlab_size);
-    if (fast_refilled && mem != nullptr) { // TODO: This code looks horrible; clean up
-      watermark->alloc_tlab(mem, mem + allocation._allocated_tlab_size);
-    }
-  }
-  if (!fast_refilled) {
+  if (!_local) {
     mem = Universe::heap()->allocate_new_tlab(min_tlab_size, new_tlab_size, &allocation._allocated_tlab_size);
-    if (_local && mem != nullptr) { // TODO: This code looks horrible; clean up
-      watermark->alloc_tlab(mem, mem + allocation._allocated_tlab_size);
-    }
+  } else {
+    LocalTLABStackWatermark* watermark = static_cast<LocalTLABStackWatermark*>(StackWatermarkSet::get(JavaThread::cast(_thread), StackWatermarkKind::local_tlab));
+    mem = watermark->allocate_new_tlab(min_tlab_size, new_tlab_size, &allocation._allocated_tlab_size);
   }
+
   if (mem == nullptr) {
     assert(allocation._allocated_tlab_size == 0,
            "Allocation failed, but actual size was updated. min: %zu"

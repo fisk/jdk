@@ -297,7 +297,7 @@ assert(!is_above_watermark(sp, watermark()), "still above watermark?!?");
 #endif
 }
 
-bool LocalTLABStackWatermark::try_refill(HeapWord*& start, size_t& size, size_t min_size) {
+bool LocalTLABStackWatermark::try_refill(HeapWord** start, size_t* size, size_t min_size) {
   LocalTLAB* head = _unused_head;
   frame f = top_frame();
   uintptr_t sp = uintptr_t(f.sp());
@@ -307,12 +307,13 @@ bool LocalTLABStackWatermark::try_refill(HeapWord*& start, size_t& size, size_t 
     return false;
   }
 
-  start = head->_start;
-  size = (size_t(head->_end) - size_t(head->_start)) / HeapWordSize;
-  assert(head->_end == head->_start + size, "invariant");
+  HeapWord* potential_start = head->_start;
+  size_t potential_size = (size_t(head->_end) - size_t(head->_start)) / HeapWordSize;
 
-  if (size < min_size) {
-    log_info(stackbarrier)("SMALL %lx >= %lx try_refill for tid %d: [%lx, %lx), watermark: %lx", size, min_size, _jt->osthread()->thread_id(), fp, sp, watermark());
+  assert(head->_end == head->_start + potential_size, "invariant");
+
+  if (potential_size < min_size) {
+    log_info(stackbarrier)("SMALL %lx < %lx try_refill for tid %d: [%lx, %lx), watermark: %lx", potential_size, min_size, _jt->osthread()->thread_id(), fp, sp, watermark());
     return false;
   }
 
@@ -321,7 +322,10 @@ bool LocalTLABStackWatermark::try_refill(HeapWord*& start, size_t& size, size_t 
   _unused_head = next;
 
   log_info(stackbarrier)("Successful try_refill for tid %d: [%lx, %lx), watermark: %lx, [%lx, %lx)", _jt->osthread()->thread_id(), fp, sp, watermark(),
-                         p2i(start), p2i(start + size));
+                         p2i(potential_start), p2i(potential_start + potential_size));
+
+  *start = potential_start;
+  *size = potential_size;
 
   return true;
 }
@@ -366,7 +370,7 @@ void LocalTLABStackWatermark::retire_tlabs() {
   log_info(stackbarrier)("Retired local TLAB for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
 }
 
-void LocalTLABStackWatermark::alloc_tlab(HeapWord* start, HeapWord* end) {
+void LocalTLABStackWatermark::register_allocated_tlab(HeapWord* start, HeapWord* end) {
   assert(_jt->has_last_Java_frame(), "only compiled frames allocating local objects");
   frame f = top_frame();
 
@@ -397,4 +401,19 @@ void LocalTLABStackWatermark::alloc_tlab(HeapWord* start, HeapWord* end) {
 
   update_watermark();
   log_info(stackbarrier)("Allocated %s TLAB for tid %d: [%lx, %lx), watermark: %lx, [%lx, %lx)", is_mixed_frame(f) ? "MIXED" : "NEW", _jt->osthread()->thread_id(), fp, sp, watermark(), p2i(start), p2i(end));
+}
+
+HeapWord* LocalTLABStackWatermark::allocate_new_tlab(size_t min_tlab_size, size_t new_tlab_size, size_t* size) {
+  HeapWord* mem = nullptr;
+
+  if (!try_refill(&mem, size, min_tlab_size)) {
+    mem = Universe::heap()->allocate_new_tlab(min_tlab_size, new_tlab_size, size);
+  }
+
+  if (mem != nullptr) {
+    assert(*size != 0, "successful TLAB allocation must report its size");
+    register_allocated_tlab(mem, mem + *size);
+  }
+
+  return mem;
 }
