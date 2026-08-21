@@ -341,11 +341,6 @@ void OptoRuntime::new_instance_impl(Klass* klass, bool local, JavaThread* curren
   }
 
   deoptimize_caller_frame(current, HAS_PENDING_EXCEPTION);
-#if 0 // TODO: Not sure why this would be a thing?
-  if (local) {
-    StackWatermarkSet::after_unwind(current);
-  }
-#endif
   JRT_BLOCK_END;
 
   // inform GC that we won't do card marks for initializing writes.
@@ -401,11 +396,6 @@ void OptoRuntime::new_array_impl(Klass* array_type, int len, oopDesc* init_val, 
   // fetch the oop from TLS after any possible GC.
   deoptimize_caller_frame(current, HAS_PENDING_EXCEPTION);
   current->set_vm_result_oop(result);
-#if 0 // TODO: Not sure why this would be a thing?
-  if (local) {
-    StackWatermarkSet::after_unwind(current);
-  }
-#endif
   JRT_BLOCK_END;
 
   // inform GC that we won't do card marks for initializing writes.
@@ -441,10 +431,6 @@ void OptoRuntime::new_array_nozero_impl(Klass* array_type, int len, bool local, 
   // fetch the oop from TLS after any possible GC.
   deoptimize_caller_frame(current, HAS_PENDING_EXCEPTION);
   current->set_vm_result_oop(result);
-  // TODO: Not sure why this would be a thing?
-  //if (local) {
-  //  StackWatermarkSet::after_unwind(current);
-  //}
   JRT_BLOCK_END;
 
 
