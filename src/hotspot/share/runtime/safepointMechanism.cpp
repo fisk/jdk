@@ -98,7 +98,7 @@ void SafepointMechanism::update_poll_values(JavaThread* thread) {
   assert(thread->thread_state() != _thread_in_native, "Must not be");
 
   for (;;) {
-    bool armed = has_pending_safepoint(thread);
+    bool armed = has_pending_poll_request(thread);
     uintptr_t stack_watermark = StackWatermarkSet::lowest_watermark(thread);
     uintptr_t poll_page = armed ? _poll_page_armed_value
                                 : _poll_page_disarmed_value;
@@ -124,9 +124,16 @@ void SafepointMechanism::update_poll_values(JavaThread* thread) {
     thread->poll_data()->set_polling_page(poll_page);
     thread->poll_data()->set_polling_word(poll_word);
     OrderAccess::fence();
-    if (!armed && has_pending_safepoint(thread)) {
-      // We disarmed an old safepoint, but a new one is synchronizing.
-      // We need to arm the poll for the subsequent safepoint poll.
+
+    // A remote thread may have published and armed a request while we were
+    // installing the computed values. Revalidate every source that can make
+    // the poll more restrictive before allowing the mutator to proceed. If
+    // the request is published after these checks, the subsequent remote arm
+    // wins because only the owning thread may relax its poll values.
+    const bool armed_now = has_pending_poll_request(thread);
+    const uintptr_t stack_watermark_now = StackWatermarkSet::lowest_watermark(thread);
+    if (armed != armed_now ||
+        stack_watermark != stack_watermark_now) {
       continue;
     }
     break;

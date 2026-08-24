@@ -132,7 +132,7 @@ void StackWatermarkSet::start_processing(JavaThread* jt, StackWatermarkKind kind
 bool StackWatermarkSet::processing_started(JavaThread* jt, StackWatermarkKind kind) {
   StackWatermark* watermark = get(jt, kind);
   if (watermark != nullptr) {
-    return watermark->processing_started();
+    return watermark->processing_started_acquire();
   }
 
   return true;

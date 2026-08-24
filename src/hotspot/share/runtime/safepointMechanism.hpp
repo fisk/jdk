@@ -50,6 +50,7 @@ class SafepointMechanism : public AllStatic {
   static inline bool global_poll();
 
   static inline bool has_pending_safepoint(JavaThread* thread);
+  static inline bool has_pending_poll_request(JavaThread* thread);
 
   static void process(JavaThread *thread, bool allow_suspend, bool check_async_exception);
 

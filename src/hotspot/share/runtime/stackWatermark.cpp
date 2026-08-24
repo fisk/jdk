@@ -254,7 +254,7 @@ void StackWatermark::update_watermark() {
 }
 
 void StackWatermark::set_watermark0(uintptr_t watermark) {
-  _watermark = watermark;
+  AtomicAccess::release_store(&_watermark, watermark);
   _state = StackWatermarkState::create(0, watermark == 0 /* is_done */);
 }
 

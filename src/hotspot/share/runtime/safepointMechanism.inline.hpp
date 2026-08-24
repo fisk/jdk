@@ -63,6 +63,11 @@ inline bool SafepointMechanism::has_pending_safepoint(JavaThread* thread) {
   return global_poll() || thread->handshake_state()->has_operation() JFR_ONLY(|| Jfr::has_sample_request(thread));
 }
 
+inline bool SafepointMechanism::has_pending_poll_request(JavaThread* thread) {
+  return has_pending_safepoint(thread) ||
+         !StackWatermarkSet::processing_started(thread, StackWatermarkKind::gc);
+}
+
 bool SafepointMechanism::should_process(JavaThread* thread, bool allow_suspend) {
   if (!local_poll_armed(thread)) {
     return false;
