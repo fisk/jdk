@@ -343,12 +343,6 @@ void LocalTLABStackWatermark::register_allocated_tlab(HeapWord* start, HeapWord*
   uintptr_t sp = uintptr_t(f.sp());
   uintptr_t fp = uintptr_t(f.real_fp());
 
-  if (_retired_sp_watermark != 0 && _vertical_start == nullptr) {
-    // First allocation after retiring implicitly retires again
-    _retired_sp_watermark = sp;
-    _retired_fp_watermark = fp;
-  }
-
   if (is_mixed_frame(f)) {
     // Vertical allocations for mixed frames and the first TLAB after retire
     assert(_used_head == nullptr, "sanity");
