@@ -330,8 +330,6 @@ bool G1HeapVerifier::should_verify(G1VerifyType type) {
 }
 
 void G1HeapVerifier::verify(VerifyOption vo) {
-  // TODO: Teach the heap verifier to retire local TLABs or understand them
-  return;
   assert_at_safepoint_on_vm_thread();
   assert(Heap_lock->is_locked(), "heap must be locked");
 
@@ -521,8 +519,6 @@ void G1HeapVerifier::prepare_for_verify() {
 }
 
 void G1HeapVerifier::verify(VerifyOption vo, const char* msg) {
-  // TODO: Teach the heap verifier to retire local TLABs or understand them
-  return;
   if (_g1h->total_collections() >= VerifyGCStartAt) {
     prepare_for_verify();
     Universe::verify(vo, msg);
