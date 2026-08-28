@@ -59,6 +59,9 @@ inline bool StackWatermark::has_barrier(const frame& f) {
   if (f.is_native_frame()) {
     return true;
   }
+  if (f.is_upcall_stub_frame()) {
+    return true;
+  }
   return false;
 }
 
