@@ -100,10 +100,10 @@ typeArrayOop TypeArrayKlass::allocate_common(int length, bool local, bool do_zer
   size_t size = typeArrayOopDesc::object_size(layout_helper(), length);
   if (local) {
     return (typeArrayOop)Universe::heap()->array_allocate_local(this, size, length,
-                                                                do_zero, THREAD);
+                                                                do_zero, CHECK_NULL);
   } else {
     return (typeArrayOop)Universe::heap()->array_allocate(this, size, length,
-                                                          do_zero, THREAD);
+                                                          do_zero, CHECK_NULL);
   }
 }
 
