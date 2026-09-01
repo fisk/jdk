@@ -29,8 +29,8 @@
 #include "runtime/javaThread.hpp"
 #include "runtime/osThread.hpp"
 #include "runtime/registerMap.hpp"
-#include "runtime/stackWatermark.inline.hpp"
 #include "runtime/safepointMechanism.inline.hpp"
+#include "runtime/stackWatermark.inline.hpp"
 
 frame LocalTLABStackWatermark::top_frame(const frame& top) {
   frame f = _jt->last_frame();
