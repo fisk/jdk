@@ -949,10 +949,12 @@ bool PhaseMacroExpand::can_eliminate_allocation(PhaseIterGVN* igvn, AllocateNode
 void PhaseMacroExpand::undo_previous_scalarizations(Unique_Node_List& safepoints_done, AllocateNode* alloc) {
   Node* res = alloc->result_cast();
   int nfields = 0;
+  bool has_null_marker = false;
   assert(res == nullptr || res->is_CheckCastPP(), "unexpected AllocateNode result");
 
   if (res != nullptr) {
     const TypeOopPtr* res_type = _igvn.type(res)->isa_oopptr();
+    has_null_marker = res_type->is_inlinetypeptr();
 
     if (res_type->isa_instptr()) {
       // find the fields of the class which will be needed for safepoint debug information
@@ -976,7 +978,8 @@ void PhaseMacroExpand::undo_previous_scalarizations(Unique_Node_List& safepoints
     // remove any extra entries we added to the safepoint
     assert(sfpt_done->jvms()->endoff() == sfpt_done->req(), "no extra edges past debug info allowed");
     uint last = sfpt_done->req() - 1;
-    for (int k = 0;  k < nfields; k++) {
+    int inputs_added = nfields + (has_null_marker ? 1 : 0);
+    for (int k = 0; k < inputs_added; k++) {
       sfpt_done->del_req(last--);
     }
     JVMState *jvms = sfpt_done->jvms();
