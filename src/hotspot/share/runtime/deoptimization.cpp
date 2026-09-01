@@ -523,14 +523,14 @@ bool Deoptimization::deoptimize_objects_internal(JavaThread* thread, GrowableArr
 Deoptimization::UnrollBlock* Deoptimization::fetch_unroll_info_helper(JavaThread* current, int exec_mode) {
   JFR_ONLY(Jfr::check_and_process_sample_request(current);)
 
-  // When we get here we are about to unwind the deoptee frame. In order to
-  // catch not yet safe to use frames, the following stack watermark barrier
-  // poll will make such frames safe to use.
-  StackWatermarkSet::before_unwind(current);
-
-  // Local objects could have been proven not to escape, but after deopt, who
-  // knows. Let's not reuse any recycled space and start with a new TLAB instead.
+  // Local objects could have been proven not to escape, but after deopt they
+  // might be less local. Make sure to retire the TLAB before the unwind handler
+  // as the deoptee frame is where the mixed frames start.
   current->retire_local_tlab(true);
+
+  // We are about to unwind the deoptee frame. Make every watermark safe only
+  // after the local-TLAB retirement above has established that snapshot.
+  StackWatermarkSet::before_unwind(current);
 
   // Note: there is a safepoint safety issue here. No matter whether we enter
   // via vanilla deopt or uncommon trap we MUST NOT stop at a safepoint once
