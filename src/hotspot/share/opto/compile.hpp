@@ -610,6 +610,7 @@ public:
   // Control of this compilation.
   int               fixed_slots() const         { assert(_fixed_slots >= 0, "");         return _fixed_slots; }
   void          set_fixed_slots(int n)          { _fixed_slots = n; }
+  int               preserved_local_tlab_top_slot() const;
   void          set_inlining_progress(bool z)   { _inlining_progress = z; }
   bool              inlining_progress() const   { return _inlining_progress; }
   void          set_inlining_incrementally(bool z) { _inlining_incrementally = z; }

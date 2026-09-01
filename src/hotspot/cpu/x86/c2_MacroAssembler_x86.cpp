@@ -52,9 +52,8 @@
 
 int C2_MacroAssembler::preserved_local_tlab_top_offset() {
   Compile* C = Compile::current();
-  Matcher* matcher = C->matcher();
   PhaseRegAlloc* ra = C->regalloc();
-  OptoReg::Name preserved_local_tlab_top_slot = OptoReg::add(matcher->_old_SP, -3 * VMRegImpl::slots_per_word);
+  OptoReg::Name preserved_local_tlab_top_slot = OptoReg::stack2reg(C->preserved_local_tlab_top_slot());
   return ra->reg2offset_unchecked(preserved_local_tlab_top_slot);
 }
 

@@ -4685,11 +4685,20 @@ encode %{
 //        |        |   in   |  3   area for Intel ret address
 //     Owned by    |preserve|      Empty on Sparc.
 //       SELF      +--------+
-//        |        |  pad2  |  2   pad to align old SP
+//        |        |  pad2  |      pad to align old SP
 //        |        +--------+
-//        |        |  tlab  |  1   Preserved local tlab top
+//        |        | stack  |      Optional stack increment for
+//        |        |  incr  |      value-class stack repair
 //        |        +--------+
-//        |        | locks  |  0
+//        |        |  null  |      Optional null marker for scalarized
+//        |        | marker |      value-class returns
+//        |        +--------+
+//        |        | orig.  |      Original deoptimization PC
+//        |        |deopt PC|
+//        |        +--------+
+//        |        |  tlab  |      Preserved local TLAB top
+//        |        +--------+
+//        |        | locks  |
 //        |        +--------+----> OptoReg::stack0(), even aligned
 //        |        |  pad1  | 11   Pad the stacks
 //        |        +--------+

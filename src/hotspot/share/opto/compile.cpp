@@ -953,6 +953,21 @@ Compile::Compile(ciEnv* ci_env, ciMethod* target, int osr_bci,
   Code_Gen();
 }
 
+int Compile::preserved_local_tlab_top_slot() const {
+  // Value-class stack-repair and null-marker slots are appended after the
+  // local-TLAB layout. Skip them and the PC slot to find the slot that preserves
+  // the caller's local-TLAB top.
+  int slot = fixed_slots();
+  if (needs_stack_repair()) {
+    slot -= VMRegImpl::slots_per_word;
+  }
+  if (needs_nm_slot()) {
+    slot -= VMRegImpl::slots_per_word;
+  }
+  slot -= 2 * VMRegImpl::slots_per_word;
+  return slot;
+}
+
 // C2 uses runtime stubs serialized generation to initialize its static tables
 // shared by all compilations, like Type::_shared_type_dict.
 // At least one stub have to be completely generated to execute intialization
