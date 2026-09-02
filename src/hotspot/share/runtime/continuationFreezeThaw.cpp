@@ -269,12 +269,23 @@ public:
 
   static freeze_result freeze(JavaThread* thread, intptr_t* const sp) {
     freeze_result res = freeze_internal<SelfT, false>(thread, sp);
+
+    if (res == freeze_ok) {
+      thread->retire_local_tlab(true /* watermark */);
+    }
+
     JFR_ONLY(assert((res == freeze_ok) || (res == thread->last_freeze_fail_result()), "freeze failure not set"));
     return res;
   }
 
   static freeze_result freeze_preempt(JavaThread* thread, intptr_t* const sp) {
-    return freeze_internal<SelfT, true>(thread, sp);
+    freeze_result res = freeze_internal<SelfT, true>(thread, sp);
+
+    if (res == freeze_ok) {
+      thread->retire_local_tlab(true /* watermark */);
+    }
+
+    return res;
   }
 
   static intptr_t* thaw(JavaThread* thread, Continuation::thaw_kind kind) {
@@ -595,9 +606,6 @@ static void assert_frames_in_continuation_are_safe(JavaThread* thread) {
 void FreezeBase::unwind_frames() {
   ContinuationEntry* entry = _cont.entry();
   entry->flush_stack_processing(_thread);
-
-  // Freezing breaks the stack shape of local object TLABs
-  _thread->retire_local_tlab(true /* watermark */);
 
   assert_frames_in_continuation_are_safe(_thread);
   JFR_ONLY(Jfr::check_and_process_sample_request(_thread);)
@@ -2108,6 +2116,12 @@ protected:
 
   void thaw_lockstack(stackChunkOop chunk);
 
+  void retire_local_tlab_after_thaw(intptr_t* sp) {
+    set_anchor(_thread, sp);
+    _thread->retire_local_tlab(true /* watermark */);
+    clear_anchor(_thread);
+  }
+
   // fast path
   inline void prefetch_chunk_pd(void* start, int size_words);
   void patch_return(intptr_t* sp, bool is_last);
@@ -2181,12 +2195,13 @@ inline intptr_t* Thaw<ConfigT>::thaw(Continuation::thaw_kind kind) {
   assert(chunk != nullptr, "guaranteed by prepare_thaw");
   assert(!chunk->is_empty(), "guaranteed by prepare_thaw");
 
-  // Make sure frames thawed know their local objects are not reclaimable
-  _thread->retire_local_tlab(true /* watermark */);
-
   _barriers = chunk->requires_barriers();
-  return (LIKELY(can_thaw_fast(chunk))) ? thaw_fast(chunk)
-                                        : thaw_slow(chunk, kind);
+  if (LIKELY(can_thaw_fast(chunk))) {
+    intptr_t* sp = thaw_fast(chunk);
+    retire_local_tlab_after_thaw(sp);
+    return sp;
+  }
+  return thaw_slow(chunk, kind);
 }
 
 class ReconstructedStack : public StackObj {
@@ -2492,6 +2507,7 @@ NOINLINE intptr_t* Thaw<ConfigT>::thaw_slow(stackChunkOop chunk, Continuation::t
   // and FLAG_PREEMPTED flags from the stackChunk.
   if (retry_fast_path && can_thaw_fast(chunk)) {
     intptr_t* sp = thaw_fast<true>(chunk);
+    retire_local_tlab_after_thaw(sp);
     if (_preempted_case) {
       return handle_preempted_continuation(sp, preempt_kind, true /* fast_case */);
     }
@@ -2541,6 +2557,8 @@ NOINLINE intptr_t* Thaw<ConfigT>::thaw_slow(stackChunkOop chunk, Continuation::t
   _thread->set_cont_fastpath(_fastpath);
 
   intptr_t* sp = caller.sp();
+
+  retire_local_tlab_after_thaw(sp);
 
   if (_preempted_case) {
     return handle_preempted_continuation(sp, preempt_kind, false /* fast_case */);
