@@ -270,22 +270,12 @@ public:
   static freeze_result freeze(JavaThread* thread, intptr_t* const sp) {
     freeze_result res = freeze_internal<SelfT, false>(thread, sp);
 
-    if (res == freeze_ok) {
-      thread->retire_local_tlab(true /* watermark */);
-    }
-
     JFR_ONLY(assert((res == freeze_ok) || (res == thread->last_freeze_fail_result()), "freeze failure not set"));
     return res;
   }
 
   static freeze_result freeze_preempt(JavaThread* thread, intptr_t* const sp) {
-    freeze_result res = freeze_internal<SelfT, true>(thread, sp);
-
-    if (res == freeze_ok) {
-      thread->retire_local_tlab(true /* watermark */);
-    }
-
-    return res;
+    return freeze_internal<SelfT, true>(thread, sp);
   }
 
   static intptr_t* thaw(JavaThread* thread, Continuation::thaw_kind kind) {
@@ -610,6 +600,11 @@ void FreezeBase::unwind_frames() {
   assert_frames_in_continuation_are_safe(_thread);
   JFR_ONLY(Jfr::check_and_process_sample_request(_thread);)
   set_anchor_to_entry(_thread, entry);
+
+  // The frozen frames are no longer on the carrier stack. Retire while the
+  // continuation-entry anchor still publishes that post-freeze topology, before
+  // the freeze epilogue can perform JVMTI cleanup or otherwise safepoint.
+  _thread->retire_local_tlab(true /* watermark */);
 }
 
 template <typename ConfigT>
