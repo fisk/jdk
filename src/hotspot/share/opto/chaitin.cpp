@@ -2468,6 +2468,7 @@ void PhaseChaitin::dump_frame() const {
   int current_slot = fixed_slots;
   int stack_increment_slot = -1;
   int nm_slot = -1;
+  int preserved_local_tlab_top_slot = -1;
 
   auto next_slot = [&]() {
     current_slot -= VMRegImpl::slots_per_word;
@@ -2479,6 +2480,10 @@ void PhaseChaitin::dump_frame() const {
   }
   if (C->needs_nm_slot()) {
     nm_slot = next_slot();
+  }
+  if (C->has_local_objects()) {
+    preserved_local_tlab_top_slot = next_slot();
+    assert(C->preserved_local_tlab_top_slot() == preserved_local_tlab_top_slot, "wrong slot");
   }
   int orig_pc_slot = next_slot();
 
@@ -2504,6 +2509,8 @@ void PhaseChaitin::dump_frame() const {
         tty->print_cr(" (null marker)");
       } else if (stack_slot == orig_pc_slot) {
         tty->print_cr(" (original deopt pc)");
+      } else if (stack_slot == preserved_local_tlab_top_slot) {
+        tty->print_cr(" (saved local tlab top)");
       } else {
         tty->cr();
       }

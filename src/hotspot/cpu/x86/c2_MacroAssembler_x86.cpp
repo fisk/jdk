@@ -50,13 +50,6 @@
 #define STOP(error) block_comment(error); stop(error)
 #endif
 
-int C2_MacroAssembler::preserved_local_tlab_top_offset() {
-  Compile* C = Compile::current();
-  PhaseRegAlloc* ra = C->regalloc();
-  OptoReg::Name preserved_local_tlab_top_slot = OptoReg::stack2reg(C->preserved_local_tlab_top_slot());
-  return ra->reg2offset_unchecked(preserved_local_tlab_top_slot);
-}
-
 // C2 compiled method's prolog code.
 // Beware! This sp_inc is NOT the same as the one mentioned in MacroAssembler::remove_frame but only the size
 // of the extension space + the additional copy of the return address. That means, it doesn't contain the
@@ -168,7 +161,7 @@ void C2_MacroAssembler::verified_entry(Compile* C, int sp_inc) {
   // run their barrier in a temporary frame before creating the final frame.
   if (C->is_method_compilation() && C->has_local_objects()) {
     movptr(rax, Address(r15_thread, JavaThread::tlab_top_offset(true)));
-    movptr(Address(rsp, preserved_local_tlab_top_offset()), rax);
+    movptr(Address(rsp, preserved_local_tlab_top_offset(C)), rax);
   }
 }
 

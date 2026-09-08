@@ -1381,8 +1381,13 @@ void PhaseOutput::estimate_buffer_size(int& const_req) {
     if (C->needs_nm_slot()) {
       current_slot -= VMRegImpl::slots_per_word;
     }
-    int orig_pc_slot = current_slot - VMRegImpl::slots_per_word;
+    current_slot -= VMRegImpl::slots_per_word;
+    int orig_pc_slot = current_slot;
     _orig_pc_slot_offset_in_bytes = C->regalloc()->reg2offset(OptoReg::stack2reg(orig_pc_slot));
+    if (C->has_local_objects()) {
+      current_slot -= VMRegImpl::slots_per_word;
+      assert(current_slot == C->preserved_local_tlab_top_slot(), "wrong slot");
+    }
   }
 
   // Compute prolog code size

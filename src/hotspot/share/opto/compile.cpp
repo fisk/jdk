@@ -923,26 +923,34 @@ Compile::Compile(ciEnv* ci_env, ciMethod* target, int osr_bci,
   // rsp+44: spill
   // [...]
 
-  // Reserve the original deopt pc and the fixed local-TLAB frame layout. The
-  // latter keeps space for preserving the caller's local TLAB top.
-  int next_slot = fixed_slots() + 3 * VMRegImpl::slots_per_word;
+  int next_slot = fixed_slots();
+
+  // Reserve a word for the caller's local TLAB top.
+  if (has_local_objects()) {
+    _preserved_local_tlab_top_slot = next_slot;
+    next_slot += VMRegImpl::slots_per_word;
+  }
+
+  // One extra slot for the original deopt pc.
+  next_slot += VMRegImpl::slots_per_word;
+
+  // One extra slot to hold the null marker at scalarized returns.
+  if (needs_nm_slot()) {
+    next_slot += VMRegImpl::slots_per_word;
+  }
 
   // One extra slot for the special stack increment value.
   if (needs_stack_repair()) {
     next_slot += VMRegImpl::slots_per_word;
   }
 
-  // One extra slot to hold the null marker at scalarized returns.
-  if (needs_nm_slot()) {
-    next_slot += VMRegImpl::slots_per_word;
-  }
   set_fixed_slots(next_slot);
 
   // Compute when to use implicit null checks. Used by matching trap based
   // nodes and NullCheck optimization.
   set_allowed_deopt_reasons();
 
-  // Now generate codMatcher::_old_SPe
+  // Now generate code
   Code_Gen();
 
 #ifdef ASSERT
@@ -964,6 +972,7 @@ int Compile::preserved_local_tlab_top_slot() const {
     slot -= VMRegImpl::slots_per_word;
   }
   slot -= 2 * VMRegImpl::slots_per_word;
+  assert(slot == _preserved_local_tlab_top_slot, "!");
   return slot;
 }
 
@@ -1139,6 +1148,7 @@ void Compile::Init(bool aliasing) {
   env()->set_dependencies(new Dependencies(env()));
 
   _fixed_slots = 0;
+  _preserved_local_tlab_top_slot = -1;
   _has_local_objects = false;
   set_has_split_ifs(false);
   set_has_loops(false); // first approximation

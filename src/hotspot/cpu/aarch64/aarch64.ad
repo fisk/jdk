@@ -1866,6 +1866,18 @@ void MachEpilogNode::emit(C2_MacroAssembler *masm, PhaseRegAlloc *ra_) const {
   Compile* C = ra_->C;
   int framesize = C->output()->frame_slots() << LogBytesPerInt;
 
+  if (C->is_method_compilation() && C->has_local_objects()) {
+    // Stash this away for mixed frames, but do not kill tail-call args.
+    // Avoid rscratch1 used by safepoint poll.
+    __ ldr(rscratch2, Address(rthread, JavaThread::tlab_top_offset(true)));
+    if (!do_polling()) {
+      __ str(rscratch2, Address(rthread, JavaThread::saved_local_tlab_top_offset()));
+    }
+    // Restore current local tlab top
+    __ ldr(rscratch1, Address(sp, __ preserved_local_tlab_top_offset(C)));
+    __ str(rscratch1, Address(rthread, JavaThread::tlab_top_offset(true)));
+  }
+
   __ remove_frame(framesize, C->needs_stack_repair());
 
   if (StackReservedPages > 0 && C->has_reserved_stack_access()) {
@@ -1881,7 +1893,7 @@ void MachEpilogNode::emit(C2_MacroAssembler *masm, PhaseRegAlloc *ra_) const {
       code_stub = &stub->entry();
     }
     __ relocate(relocInfo::poll_return_type);
-    __ safepoint_poll(*code_stub, true /* at_return */, true /* in_nmethod */);
+    __ safepoint_poll(*code_stub, true /* at_return */, true /* in_nmethod */, rscratch1);
   }
 }
 

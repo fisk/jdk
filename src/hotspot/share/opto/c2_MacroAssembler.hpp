@@ -29,6 +29,8 @@
 #include "asm/macroAssembler.inline.hpp"
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/macros.hpp"
+#include "opto/compile.hpp"
+#include "opto/regalloc.hpp"
 
 class C2EntryBarrierStub;
 class TypeInt;
@@ -38,6 +40,17 @@ class C2_MacroAssembler: public MacroAssembler {
  public:
   // creation
   C2_MacroAssembler(CodeBuffer* code) : MacroAssembler(code) {}
+
+  int fixed_slot_offset(Compile* C, int slot) {
+    PhaseRegAlloc* ra = C->regalloc();
+    OptoReg::Name reg = OptoReg::stack2reg(slot);
+    return ra->reg2offset_unchecked(reg);
+  }
+
+  int preserved_local_tlab_top_offset(Compile* C) {
+    assert(C->has_local_objects(), "no local objects?");
+    return fixed_slot_offset(C, C->preserved_local_tlab_top_slot());
+  }
 
 #include CPU_HEADER(c2_MacroAssembler)
 

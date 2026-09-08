@@ -276,18 +276,18 @@ void BarrierSetAssembler::tlab_allocate(MacroAssembler* masm, Register obj,
 
   // verify_tlab();
 
-  __ ldr(obj, Address(rthread, JavaThread::tlab_top_offset()));
+  __ ldr(obj, Address(rthread, JavaThread::tlab_top_offset(false /* local */)));
   if (var_size_in_bytes == noreg) {
     __ lea(end, Address(obj, con_size_in_bytes));
   } else {
     __ lea(end, Address(obj, var_size_in_bytes));
   }
-  __ ldr(rscratch1, Address(rthread, JavaThread::tlab_end_offset()));
+  __ ldr(rscratch1, Address(rthread, JavaThread::tlab_end_offset(false /* local */)));
   __ cmp(end, rscratch1);
   __ br(Assembler::HI, slow_case);
 
   // update the tlab top pointer
-  __ str(end, Address(rthread, JavaThread::tlab_top_offset()));
+  __ str(end, Address(rthread, JavaThread::tlab_top_offset(false /* local */)));
 
   // recover var_size_in_bytes if necessary
   if (var_size_in_bytes == end) {

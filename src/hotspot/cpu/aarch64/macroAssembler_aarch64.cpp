@@ -5780,16 +5780,16 @@ void MacroAssembler::verify_tlab() {
 
     stp(rscratch2, rscratch1, Address(pre(sp, -16)));
 
-    ldr(rscratch2, Address(rthread, in_bytes(JavaThread::tlab_top_offset())));
-    ldr(rscratch1, Address(rthread, in_bytes(JavaThread::tlab_start_offset())));
+    ldr(rscratch2, Address(rthread, in_bytes(JavaThread::tlab_top_offset(false /* local */))));
+    ldr(rscratch1, Address(rthread, in_bytes(JavaThread::tlab_start_offset(false /* local */))));
     cmp(rscratch2, rscratch1);
     br(Assembler::HS, next);
     STOP("assert(top >= start)");
     should_not_reach_here();
 
     bind(next);
-    ldr(rscratch2, Address(rthread, in_bytes(JavaThread::tlab_end_offset())));
-    ldr(rscratch1, Address(rthread, in_bytes(JavaThread::tlab_top_offset())));
+    ldr(rscratch2, Address(rthread, in_bytes(JavaThread::tlab_end_offset(false /* local */))));
+    ldr(rscratch1, Address(rthread, in_bytes(JavaThread::tlab_top_offset(false /* local */))));
     cmp(rscratch2, rscratch1);
     br(Assembler::HS, ok);
     STOP("assert(top <= end)");
@@ -7015,6 +7015,14 @@ void MacroAssembler::verified_entry(Compile* C, int sp_inc) {
 
   if (VerifyStackAtCalls) {
     Unimplemented();
+  }
+
+  // Preserve the caller's local TLAB top in the final compiled frame. This
+  // belongs to frame creation rather than entry_barrier(): scalarized entries
+  // run their barrier in a temporary frame before creating the final frame.
+  if (C->is_method_compilation() && C->has_local_objects()) {
+    ldr(rscratch1, Address(rthread, JavaThread::tlab_top_offset(true)));
+    str(rscratch1, Address(sp, ((C2_MacroAssembler*)this)->preserved_local_tlab_top_offset(C)));
   }
 }
 #endif // COMPILER2
