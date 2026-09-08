@@ -45,6 +45,9 @@
   product(bool, ZeroTLAB, false,                                            \
           "Zero out the newly created TLAB")                                \
                                                                             \
+  develop(bool, StressLocalObjects, false,                                  \
+          "Process local-TLAB reclamation on every frame unwind")           \
+                                                                            \
   product(size_t, MinTLABSize, 2*K,                                         \
           "Minimum allowed TLAB size (in bytes)")                           \
           range(1, max_uintx/2)                                             \

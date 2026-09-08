@@ -96,7 +96,11 @@ void LocalTLABStackWatermark::update_watermark() {
   if (_retired_sp_watermark != 0) {
     watermark = MIN2(watermark, _retired_sp_watermark);
   }
-  if (watermark == max_watermark) {
+  if (StressLocalObjects) {
+    // Ensure the watermark is triggered for every unwind so we can clobber
+    // the eagerly reclaimed heap memory.
+    watermark = 1;
+  } else if (watermark == max_watermark) {
     watermark = 0;
   }
   set_watermark0(watermark);
@@ -177,6 +181,19 @@ void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
     tlab_start = _jt->local_tlab().start();
     tlab_end = _jt->local_tlab().end();
     tlab_top = _jt->local_tlab().top();
+
+    if (StressLocalObjects) {
+      HeapWord* saved_top = _jt->saved_local_tlab_top();
+      // A frame can cross a local-TLAB boundary. Its saved top then belongs
+      // to a different TLAB from the active one; the normal TLAB-pop path
+      // below zaps that complete range. Only zap the per-frame interval here
+      // when both ends belong to this TLAB.
+      if (saved_top != JavaThread::no_saved_local_tlab_top() &&
+          tlab_start <= tlab_top && tlab_top <= saved_top && saved_top <= tlab_end &&
+          tlab_top != saved_top) {
+        Universe::heap()->fill_with_dummy_object(tlab_top, saved_top, true);
+      }
+    }
   }
 
   for (;;) {
@@ -210,8 +227,9 @@ void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
           Universe::heap()->fill_with_dummy_object(head->_start, head->_end, true);
         }
       } else if (head->_prev == nullptr) {
-        // Last TLAB; move it up the stack instead of popping it
+        // Last TLAB; move it up the stack instead of popping it.
         log_info(stackbarrier)("Unwinding from leaf Allocated for tid %d: [%lx, %lx), watermark: %lx", _jt->osthread()->thread_id(), fp, sp, watermark());
+
         head->_sp_watermark = sp;
         head->_fp_watermark = fp;
         tlab_top = tlab_start;
@@ -260,7 +278,8 @@ void LocalTLABStackWatermark::ensure_safe(const frame& after_unwind_frame) {
   _jt->local_tlab().initialize(tlab_start, tlab_top, tlab_end);
   _jt->local_tlab().invariants();
   update_watermark();
-  assert(!is_above_watermark(sp, watermark()), "still above watermark?");
+  assert(StressLocalObjects || !is_above_watermark(sp, watermark()),
+         "still above watermark?");
 }
 
 bool LocalTLABStackWatermark::try_refill(HeapWord** start, size_t* size, size_t min_size) {
