@@ -1026,7 +1026,7 @@ void ZStatMutatorAllocRate::sample_allocation(size_t allocation_bytes) {
 
   _stat_lock->unlock();
 
-  ZDirector::evaluate_rules();
+  ZDirector::evaluate_rules(false /* after_gc */);
 }
 
 ZStatMutatorAllocRateStats ZStatMutatorAllocRate::stats() {

@@ -1249,6 +1249,10 @@
     <Field type="ulong" contentType="bytes" name="uncommitted" label="Uncommitted" />
   </Event>
 
+  <Event name="ZGCDemand" category="Java Virtual Machine, GC, Detailed" label="ZGC GC Demand" description="A measure of how hard ZGC has to work to avoid encountering an allocation stall. Up until 0.8 is manageable, and then the risk becomes increasingly imminent up until 1.0 where back-to-back stalls can be expected." thread="true" startTime="false">
+    <Field type="float" contentType="percentage" name="gcDemand" label="GC Demand" />
+  </Event>
+
   <Event name="ShenandoahHeapRegionStateChange" category="Java Virtual Machine, GC, Detailed" label="Shenandoah Heap Region State Change" description="Information about a Shenandoah heap region state change"
     startTime="false">
     <Field type="uint" name="index" label="Index" />
