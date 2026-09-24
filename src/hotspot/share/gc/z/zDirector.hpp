@@ -34,8 +34,9 @@ private:
 
   ZConditionLock _monitor;
   bool           _stopped;
+  bool           _evaluate_after_gc;
 
-  bool wait_for_tick();
+  bool wait_for_tick(bool& after_gc);
 
 protected:
   virtual void run_thread();
@@ -44,7 +45,7 @@ protected:
 public:
   ZDirector();
 
-  static void evaluate_rules();
+  static void evaluate_rules(bool after_gc);
 };
 
 #endif // SHARE_GC_Z_ZDIRECTOR_HPP

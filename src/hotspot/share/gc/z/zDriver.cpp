@@ -229,7 +229,7 @@ void ZDriverMinor::run_thread() {
     handle_alloc_stalls();
 
     // Good point to consider back-to-back GC
-    ZDirector::evaluate_rules();
+    ZDirector::evaluate_rules(true /* after_gc */);
   }
 }
 
