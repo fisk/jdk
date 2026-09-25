@@ -259,8 +259,8 @@ static ZMinorGCDecision rule_soft_minor_allocation_rate_dynamic(const ZDirectorS
                                                                 double serial_gc_time_passed,
                                                                 double parallel_gc_time_passed) {
   return rule_minor_allocation_rate_dynamic(stats,
-                                            0.0 /* serial_gc_time_passed */,
-                                            0.0 /* parallel_gc_time_passed */,
+                                            serial_gc_time_passed,
+                                            parallel_gc_time_passed,
                                             false /* conservative_alloc_rate */,
                                             stats._heap._heuristic_max_capacity /* capacity */);
 }
@@ -281,8 +281,8 @@ static ZMinorGCDecision rule_semi_hard_minor_allocation_rate_dynamic(const ZDire
                                                                      double serial_gc_time_passed,
                                                                      double parallel_gc_time_passed) {
   return rule_minor_allocation_rate_dynamic(stats,
-                                            0.0 /* serial_gc_time_passed */,
-                                            0.0 /* parallel_gc_time_passed */,
+                                            serial_gc_time_passed,
+                                            parallel_gc_time_passed,
                                             false /* conservative_alloc_rate */,
                                             heuristic_hard_capacity(stats) /* capacity */);
 }
@@ -291,10 +291,10 @@ static ZMinorGCDecision rule_hard_minor_allocation_rate_dynamic(const ZDirectorS
                                                                 double serial_gc_time_passed,
                                                                 double parallel_gc_time_passed) {
   return rule_minor_allocation_rate_dynamic(stats,
-                                            0.0 /* serial_gc_time_passed */,
-                                            0.0 /* parallel_gc_time_passed */,
+                                            serial_gc_time_passed,
+                                            parallel_gc_time_passed,
                                             true /* conservative_alloc_rate */,
-                                            heuristic_hard_capacity(stats) /* capacity */);
+                                            stats._heap._current_max_capacity /* capacity */);
 }
 
 static bool rule_minor_allocation_rate_static(const ZDirectorStats& stats) {
