@@ -25,6 +25,7 @@
 #ifndef SHARE_RUNTIME_STACKWATERMARKSET_HPP
 #define SHARE_RUNTIME_STACKWATERMARKSET_HPP
 
+#include "jni.h"
 #include "memory/allStatic.hpp"
 #include "runtime/stackWatermarkKind.hpp"
 
@@ -75,6 +76,8 @@ public:
 
   // Called to ensure that processing of the thread is started when waking up from safepoint
   static void on_safepoint(JavaThread* jt);
+
+  static void on_jni_handle_resolve(jobject handle);
 
   // Called to ensure that processing of the thread is started
   static void start_processing(JavaThread* jt, StackWatermarkKind kind);

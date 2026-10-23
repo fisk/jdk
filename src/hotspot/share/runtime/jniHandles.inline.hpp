@@ -27,8 +27,12 @@
 
 #include "runtime/jniHandles.hpp"
 
+#include "gc/shared/barrierSet.hpp"
 #include "oops/access.inline.hpp"
 #include "oops/oop.hpp"
+#include "runtime/javaThread.inline.hpp"
+#include "runtime/safepointMechanism.inline.hpp"
+#include "runtime/stackWatermarkSet.hpp"
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
 
@@ -80,6 +84,14 @@ inline oop JNIHandles::resolve_impl(jobject handle) {
     // jobject, so for non-jweak the pointee should never be null.
     assert(external_guard || result != nullptr, "Invalid JNI handle");
   } else {
+    Thread* thread = Thread::current();
+    if (BarrierSet::barrier_set()->uses_stack_watermark_barrier() && thread->is_Java_thread()) {
+      JavaThread* jt = JavaThread::cast(thread);
+      if (jt->is_in_full_stack(reinterpret_cast<address>(handle)) &&
+          reinterpret_cast<uintptr_t>(handle) > jt->poll_data()->get_polling_word()) {
+        StackWatermarkSet::on_jni_handle_resolve(handle);
+      }
+    }
     result = *local_ptr(handle);
     // Construction of jobjects canonicalize a null value into a null
     // jobject, so for non-jweak the pointee should never be null.

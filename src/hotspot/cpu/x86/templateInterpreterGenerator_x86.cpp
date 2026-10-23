@@ -1003,17 +1003,10 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
   __ restore_after_resume(true /* is_native */);
   __ bind(not_preempted);
 
-  // reset_last_Java_frame
-  __ reset_last_Java_frame(true);
-
   if (CheckJNICalls) {
     // clear_pending_jni_exception_check
     __ movptr(Address(thread, JavaThread::pending_jni_exception_check_fn_offset()), NULL_WORD);
   }
-
-  // reset handle block
-  __ movptr(t, Address(thread, JavaThread::active_handles_offset()));
-  __ movl(Address(t, JNIHandleBlock::top_offset()), NULL_WORD);
 
   // If result is an oop unbox and store it in frame where gc will see it
   // and result handler will pick it up
@@ -1026,14 +1019,17 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
     // retrieve result
     __ pop(ltos);
     // Unbox oop result, e.g. JNIHandles::resolve value.
-    __ resolve_jobject(rax /* value */,
-                       t /* tmp */);
+    __ resolve_jobject(rax, rcx);
     __ movptr(Address(rbp, frame::interpreter_frame_oop_temp_offset*wordSize), rax);
     // keep stack depth as expected by pushing oop which will eventually be discarded
     __ push(ltos);
     __ bind(no_oop);
   }
 
+  __ reset_last_Java_frame(true);
+
+  __ movptr(t, Address(thread, JavaThread::active_handles_offset()));
+  __ movl(Address(t, JNIHandleBlock::top_offset()), NULL_WORD);
 
   {
     Label no_reguard;

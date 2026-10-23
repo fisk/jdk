@@ -118,6 +118,22 @@ void StackWatermarkSet::on_safepoint(JavaThread* jt) {
   }
 }
 
+void StackWatermarkSet::on_jni_handle_resolve(jobject handle) {
+  JavaThread* jt = JavaThread::current();
+  if (!jt->has_last_Java_frame()) {
+    return;
+  }
+
+  StackWatermark* watermark = get(jt, StackWatermarkKind::gc);
+  if (watermark == nullptr) {
+    return;
+  }
+
+  verify_processing_context();
+  watermark->on_jni_handle_resolve(handle);
+  SafepointMechanism::update_poll_values(jt);
+}
+
 void StackWatermarkSet::start_processing(JavaThread* jt, StackWatermarkKind kind) {
   verify_processing_context();
   StackWatermark* watermark = get(jt, kind);

@@ -25,6 +25,7 @@
 #ifndef SHARE_RUNTIME_STACKWATERMARK_HPP
 #define SHARE_RUNTIME_STACKWATERMARK_HPP
 
+#include "jni.h"
 #include "memory/allStatic.hpp"
 #include "runtime/mutex.hpp"
 #include "runtime/stackWatermarkKind.hpp"
@@ -149,6 +150,7 @@ public:
   void on_iteration(const frame& f);
   void on_safepoint();
   void start_processing();
+  void on_jni_handle_resolve(jobject handle);
   void finish_processing(void* context);
 
   void assert_is_frame_safe(const frame& f) NOT_DEBUG_RETURN;

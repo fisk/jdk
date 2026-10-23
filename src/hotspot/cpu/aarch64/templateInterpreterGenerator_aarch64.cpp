@@ -1466,6 +1466,23 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
   __ ldr(result_handler, Address(rfp, frame::interpreter_frame_result_handler_offset*wordSize));
   __ bind(not_preempted);
 
+  // If result is an oop unbox and store it in frame where gc will see it
+  // and result handler will pick it up
+
+  {
+    Label no_oop;
+    __ adr(t, ExternalAddress(AbstractInterpreter::result_handler(T_OBJECT)));
+    __ cmp(t, result_handler);
+    __ br(Assembler::NE, no_oop);
+    // Unbox oop result, e.g. JNIHandles::resolve result.
+    __ pop(ltos);
+    __ resolve_jobject(r0, r1, r2);
+    __ str(r0, Address(rfp, frame::interpreter_frame_oop_temp_offset*wordSize));
+    // keep stack depth as expected by pushing oop which will eventually be discarded
+    __ push(ltos);
+    __ bind(no_oop);
+  }
+
   // reset_last_Java_frame
   __ reset_last_Java_frame(true);
 
@@ -1477,23 +1494,6 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
   // reset handle block
   __ ldr(t, Address(rthread, JavaThread::active_handles_offset()));
   __ str(zr, Address(t, JNIHandleBlock::top_offset()));
-
-  // If result is an oop unbox and store it in frame where gc will see it
-  // and result handler will pick it up
-
-  {
-    Label no_oop;
-    __ adr(t, ExternalAddress(AbstractInterpreter::result_handler(T_OBJECT)));
-    __ cmp(t, result_handler);
-    __ br(Assembler::NE, no_oop);
-    // Unbox oop result, e.g. JNIHandles::resolve result.
-    __ pop(ltos);
-    __ resolve_jobject(r0, t, rscratch2);
-    __ str(r0, Address(rfp, frame::interpreter_frame_oop_temp_offset*wordSize));
-    // keep stack depth as expected by pushing oop which will eventually be discarded
-    __ push(ltos);
-    __ bind(no_oop);
-  }
 
   {
     Label no_reguard;

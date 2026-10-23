@@ -92,6 +92,8 @@ public:
   void on_slowpath_allocation_exit(JavaThread* thread, oop new_obj) override;
   void on_thread_create(Thread* thread) override;
   void on_thread_destroy(Thread* thread) override;
+  bool uses_stack_watermark_barrier() const override { return true; }
+
   void on_thread_attach(Thread* thread) override;
   void on_thread_detach(Thread* thread) override;
 

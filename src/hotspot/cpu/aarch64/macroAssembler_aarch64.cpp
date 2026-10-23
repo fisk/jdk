@@ -58,7 +58,9 @@
 #include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/javaThread.hpp"
 #include "runtime/jniHandles.inline.hpp"
+#include "runtime/safepointMechanism.hpp"
 #include "runtime/sharedRuntime.hpp"
+#include "runtime/stackWatermarkSet.hpp"
 #include "runtime/signature_cc.hpp"
 #include "runtime/stubRoutines.hpp"
 #include "utilities/globalDefinitions.hpp"
@@ -3474,6 +3476,27 @@ void MacroAssembler::resolve_jobject(Register value, Register tmp1, Register tmp
   br(Assembler::NE, tagged);
 
   // Resolve local handle
+  if (BarrierSet::barrier_set()->uses_stack_watermark_barrier()) {
+    Label resolved, slow;
+    ldr(tmp1, Address(rthread, Thread::stack_base_offset()));
+    cmp(value, tmp1);
+    br(Assembler::HS, resolved);
+    ldr(tmp2, Address(rthread, Thread::stack_size_offset()));
+    sub(tmp1, tmp1, tmp2);
+    cmp(value, tmp1);
+    br(Assembler::LO, resolved);
+    ldr(tmp1, Address(rthread, JavaThread::polling_word_offset()));
+    tbnz(tmp1, exact_log2(SafepointMechanism::poll_bit()), slow);
+    cmp(value, tmp1);
+    br(Assembler::LS, resolved);
+    bind(slow);
+    push(RegSet::of(value, lr), sp);
+    push_call_clobbered_registers();
+    call_VM_leaf(CAST_FROM_FN_PTR(address, StackWatermarkSet::on_jni_handle_resolve), value);
+    pop_call_clobbered_registers();
+    pop(RegSet::of(value, lr), sp);
+    bind(resolved);
+  }
   access_load_at(T_OBJECT, IN_NATIVE | AS_RAW, value, Address(value, 0), tmp1, tmp2);
   verify_oop(value);
   b(done);

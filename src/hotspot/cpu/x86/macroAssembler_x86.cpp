@@ -57,6 +57,7 @@
 #include "runtime/safepointMechanism.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "runtime/signature_cc.hpp"
+#include "runtime/stackWatermarkSet.hpp"
 #include "runtime/stubRoutines.hpp"
 #include "utilities/checkedCast.hpp"
 #include "utilities/globalDefinitions.hpp"
@@ -3537,6 +3538,22 @@ void MacroAssembler::resolve_jobject(Register value,
   jcc(Assembler::zero, done);           // Use null as-is.
   testptr(value, JNIHandles::tag_mask); // Test for tag.
   jcc(Assembler::notZero, tagged);
+
+  if (BarrierSet::barrier_set()->uses_stack_watermark_barrier()) {
+    Label local_ready;
+    cmpptr(value, Address(thread, Thread::stack_base_offset()));
+    jcc(Assembler::aboveEqual, local_ready);
+    movptr(tmp, Address(thread, Thread::stack_base_offset()));
+    subptr(tmp, Address(thread, Thread::stack_size_offset()));
+    cmpptr(value, tmp);
+    jcc(Assembler::below, local_ready);
+    cmpptr(value, Address(thread, JavaThread::polling_word_offset()));
+    jcc(Assembler::belowEqual, local_ready);
+    push_call_clobbered_registers();
+    call_VM_leaf(CAST_FROM_FN_PTR(address, StackWatermarkSet::on_jni_handle_resolve), value);
+    pop_call_clobbered_registers();
+    bind(local_ready);
+  }
 
   // Resolve local handle
   access_load_at(T_OBJECT, IN_NATIVE | AS_RAW, value, Address(value, 0), tmp);

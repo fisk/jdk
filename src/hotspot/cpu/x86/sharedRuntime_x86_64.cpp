@@ -2553,13 +2553,12 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
     restore_native_result(masm, ret_type, stack_slots);
   }
 
-  __ reset_last_Java_frame(false);
-
   // Unbox oop result, e.g. JNIHandles::resolve value.
   if (is_reference_type(ret_type)) {
-    __ resolve_jobject(rax /* value */,
-                       rcx /* tmp */);
+    __ resolve_jobject(rax, rcx);
   }
+
+  __ reset_last_Java_frame(false);
 
   if (CheckJNICalls) {
     // clear_pending_jni_exception_check

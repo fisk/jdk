@@ -326,6 +326,14 @@ void StackWatermark::start_processing() {
   }
 }
 
+void StackWatermark::on_jni_handle_resolve(jobject handle) {
+  assert(processing_started_acquire(), "processing must have started at safepoint exit");
+  while (!processing_completed_acquire() &&
+         reinterpret_cast<uintptr_t>(handle) > watermark()) {
+    process_one();
+  }
+}
+
 void StackWatermark::finish_processing(void* context) {
   MutexLocker ml(&_lock, Mutex::_no_safepoint_check_flag);
   if (!processing_started()) {

@@ -129,6 +129,8 @@ public:
   virtual void on_thread_create(Thread* thread) {}
   virtual void on_thread_destroy(Thread* thread) {}
 
+  virtual bool uses_stack_watermark_barrier() const { return false; }
+
   // These perform BarrierSet-related initialization/cleanup before the thread
   // is added to or removed from the corresponding set of threads. The
   // argument thread is the current thread. These are called either holding
