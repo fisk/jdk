@@ -1211,7 +1211,7 @@ void ShenandoahUpdateThreadHandshakeClosure::do_thread(Thread* thread) {
   if (thread->is_Java_thread()) {
     JavaThread* jt = JavaThread::cast(thread);
     ResourceMark rm;
-    jt->oops_do(&_cl, nullptr);
+    jt->oops_do(&_cl, nullptr, &_cl);
   }
 }
 

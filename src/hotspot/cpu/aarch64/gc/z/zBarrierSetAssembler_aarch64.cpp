@@ -799,7 +799,11 @@ void ZBarrierSetAssembler::try_resolve_jobject_in_native(MacroAssembler* masm,
 
   // Resolve local handle
   __ ldr(robj, robj);
-  __ b(done);
+  __ lea(tmp, load_bad_mask_from_jni_env(jni_env));
+  __ ldr(tmp, tmp);
+  __ tst(robj, tmp);
+  __ br(Assembler::NE, slowpath);
+  __ b(uncolor);
 
   __ bind(tagged);
 

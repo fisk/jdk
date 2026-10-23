@@ -2096,8 +2096,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
   int out_arg_slots;
   out_arg_slots = c_calling_convention(out_sig_bt, out_regs, total_c_args);
 
-  // Compute framesize for the wrapper.  We need to handlize all oops in
-  // incoming registers
+  // Compute framesize for the wrapper.
 
   // Calculate the total number of stack slots we will need.
 
@@ -2105,7 +2104,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
   int stack_slots = SharedRuntime::out_preserve_stack_slots() + out_arg_slots;
 
   // Now the space for the inbound oop handle area
-  int total_save_slots = 6 * VMRegImpl::slots_per_word;  // 6 arguments passed in registers
+  int total_save_slots = total_in_args * VMRegImpl::slots_per_word;
 
   int oop_handle_offset = stack_slots;
   stack_slots += total_save_slots;
@@ -2147,7 +2146,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
   //      | klass (if static)   |
   //      |---------------------| <- klass_slot_offset
   //      | oopHandle area      |
-  //      |---------------------| <- oop_handle_offset (6 java arg registers)
+  //      |---------------------| <- oop_handle_offset
   //      | outbound memory     |
   //      | based arguments     |
   //      |                     |
@@ -2302,7 +2301,8 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
     switch (in_sig_bt[i]) {
       case T_ARRAY:
       case T_OBJECT:
-        __ object_move(map, oop_handle_offset, stack_slots, in_regs[i], out_regs[c_arg],
+        __ object_move(map, oop_handle_offset + i * VMRegImpl::slots_per_word,
+                    stack_slots, in_regs[i], out_regs[c_arg],
                     ((i == 0) && (!is_static)),
                     &receiver_offset);
         break;
@@ -2345,7 +2345,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
     __ movoop(oop_handle_reg, JNIHandles::make_local(method->method_holder()->java_mirror()));
 
     // Now handlize the static class mirror it's known not-null.
-    __ movptr(Address(rsp, klass_offset), oop_handle_reg);
+    __ initialize_local_jni_handle(Address(rsp, klass_offset), oop_handle_reg, rscratch1, rscratch2);
     map->set_oop(VMRegImpl::stack2reg(klass_slot_offset));
 
     // Now get the handle
@@ -2416,7 +2416,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
     __ lea(lock_reg, Address(rsp, lock_slot_offset * VMRegImpl::stack_slot_size));
 
     // Load the oop from the handle
-    __ movptr(obj_reg, Address(oop_handle_reg, 0));
+    __ resolve_local_jni_handle(obj_reg, oop_handle_reg, rscratch1);
 
     __ fast_lock(lock_reg, obj_reg, swap_reg, rscratch1, slow_path_lock);
 
@@ -2527,7 +2527,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
     Label fast_done;
 
     // Get locked oop from the handle we passed to jni
-    __ movptr(obj_reg, Address(oop_handle_reg, 0));
+    __ resolve_local_jni_handle(obj_reg, oop_handle_reg, rscratch1);
 
     // Must save rax if it is live now because cmpxchg must use it
     if (ret_type != T_FLOAT && ret_type != T_DOUBLE && ret_type != T_VOID) {

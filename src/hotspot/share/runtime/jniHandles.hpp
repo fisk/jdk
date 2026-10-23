@@ -92,6 +92,8 @@ public:
   static bool is_same_object(jobject handle1, jobject handle2);
 
   // Local handles
+  template <DecoratorSet decorators = DECORATORS_NONE>
+  inline static oop resolve_local_jni_handle(jobject handle);
   static jobject make_local(oop obj);
   static jobject make_local(JavaThread* thread, oop obj,  // Faster version when current thread is known
                             AllocFailType alloc_failmode = AllocFailStrategy::EXIT_OOM);

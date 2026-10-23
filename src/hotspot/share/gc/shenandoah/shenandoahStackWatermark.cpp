@@ -104,7 +104,8 @@ void ShenandoahStackWatermark::start_processing_impl(void* context) {
   }
 
   // Process the non-frame part of the thread
-  _jt->oops_do_no_frames(closure_from_context(context), &_nm_cl);
+  OopClosure* oops = closure_from_context(context);
+  _jt->oops_do_no_frames(oops, &_nm_cl, oops);
 
   // Publishes the processing start to concurrent threads
   StackWatermark::start_processing_impl(context);
@@ -124,5 +125,5 @@ void ShenandoahStackWatermark::retire_tlab() {
 void ShenandoahStackWatermark::process(const frame& fr, RegisterMap& register_map, void* context) {
   OopClosure* oops = closure_from_context(context);
   assert(oops != nullptr, "Should not get to here");
-  fr.oops_do(oops, &_nm_cl, &register_map, DerivedPointerIterationMode::_directly);
+  fr.oops_do(oops, &_nm_cl, &register_map, DerivedPointerIterationMode::_directly, oops);
 }

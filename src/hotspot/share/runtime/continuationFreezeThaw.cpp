@@ -3239,7 +3239,7 @@ static bool do_verify_after_thaw(JavaThread* thread, stackChunkOop chunk, output
       fst.current()->print_on(st);
     }
 
-    fst.current()->oops_do(&cl, &cf, fst.register_map());
+    fst.current()->oops_do(&cl, &cf, fst.register_map(), &cl);
     if (cl.p() != nullptr) {
       frame fr = *fst.current();
       st->print_cr("Failed for frame barriers: %d",chunk->requires_barriers());

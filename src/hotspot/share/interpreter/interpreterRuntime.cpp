@@ -1408,17 +1408,20 @@ void SignatureHandlerLibrary::initialize() {
 }
 
 address SignatureHandlerLibrary::set_handler(CodeBuffer* buffer) {
-  address handler   = _handler;
+  address handler   = align_up(_handler, HeapWordSize);
   int     insts_size = buffer->pure_insts_size();
-  if (handler + insts_size > _handler_blob->code_end()) {
+  int     handler_size = align_up(insts_size, HeapWordSize);
+  if (handler + handler_size > _handler_blob->code_end()) {
     // get a new handler blob
     handler = set_handler_blob();
   }
   if (handler != nullptr) {
-    memcpy(handler, buffer->insts_begin(), insts_size);
+    CodeBuffer destination(handler, handler_size);
+    destination.insts()->set_end(handler + insts_size);
+    buffer->relocate_code_to(&destination);
     pd_set_handler(handler);
     ICache::invalidate_range(handler, insts_size);
-    _handler = handler + insts_size;
+    _handler = handler + handler_size;
   }
   return handler;
 }
@@ -1444,6 +1447,7 @@ void SignatureHandlerLibrary::add(const methodHandle& method) {
         ptrdiff_t align_offset = align_up(_buffer, CodeEntryAlignment) - (address)_buffer;
         CodeBuffer buffer((address)(_buffer + align_offset),
                           checked_cast<int>(SignatureHandlerLibrary::buffer_size - align_offset));
+        buffer.insts()->initialize_locs(256);
         InterpreterRuntime::SignatureHandlerGenerator(method, &buffer).generate(fingerprint);
         // copy into code heap
         address handler = set_handler(&buffer);

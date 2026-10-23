@@ -1015,7 +1015,8 @@ public:
 
     MarkingNMethodClosure mark_and_push_in_blobs(&_cm->_mark_and_push_closure);
 
-    thread->oops_do(&_cm->_mark_and_push_closure, &mark_and_push_in_blobs);
+    thread->oops_do(&_cm->_mark_and_push_closure, &mark_and_push_in_blobs,
+                    &_cm->_mark_and_push_closure);
 
     // Do the real work
     _cm->follow_marking_stacks();

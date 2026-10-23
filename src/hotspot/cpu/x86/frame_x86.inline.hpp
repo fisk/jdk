@@ -296,6 +296,10 @@ inline intptr_t* frame::interpreter_frame_locals() const {
   return &fp()[n]; // return relativized locals
 }
 
+inline oop* frame::interpreter_frame_native_oop_base() const {
+  return reinterpret_cast<oop*>(ptr_at(interpreter_frame_native_oop_base_offset));
+}
+
 inline intptr_t* frame::interpreter_frame_last_sp() const {
   intptr_t n = *addr_at(interpreter_frame_last_sp_offset);
   assert(n <= 0, "n: " INTPTR_FORMAT, n);

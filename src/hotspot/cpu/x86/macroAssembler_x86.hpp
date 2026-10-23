@@ -253,7 +253,7 @@ class MacroAssembler: public Assembler {
   void double_move(VMRegPair src, VMRegPair dst, Register tmp = rax, int in_stk_bias = 0, int out_stk_bias = 0);
   void move_ptr(VMRegPair src, VMRegPair dst);
   void object_move(OopMap* map,
-                   int oop_handle_offset,
+                   int oop_handle_slot,
                    int framesize_in_slots,
                    VMRegPair src,
                    VMRegPair dst,
@@ -351,6 +351,9 @@ class MacroAssembler: public Assembler {
 
   // jobjects
   void clear_jobject_tag(Register possibly_non_local);
+  // Initialize a freshly allocated local JNI handle slot.
+  void initialize_local_jni_handle(Address dst, Register value, Register tmp1, Register tmp2);
+  void resolve_local_jni_handle(Register dst, Register handle, Register tmp);
   void resolve_jobject(Register value, Register tmp);
   void resolve_global_jobject(Register value, Register tmp);
 

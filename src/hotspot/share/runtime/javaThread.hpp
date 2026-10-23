@@ -930,8 +930,10 @@ public:
   void frames_do(void f(frame*, const RegisterMap*));
 
   // Memory operations
-  void oops_do_frames(OopClosure* f, NMethodClosure* cf);
-  void oops_do_no_frames(OopClosure* f, NMethodClosure* cf);
+  void oops_do_frames(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop);
+  void oops_do_no_frames(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop);
+  void jni_handle_blocks_do(OopClosure* f);
+
 
   // GC operations
   virtual void nmethods_do(NMethodClosure* cf);

@@ -424,7 +424,7 @@ bool Thread::claim_par_threads_do(uintx claim_token) {
   return false;
 }
 
-void Thread::oops_do_no_frames(OopClosure* f, NMethodClosure* cf) {
+void Thread::oops_do_no_frames(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop) {
   // Do oop for ThreadShadow
   f->do_oop((oop*)&_pending_exception);
   handle_area()->oops_do(f);
@@ -454,11 +454,11 @@ public:
   }
 };
 
-void Thread::oops_do(OopClosure* f, NMethodClosure* cf) {
+void Thread::oops_do(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop) {
   // Record JavaThread to GC thread
   RememberProcessedThread rpt(this);
-  oops_do_no_frames(f, cf);
-  oops_do_frames(f, cf);
+  oops_do_no_frames(f, cf, native_oop);
+  oops_do_frames(f, cf, native_oop);
 }
 
 void Thread::metadata_handles_do(void f(Metadata*)) {

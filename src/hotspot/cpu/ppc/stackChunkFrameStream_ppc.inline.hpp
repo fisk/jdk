@@ -183,7 +183,7 @@ inline int StackChunkFrameStream<frame_kind>::interpreter_frame_num_oops(Registe
   ResourceMark rm;
   frame f = to_frame();
   InterpreterOopCount closure;
-  f.oops_interpreted_do(&closure, map);
+  f.oops_interpreted_do(&closure, &closure, map);
   return closure.count();
 }
 

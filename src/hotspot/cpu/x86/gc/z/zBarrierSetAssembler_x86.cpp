@@ -574,6 +574,7 @@ void ZBarrierSetAssembler::store_at(MacroAssembler* masm,
   BLOCK_COMMENT("ZBarrierSetAssembler::store_at {");
 
   bool dest_uninitialized = (decorators & IS_DEST_UNINITIALIZED) != 0;
+  bool is_native = (decorators & IN_NATIVE) != 0;
 
   if (is_reference_type(type)) {
     assert_different_registers(src, tmp1, dst.base(), dst.index());
@@ -602,7 +603,7 @@ void ZBarrierSetAssembler::store_at(MacroAssembler* masm,
       store_barrier_medium(masm,
                            dst,
                            tmp1,
-                           false /* is_native */,
+                           is_native,
                            false /* is_atomic */,
                            medium_continuation,
                            slow,
@@ -613,7 +614,10 @@ void ZBarrierSetAssembler::store_at(MacroAssembler* masm,
         // Call VM
         ZRuntimeCallSpill rcs(masm, noreg, ZXMMSpillMode::avx128);
         __ leaq(c_rarg0, dst);
-        __ MacroAssembler::call_VM_leaf(ZBarrierSetRuntime::store_barrier_on_oop_field_without_healing_addr(), c_rarg0);
+        address runtime = is_native
+            ? ZBarrierSetRuntime::store_barrier_on_native_oop_field_without_healing_addr()
+            : ZBarrierSetRuntime::store_barrier_on_oop_field_without_healing_addr();
+        __ MacroAssembler::call_VM_leaf(runtime, c_rarg0);
       }
 
       __ jmp(slow_continuation);
@@ -979,7 +983,9 @@ void ZBarrierSetAssembler::try_resolve_jobject_in_native(MacroAssembler* masm,
 
   // Resolve local handle
   __ movptr(obj, Address(obj, 0));
-  __ jmp(done);
+  __ testptr(obj, load_bad_mask_from_jni_env(jni_env));
+  __ jcc(Assembler::notZero, slowpath);
+  __ jmp(uncolor);
 
   __ bind(tagged);
 

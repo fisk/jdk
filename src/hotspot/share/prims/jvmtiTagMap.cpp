@@ -2580,7 +2580,7 @@ class JNILocalRootsClosure : public OopClosure {
       return;
     }
 
-    oop o = *obj_p;
+    oop o = NativeAccess<AS_NO_KEEPALIVE>::oop_load(obj_p);
     // ignore null
     if (o == nullptr) {
       return;

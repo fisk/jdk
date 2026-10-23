@@ -137,7 +137,7 @@ public:
     if (_thread_cl != nullptr) {
       _thread_cl->do_thread(t);
     }
-    t->oops_do(_f, _cf);
+    t->oops_do(_f, _cf, _f);
   }
 };
 

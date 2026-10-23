@@ -431,9 +431,9 @@ class Thread: public ThreadShadow {
   // Apply "f->do_oop" to all root oops in "this".
   //   Used by JavaThread::oops_do.
   // Apply "cf->do_nmethod" (if !nullptr) to all nmethods active in frames
-  virtual void oops_do_no_frames(OopClosure* f, NMethodClosure* cf);
-  virtual void oops_do_frames(OopClosure* f, NMethodClosure* cf) {}
-  void oops_do(OopClosure* f, NMethodClosure* cf);
+  virtual void oops_do_no_frames(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop);
+  virtual void oops_do_frames(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop) {}
+  void oops_do(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop);
 
   // Handles the parallel case for claim_threads_do.
  private:

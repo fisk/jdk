@@ -54,6 +54,12 @@ inline oop* JNIHandles::local_ptr(jobject handle) {
   return reinterpret_cast<oop*>(handle);
 }
 
+template <DecoratorSet decorators>
+inline oop JNIHandles::resolve_local_jni_handle(jobject handle) {
+  assert(handle != nullptr, "precondition");
+  return NativeAccess<decorators>::oop_load(local_ptr(handle));
+}
+
 inline oop* JNIHandles::global_ptr(jobject handle) {
   assert(is_global_tagged(handle), "precondition");
   char* ptr = reinterpret_cast<char*>(handle) - TypeTag::global;
@@ -80,7 +86,7 @@ inline oop JNIHandles::resolve_impl(jobject handle) {
     // jobject, so for non-jweak the pointee should never be null.
     assert(external_guard || result != nullptr, "Invalid JNI handle");
   } else {
-    result = *local_ptr(handle);
+    result = resolve_local_jni_handle<decorators>(handle);
     // Construction of jobjects canonicalize a null value into a null
     // jobject, so for non-jweak the pointee should never be null.
     assert(external_guard || result != nullptr, "Invalid JNI handle");
@@ -113,7 +119,11 @@ inline oop JNIHandles::resolve_non_null(jobject handle) {
 
 inline void JNIHandles::destroy_local(jobject handle) {
   if (handle != nullptr) {
-    *local_ptr(handle) = nullptr;
+    // We use AS_NO_KEEPALIVE on these stores to denote that there is
+    // nothing for concurrent marking to keep alive as these local JNI
+    // handles are always scanned as part of a stable root snapshot by
+    // all GCs.
+    NativeAccess<AS_NO_KEEPALIVE>::oop_store(local_ptr(handle), oop(nullptr));
   }
 }
 

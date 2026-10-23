@@ -85,6 +85,7 @@ void ReferenceLocateClosure::do_oop(oop* ref) {
   do_oop_shared(UnifiedOopRef::encode_in_native(ref));
 }
 
+
 void ReferenceLocateClosure::do_oop(narrowOop* ref) {
   do_oop_shared(UnifiedOopRef::encode_in_native(ref));
 }
@@ -252,7 +253,7 @@ bool ReferenceToThreadRootClosure::do_thread_stack_detailed(JavaThread* jt) {
 
     // Traverse the execution stack
     for (StackFrameStream fst(jt, true /* update */, true /* process_frames */); !fst.is_done(); fst.next()) {
-      fst.current()->oops_do(&rcl, nullptr, fst.register_map());
+      fst.current()->oops_do(&rcl, nullptr, fst.register_map(), &rcl);
     }
 
   } // last java frame
@@ -294,7 +295,7 @@ bool ReferenceToThreadRootClosure::do_java_threads_oops(JavaThread* jt) {
   assert(!complete(), "invariant");
 
   ReferenceLocateClosure rcl(_callback, OldObjectRoot::_threads, OldObjectRoot::_global_jni_handle, jt);
-  jt->oops_do(&rcl, nullptr);
+  jt->oops_do(&rcl, nullptr, &rcl);
   return rcl.complete();
 }
 

@@ -849,7 +849,7 @@ public:
   void double_move(VMRegPair src, VMRegPair dst, Register tmp = rscratch1);
   void object_move(
                    OopMap* map,
-                   int oop_handle_offset,
+                   int oop_handle_slot,
                    int framesize_in_slots,
                    VMRegPair src,
                    VMRegPair dst,
@@ -951,6 +951,9 @@ public:
   // thread in the default location (rthread)
   void reset_last_Java_frame(bool clear_fp);
 
+  // Initialize a freshly allocated local JNI handle slot.
+  void initialize_local_jni_handle(Address dst, Register value, Register tmp1, Register tmp2);
+  void resolve_local_jni_handle(Register dst, Register handle, Register tmp1, Register tmp2);
   void resolve_jobject(Register value, Register tmp1, Register tmp2);
   void resolve_global_jobject(Register value, Register tmp1, Register tmp2);
 

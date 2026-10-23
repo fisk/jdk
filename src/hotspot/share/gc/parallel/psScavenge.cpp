@@ -220,7 +220,7 @@ public:
     PSScavengeRootsClosure roots_closure(_pm);
 
     // No need to visit nmethods, because they are handled by ScavengableNMethods.
-    thread->oops_do(&roots_closure, nullptr);
+    thread->oops_do(&roots_closure, nullptr, &roots_closure);
 
     // Do the real work
     _pm->trim_stacks();

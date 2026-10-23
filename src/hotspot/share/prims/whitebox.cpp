@@ -62,6 +62,7 @@
 #include "nmt/mallocSiteTable.hpp"
 #include "oops/access.hpp"
 #include "oops/array.hpp"
+#include "oops/access.inline.hpp"
 #include "oops/compressedOops.hpp"
 #include "oops/compressedOops.inline.hpp"
 #include "oops/constantPool.inline.hpp"
@@ -2127,7 +2128,7 @@ class CollectFrameObjectOops : public BasicOopIterateClosure {
   CollectObjectOops _collect;
 
   template <class T> inline void add_oop(T* p) { _collect.add_oop(RawAccess<>::oop_load(p)); }
-  void do_oop(oop* o) { add_oop(o); }
+  void do_oop(oop* o) { _collect.add_oop(NativeAccess<AS_NO_KEEPALIVE>::oop_load(o)); }
   void do_oop(narrowOop* v) { add_oop(v); }
 
   jobjectArray create_jni_result(JNIEnv* env, TRAPS) {
@@ -2153,7 +2154,7 @@ WB_ENTRY(jobjectArray, WB_getObjectsViaFrameOopIterator(JNIEnv* env, jobject wb,
   while (depth > 0) { // Skip the native WB API frame
     sfs.next();
     frame* f = sfs.current();
-    f->oops_do(&collectOops, nullptr, sfs.register_map());
+    f->oops_do(&collectOops, nullptr, sfs.register_map(), &collectOops);
     depth--;
   }
   return collectOops.create_jni_result(env, THREAD);

@@ -160,13 +160,26 @@ public:
   }
 };
 
+class ZStackWatermarkProcessJNIHandlesClosure : public OopClosure {
+public:
+
+  void do_oop(oop* p) override {
+    ZBarrier::mark_barrier_on_root_oop_field((zpointer*)p);
+  }
+
+  void do_oop(narrowOop*) override {
+    ShouldNotReachHere();
+  }
+};
+
 void ZStackWatermark::process_head(void* context) {
   const uintptr_t color = prev_head_color();
 
   ZStackWatermarkProcessOopClosure cl(context, color);
   ZOnStackNMethodClosure nm_cl;
 
-  _jt->oops_do_no_frames(&cl, &nm_cl);
+  ZStackWatermarkProcessJNIHandlesClosure jni_cl;
+  _jt->oops_do_no_frames(&cl, &nm_cl, &jni_cl);
 
   zaddress_unsafe* const invisible_root = ZThreadLocalData::invisible_root(_jt);
   if (invisible_root != nullptr) {
@@ -211,5 +224,6 @@ void ZStackWatermark::process(const frame& fr, RegisterMap& register_map, void* 
   ZStackWatermarkProcessOopClosure cl(context, color);
   ZOnStackNMethodClosure nm_cl;
 
-  fr.oops_do(&cl, &nm_cl, &register_map, DerivedPointerIterationMode::_directly);
+  ZStackWatermarkProcessJNIHandlesClosure jni_cl;
+  fr.oops_do(&cl, &nm_cl, &register_map, DerivedPointerIterationMode::_directly, &jni_cl);
 }

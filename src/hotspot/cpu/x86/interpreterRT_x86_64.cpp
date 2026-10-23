@@ -27,7 +27,9 @@
 #include "interpreter/interpreterRuntime.hpp"
 #include "memory/allocation.inline.hpp"
 #include "oops/method.hpp"
+#include "oops/access.inline.hpp"
 #include "oops/oop.inline.hpp"
+#include "runtime/frame.inline.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/icache.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
@@ -208,7 +210,11 @@ void InterpreterRuntime::SignatureHandlerGenerator::pass_double() {
 }
 
 void InterpreterRuntime::SignatureHandlerGenerator::pass_object() {
-  const Address src(from(), Interpreter::local_offset_in_bytes(offset()));
+  const Address raw_src(from(), Interpreter::local_offset_in_bytes(offset()));
+  __ lea(r13, Address(rbp, frame::interpreter_frame_native_oop_base_addr_offset * wordSize));
+  __ movptr(rax, raw_src);
+  const Address src(r13, -offset() * wordSize);
+  __ initialize_local_jni_handle(src, rax, rscratch1, rscratch2);
 
 #ifdef _WIN64
   switch (_num_args) {
@@ -220,21 +226,21 @@ void InterpreterRuntime::SignatureHandlerGenerator::pass_object() {
   case 1:
     __ lea(rax, src);
     __ xorl(c_rarg2, c_rarg2);
-    __ cmpptr(src, 0);
+    __ cmpptr(raw_src, 0);
     __ cmov(Assembler::notEqual, c_rarg2, rax);
     _num_args++;
     break;
   case 2:
     __ lea(rax, src);
     __ xorl(c_rarg3, c_rarg3);
-    __ cmpptr(src, 0);
+    __ cmpptr(raw_src, 0);
     __ cmov(Assembler::notEqual, c_rarg3, rax);
     _num_args++;
     break;
   default:
     __ lea(rax, src);
     __ xorl(temp(), temp());
-    __ cmpptr(src, 0);
+    __ cmpptr(raw_src, 0);
     __ cmov(Assembler::notEqual, temp(), rax);
     __ movptr(Address(to(), _stack_offset), temp());
     _stack_offset += wordSize;
@@ -250,35 +256,35 @@ void InterpreterRuntime::SignatureHandlerGenerator::pass_object() {
   case 1:
     __ lea(rax, src);
     __ xorl(c_rarg2, c_rarg2);
-    __ cmpptr(src, 0);
+    __ cmpptr(raw_src, 0);
     __ cmov(Assembler::notEqual, c_rarg2, rax);
     _num_int_args++;
     break;
   case 2:
     __ lea(rax, src);
     __ xorl(c_rarg3, c_rarg3);
-    __ cmpptr(src, 0);
+    __ cmpptr(raw_src, 0);
     __ cmov(Assembler::notEqual, c_rarg3, rax);
     _num_int_args++;
     break;
   case 3:
     __ lea(rax, src);
     __ xorl(c_rarg4, c_rarg4);
-    __ cmpptr(src, 0);
+    __ cmpptr(raw_src, 0);
     __ cmov(Assembler::notEqual, c_rarg4, rax);
     _num_int_args++;
     break;
   case 4:
     __ lea(rax, src);
     __ xorl(c_rarg5, c_rarg5);
-    __ cmpptr(src, 0);
+    __ cmpptr(raw_src, 0);
     __ cmov(Assembler::notEqual, c_rarg5, rax);
     _num_int_args++;
     break;
   default:
     __ lea(rax, src);
     __ xorl(temp(), temp());
-    __ cmpptr(src, 0);
+    __ cmpptr(raw_src, 0);
     __ cmov(Assembler::notEqual, temp(), rax);
     __ movptr(Address(to(), _stack_offset), temp());
     _stack_offset += wordSize;
@@ -290,6 +296,13 @@ void InterpreterRuntime::SignatureHandlerGenerator::pass_object() {
 void InterpreterRuntime::SignatureHandlerGenerator::generate(uint64_t fingerprint) {
   // generate code to handle arguments
   iterate(fingerprint);
+
+  __ lea(r13, Address(rbp, frame::interpreter_frame_native_oop_base_addr_offset * wordSize));
+  __ movptr(rax, Address(rbp, frame::interpreter_frame_mirror_offset * wordSize));
+  __ initialize_local_jni_handle(Address(r13, wordSize), rax, rscratch1, rscratch2);
+  __ movptr(Address(rbp, frame::interpreter_frame_native_oop_base_offset * wordSize), r13);
+  __ movptr(r13, Address(rbx, Method::const_offset()));
+  __ lea(r13, Address(r13, ConstMethod::codes_offset()));
 
   // return result handler
   __ lea(rax, ExternalAddress(Interpreter::result_handler(method()->result_type())));
@@ -309,6 +322,7 @@ class SlowSignatureHandler
   : public NativeSignatureIterator {
  private:
   address   _from;
+  oop*      _native_oops;
   intptr_t* _to;
   intptr_t* _reg_args;
   intptr_t* _fp_identifiers;
@@ -342,13 +356,15 @@ class SlowSignatureHandler
 
   virtual void pass_object()
   {
-    intptr_t *from_addr = (intptr_t*)(_from + Interpreter::local_offset_in_bytes(0));
+    intptr_t* raw_addr = (intptr_t*)(_from + Interpreter::local_offset_in_bytes(0));
+    intptr_t* from_addr = reinterpret_cast<intptr_t*>(_native_oops - offset());
+    NativeAccess<IS_DEST_UNINITIALIZED>::oop_store(reinterpret_cast<oop*>(from_addr), cast_to_oop(*raw_addr));
     _from -= Interpreter::stackElementSize;
     if (_num_args < Argument::n_int_register_parameters_c-1) {
-      *_reg_args++ = (*from_addr == 0) ? NULL_WORD : (intptr_t) from_addr;
+      *_reg_args++ = (*raw_addr == 0) ? NULL_WORD : (intptr_t) from_addr;
       _num_args++;
     } else {
-      *_to++ = (*from_addr == 0) ? NULL_WORD : (intptr_t) from_addr;
+      *_to++ = (*raw_addr == 0) ? NULL_WORD : (intptr_t) from_addr;
     }
   }
 
@@ -388,6 +404,8 @@ class SlowSignatureHandler
   {
     _from = from;
     _to   = to;
+    frame fr = JavaThread::current()->last_frame();
+    _native_oops = reinterpret_cast<oop*>(fr.addr_at(frame::interpreter_frame_native_oop_base_addr_offset));
 
     _reg_args = to - (method->is_static() ? 4 : 5);
     _fp_identifiers = to - 2;
@@ -401,6 +419,7 @@ class SlowSignatureHandler
   : public NativeSignatureIterator {
  private:
   address   _from;
+  oop*      _native_oops;
   intptr_t* _to;
   intptr_t* _int_args;
   intptr_t* _fp_args;
@@ -436,14 +455,16 @@ class SlowSignatureHandler
 
   virtual void pass_object()
   {
-    intptr_t *from_addr = (intptr_t*)(_from + Interpreter::local_offset_in_bytes(0));
+    intptr_t* raw_addr = (intptr_t*)(_from + Interpreter::local_offset_in_bytes(0));
+    intptr_t* from_addr = reinterpret_cast<intptr_t*>(_native_oops - offset());
+    NativeAccess<IS_DEST_UNINITIALIZED>::oop_store(reinterpret_cast<oop*>(from_addr), cast_to_oop(*raw_addr));
     _from -= Interpreter::stackElementSize;
 
     if (_num_int_args < Argument::n_int_register_parameters_c-1) {
-      *_int_args++ = (*from_addr == 0) ? NULL_WORD : (intptr_t)from_addr;
+      *_int_args++ = (*raw_addr == 0) ? NULL_WORD : (intptr_t) from_addr;
       _num_int_args++;
     } else {
-      *_to++ = (*from_addr == 0) ? NULL_WORD : (intptr_t) from_addr;
+      *_to++ = (*raw_addr == 0) ? NULL_WORD : (intptr_t) from_addr;
     }
   }
 
@@ -480,6 +501,8 @@ class SlowSignatureHandler
   {
     _from = from;
     _to   = to;
+    frame fr = JavaThread::current()->last_frame();
+    _native_oops = reinterpret_cast<oop*>(fr.addr_at(frame::interpreter_frame_native_oop_base_addr_offset));
 
     _int_args = to - (method->is_static() ? 14 : 15);
     _fp_args =  to - 9;
@@ -502,6 +525,10 @@ JRT_ENTRY(address,
 
   // handle arguments
   SlowSignatureHandler(m, (address)from, to + 1).iterate((uint64_t)CONST64(-1));
+  frame fr = current->last_frame();
+  oop* base = reinterpret_cast<oop*>(fr.addr_at(frame::interpreter_frame_native_oop_base_addr_offset));
+  NativeAccess<IS_DEST_UNINITIALIZED>::oop_store(base + 1, *fr.interpreter_frame_mirror_addr());
+  fr.fp()[frame::interpreter_frame_native_oop_base_offset] = reinterpret_cast<intptr_t>(base);
 
   // return result handler
   return Interpreter::result_handler(m->result_type());

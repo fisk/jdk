@@ -431,23 +431,27 @@ public:
   virtual void do_derived_oop(derived_base* base, derived_pointer* derived) {}
 };
 
-void OopMapSet::oops_do(const frame* fr, const RegisterMap* reg_map, OopClosure* f, DerivedPointerIterationMode mode) {
-  find_map(fr)->oops_do(fr, reg_map, f, mode);
+void OopMapSet::oops_do(const frame* fr, const RegisterMap* reg_map, OopClosure* f,
+                        DerivedPointerIterationMode mode, OopClosure* native_oop_fn) {
+  find_map(fr)->oops_do(fr, reg_map, f, mode, native_oop_fn);
 }
 
-void OopMapSet::oops_do(const frame *fr, const RegisterMap* reg_map, OopClosure* f, DerivedOopClosure* df) {
-  find_map(fr)->oops_do(fr, reg_map, f, df);
+void OopMapSet::oops_do(const frame *fr, const RegisterMap* reg_map, OopClosure* f,
+                        DerivedOopClosure* df, OopClosure* native_oop_fn) {
+  find_map(fr)->oops_do(fr, reg_map, f, df, native_oop_fn);
 }
 
 void ImmutableOopMap::oops_do(const frame *fr, const RegisterMap *reg_map,
-                              OopClosure* oop_fn, DerivedOopClosure* derived_oop_fn) const {
+                              OopClosure* oop_fn, DerivedOopClosure* derived_oop_fn,
+                              OopClosure* native_oop_fn) const {
   assert(derived_oop_fn != nullptr, "sanity");
-  OopMapDo<OopClosure, DerivedOopClosure, SkipNullValue> visitor(oop_fn, derived_oop_fn);
+  OopMapDo<OopClosure, DerivedOopClosure, SkipNullValue> visitor(oop_fn, derived_oop_fn, native_oop_fn);
   visitor.oops_do(fr, reg_map, this);
 }
 
 void ImmutableOopMap::oops_do(const frame *fr, const RegisterMap *reg_map,
-                              OopClosure* oop_fn, DerivedPointerIterationMode derived_mode) const {
+                              OopClosure* oop_fn, DerivedPointerIterationMode derived_mode,
+                              OopClosure* native_oop_fn) const {
   ProcessDerivedOop process_cl(oop_fn);
   AddDerivedOop add_cl;
   IgnoreDerivedOop ignore_cl;
@@ -465,7 +469,7 @@ void ImmutableOopMap::oops_do(const frame *fr, const RegisterMap *reg_map,
   default:
     guarantee (false, "unreachable");
   }
-  OopMapDo<OopClosure, DerivedOopClosure, SkipNullValue> visitor(oop_fn, derived_cl);
+  OopMapDo<OopClosure, DerivedOopClosure, SkipNullValue> visitor(oop_fn, derived_cl, native_oop_fn);
   visitor.oops_do(fr, reg_map, this);
 }
 

@@ -485,7 +485,7 @@ jobject JNIHandleBlock::allocate_handle(JavaThread* caller, oop obj, AllocFailTy
   // Try last block
   if (_last->_top < block_size_in_oops) {
     oop* handle = (oop*)&(_last->_handles)[_last->_top++];
-    *handle = obj;
+    NativeAccess<IS_DEST_UNINITIALIZED>::oop_store(handle, obj);
     return (jobject) handle;
   }
 
@@ -493,7 +493,7 @@ jobject JNIHandleBlock::allocate_handle(JavaThread* caller, oop obj, AllocFailTy
   if (_free_list != nullptr) {
     oop* handle = (oop*)_free_list;
     _free_list = (uintptr_t*) untag_free_list(*_free_list);
-    *handle = obj;
+    NativeAccess<IS_DEST_UNINITIALIZED>::oop_store(handle, obj);
     return (jobject) handle;
   }
   // Check if unused block follow last
@@ -524,7 +524,8 @@ void JNIHandleBlock::rebuild_free_list() {
   for (JNIHandleBlock* current = this; current != nullptr; current = current->_next) {
     for (int index = 0; index < current->_top; index++) {
       uintptr_t* handle = &(current->_handles)[index];
-      if (*handle == 0) {
+      if (!is_tagged_free_list(*handle) &&
+          NativeAccess<AS_NO_KEEPALIVE>::oop_load((oop*)handle) == nullptr) {
         // this handle was cleared out by a delete call, reuse it
         *handle = _free_list == nullptr ? 0 : tag_free_list((uintptr_t)_free_list);
         _free_list = handle;

@@ -853,12 +853,12 @@ void TemplateInterpreterGenerator::generate_fixed_frame(bool native_call) {
 
   // initialize fixed part of activation frame
   if (native_call) {
-    __ sub(esp, sp, 14 *  wordSize);
+    __ sub(esp, sp, 16 *  wordSize);
     __ mov(rbcp, zr);
     __ mov(rscratch1, frame::interpreter_frame_initial_sp_offset);
-    __ stp(rscratch1, zr, Address(__ pre(sp, -14 * wordSize)));
-    // add 2 zero-initialized slots for native calls
+    __ stp(rscratch1, zr, Address(__ pre(sp, -16 * wordSize)));
     __ stp(zr, zr, Address(sp, 12 * wordSize));
+    __ str(zr, Address(sp, 14 * wordSize));
   } else {
     __ sub(esp, sp, 12 *  wordSize);
     __ add(rbcp, r5_const_method, in_bytes(ConstMethod::codes_offset())); // get codebase
@@ -1298,6 +1298,8 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
   __ ldr(t, Address(rmethod, Method::const_offset()));
   __ load_unsigned_short(t, Address(t, ConstMethod::size_of_parameters_offset()));
 
+  __ add(rscratch1, t, 1);
+  __ sub(esp, esp, rscratch1, ext::uxtx, LogBytesPerWord);
   __ sub(rscratch1, esp, t, ext::uxtx, Interpreter::logStackElementSize);
   __ andr(sp, rscratch1, -16);
   __ mov(esp, rscratch1);
@@ -1342,12 +1344,8 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
     Label L;
     __ ldrh(t, Address(rmethod, Method::access_flags_offset()));
     __ tbz(t, exact_log2(JVM_ACC_STATIC), L);
-    // get mirror
-    __ load_mirror(t, rmethod, r10, rscratch2);
-    // copy mirror into activation frame
-    __ str(t, Address(rfp, frame::interpreter_frame_oop_temp_offset * wordSize));
-    // pass handle to mirror
-    __ add(c_rarg1, rfp, frame::interpreter_frame_oop_temp_offset * wordSize);
+    __ ldr(c_rarg1, Address(rfp, frame::interpreter_frame_native_oop_base_offset * wordSize));
+    __ add(c_rarg1, c_rarg1, wordSize);
     __ bind(L);
   }
 

@@ -525,5 +525,5 @@ void VMThread::execute(VM_Operation* op) {
 }
 
 void VMThread::verify() {
-  oops_do(&VerifyOopClosure::verify_oop, nullptr);
+  oops_do(&VerifyOopClosure::verify_oop, nullptr, &VerifyOopClosure::verify_oop);
 }

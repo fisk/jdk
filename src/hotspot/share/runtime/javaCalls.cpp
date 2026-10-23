@@ -128,7 +128,6 @@ JavaCallWrapper::~JavaCallWrapper() {
 
 void JavaCallWrapper::oops_do(OopClosure* f) {
   f->do_oop((oop*)&_receiver);
-  handles()->oops_do(f);
 }
 
 

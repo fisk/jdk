@@ -273,7 +273,8 @@ public:
       oop _the_oop;
       OopFinder(oop the_oop) : _found(false), _the_oop(the_oop) {}
       void check(oop o) { if (o == _the_oop) { _found = true; } }
-      void do_oop(oop* p) { check(*p); }
+      void do_oop(oop* p) { check(NativeAccess<AS_NO_KEEPALIVE>::oop_load(p)); }
+
       void do_oop(narrowOop* p) { check(CompressedOops::decode(*p)); }
     };
 
@@ -285,7 +286,7 @@ public:
 
     OopFinder finder(JNIHandles::resolve(_session));
     NMethodOopFinder nmof(&finder);
-    the_frame.oops_do(&finder, &nmof, &register_map);
+    the_frame.oops_do(&finder, &nmof, &register_map, &finder);
     return finder._found;
   }
 };

@@ -72,6 +72,7 @@
     sender_sp_offset                                 =  2,
 
     // Interpreter frames
+    interpreter_frame_native_oop_base_offset         =  4,
     interpreter_frame_result_handler_offset          =  3, // for native calls only
     interpreter_frame_oop_temp_offset                =  2, // for native calls only
 
@@ -86,6 +87,8 @@
     interpreter_frame_locals_offset                  = interpreter_frame_cache_offset - 1,
     interpreter_frame_bcp_offset                     = interpreter_frame_locals_offset - 1,
     interpreter_frame_initial_sp_offset              = interpreter_frame_bcp_offset - 1,
+    // Address of the base of the native local-handle array
+    interpreter_frame_native_oop_base_addr_offset    = interpreter_frame_initial_sp_offset - 2,
 
     interpreter_frame_monitor_block_top_offset       = interpreter_frame_initial_sp_offset,
     interpreter_frame_monitor_block_bottom_offset    = interpreter_frame_initial_sp_offset,

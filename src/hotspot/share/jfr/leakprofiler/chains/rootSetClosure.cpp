@@ -33,9 +33,9 @@
 #include "jfr/leakprofiler/utilities/unifiedOopRef.inline.hpp"
 #include "oops/access.inline.hpp"
 #include "oops/oop.inline.hpp"
-#include "runtime/javaThread.hpp"
 #include "runtime/synchronizer.hpp"
 #include "runtime/threads.hpp"
+#include "runtime/vmThread.hpp"
 #include "services/management.hpp"
 #include "utilities/align.hpp"
 
@@ -85,6 +85,20 @@ public:
 };
 
 template <typename Delegate>
+class ThreadRootClosure : public ThreadClosure {
+  Delegate* _delegate;
+
+public:
+  ThreadRootClosure(Delegate* delegate) : _delegate(delegate) {}
+
+  void do_thread(Thread* thread) {
+    RawRootClosure<Delegate> cl(_delegate);
+    RootSetClosure<Delegate> native_cl(_delegate);
+    thread->oops_do(&cl, nullptr, &native_cl);
+  }
+};
+
+template <typename Delegate>
 void RootSetClosure<Delegate>::process() {
   CLDToOopClosure cldt_closure(this, ClassLoaderData::_claim_none);
   ClassLoaderDataGraph::always_strong_cld_do(&cldt_closure);
@@ -92,8 +106,10 @@ void RootSetClosure<Delegate>::process() {
   OopStorageSet::strong_oops_do(this);
 
   // We don't follow code blob oops, because they have misaligned oops.
+  ThreadRootClosure<Delegate> trc(_delegate);
+  Threads::java_threads_do(&trc);
   RawRootClosure<Delegate> rrc(_delegate);
-  Threads::oops_do(&rrc, nullptr);
+  VMThread::vm_thread()->oops_do(&rrc, nullptr, &rrc);
 }
 
 template class RootSetClosure<BFSClosure>;

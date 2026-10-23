@@ -37,6 +37,7 @@
 #include "gc/z/zLock.inline.hpp"
 #include "gc/z/zNMethod.hpp"
 #include "memory/iterator.inline.hpp"
+#include "runtime/javaThread.hpp"
 #include "utilities/bitMap.inline.hpp"
 
 class ZHeapIteratorBitMap : public CHeapObj<mtGC> {
@@ -127,6 +128,7 @@ public:
     : _iter(iter),
       _context(context) {}
 
+
   virtual void do_oop(oop* p) {
     _context.visit_field(nullptr, p);
     const oop obj = load_oop(p);
@@ -154,6 +156,7 @@ public:
                                        const ZHeapIteratorContext& context)
     : _iter(iter),
       _context(context) {}
+
 
   virtual void do_oop(oop* p) {
     _context.visit_field(nullptr, p);
@@ -376,14 +379,16 @@ class ZHeapIteratorThreadClosure : public ThreadClosure {
 private:
   OopClosure* const     _cl;
   NMethodClosure* const _nm_cl;
+  OopClosure* const     _jni_cl;
 
 public:
-  ZHeapIteratorThreadClosure(OopClosure* cl, NMethodClosure* nm_cl)
+  ZHeapIteratorThreadClosure(OopClosure* cl, NMethodClosure* nm_cl, OopClosure* jni_cl)
     : _cl(cl),
-      _nm_cl(nm_cl) {}
+      _nm_cl(nm_cl),
+      _jni_cl(jni_cl) {}
 
   void do_thread(Thread* thread) {
-    thread->oops_do(_cl, _nm_cl);
+    thread->oops_do(_cl, _nm_cl, _jni_cl);
   }
 };
 
@@ -399,7 +404,8 @@ void ZHeapIterator::push_strong_roots(const ZHeapIteratorContext& context) {
   {
     ZHeapIteratorUncoloredRootOopClosure cl(this, context);
     ZHeapIteratorNMethodClosure nm_cl(&cl);
-    ZHeapIteratorThreadClosure thread_cl(&cl, &nm_cl);
+    ZHeapIteratorColoredRootOopClosure<false> jni_cl(this, context);
+    ZHeapIteratorThreadClosure thread_cl(&cl, &nm_cl, &jni_cl);
     _roots_uncolored.apply(&thread_cl,
                            &nm_cl);
   }

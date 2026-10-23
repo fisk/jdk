@@ -29,8 +29,10 @@
 #include "interpreter/interpreter.hpp"
 #include "interpreter/interpreterRuntime.hpp"
 #include "memory/allocation.inline.hpp"
+#include "oops/access.inline.hpp"
 #include "oops/method.hpp"
 #include "oops/oop.inline.hpp"
+#include "runtime/frame.inline.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/icache.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
@@ -149,26 +151,21 @@ void InterpreterRuntime::SignatureHandlerGenerator::pass_double() {
 }
 
 void InterpreterRuntime::SignatureHandlerGenerator::pass_object() {
+  __ lea(r10, Address(rfp, (frame::interpreter_frame_native_oop_base_addr_offset - offset()) * wordSize));
+  __ ldr(r0, Address(from(), Interpreter::local_offset_in_bytes(offset())));
+  __ initialize_local_jni_handle(Address(r10), r0, rscratch1, rscratch2);
+  __ ldr(r0, Address(from(), Interpreter::local_offset_in_bytes(offset())));
+  Label is_null, done;
+  __ cbz(r0, is_null);
+  __ mov(r0, r10);
+  __ b(done);
+  __ bind(is_null);
+  __ mov(r0, zr);
+  __ bind(done);
   Register reg = next_gpr();
-  if (reg == c_rarg1) {
-    assert(offset() == 0, "argument register 1 can only be (non-null) receiver");
-    __ add(c_rarg1, from(), Interpreter::local_offset_in_bytes(offset()));
-  } else if (reg != noreg) {
-    __ add(r0, from(), Interpreter::local_offset_in_bytes(offset()));
-    __ mov(reg, 0);
-    __ ldr(temp(), r0);
-    Label L;
-    __ cbz(temp(), L);
+  if (reg != noreg) {
     __ mov(reg, r0);
-    __ bind(L);
   } else {
-    __ add(r0, from(), Interpreter::local_offset_in_bytes(offset()));
-    __ ldr(temp(), r0);
-    Label L;
-    __ cbnz(temp(), L);
-    __ mov(r0, zr);
-    __ bind(L);
-    static_assert(sizeof(jobject) == wordSize);
     __ str(r0, Address(to(), next_stack_offset(sizeof(jobject))));
   }
 }
@@ -176,6 +173,11 @@ void InterpreterRuntime::SignatureHandlerGenerator::pass_object() {
 void InterpreterRuntime::SignatureHandlerGenerator::generate(uint64_t fingerprint) {
   // generate code to handle arguments
   iterate(fingerprint);
+
+  __ lea(r10, Address(rfp, frame::interpreter_frame_native_oop_base_addr_offset * wordSize));
+  __ ldr(r0, Address(rfp, frame::interpreter_frame_mirror_offset * wordSize));
+  __ initialize_local_jni_handle(Address(r10, wordSize), r0, rscratch1, rscratch2);
+  __ str(r10, Address(rfp, frame::interpreter_frame_native_oop_base_offset * wordSize));
 
   // return result handler
   __ lea(r0, ExternalAddress(Interpreter::result_handler(method()->result_type())));
@@ -194,6 +196,7 @@ class SlowSignatureHandler
   : public NativeSignatureIterator {
  private:
   address   _from;
+  oop*      _native_oops;
   char*     _to;
   intptr_t* _int_args;
   intptr_t* _fp_args;
@@ -271,9 +274,12 @@ class SlowSignatureHandler
 
   virtual void pass_object() {
     intptr_t* addr = single_slot_addr();
-    intptr_t value = *addr == 0 ? (intptr_t)0 : (intptr_t)addr;
-    if (pass_gpr(value) < 0) {
-      pass_stack<>(value);
+    oop value = cast_to_oop(*addr);
+    oop* slot = _native_oops - offset();
+    NativeAccess<IS_DEST_UNINITIALIZED>::oop_store(slot, value);
+    intptr_t handle = value == nullptr ? 0 : reinterpret_cast<intptr_t>(slot);
+    if (pass_gpr(handle) < 0) {
+      pass_stack<>(handle);
     }
   }
 
@@ -295,9 +301,10 @@ class SlowSignatureHandler
   }
 
  public:
-  SlowSignatureHandler(const methodHandle& method, address from, intptr_t* to)
+  SlowSignatureHandler(const methodHandle& method, address from, intptr_t* to, oop* native_oops)
     : NativeSignatureIterator(method)
   {
+    _native_oops = native_oops;
     _from = from;
     _to   = (char *)to;
 
@@ -321,8 +328,12 @@ JRT_ENTRY(address,
   assert(m->is_native(), "sanity check");
 
   // handle arguments
-  SlowSignatureHandler ssh(m, (address)from, to);
+  frame fr = current->last_frame();
+  oop* native_oops = reinterpret_cast<oop*>(fr.addr_at(frame::interpreter_frame_native_oop_base_addr_offset));
+  SlowSignatureHandler ssh(m, (address)from, to, native_oops);
   ssh.iterate((uint64_t)CONST64(-1));
+  NativeAccess<IS_DEST_UNINITIALIZED>::oop_store(native_oops + 1, *fr.interpreter_frame_mirror_addr());
+  fr.ptr_at_put(frame::interpreter_frame_native_oop_base_offset, reinterpret_cast<intptr_t>(native_oops));
 
   // return result handler
   return Interpreter::result_handler(m->result_type());

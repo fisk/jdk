@@ -243,11 +243,13 @@ class OopMapSet : public ResourceObj {
   static void oops_do            (const frame* fr,
                                   const RegisterMap* reg_map,
                                   OopClosure* f,
-                                  DerivedOopClosure* df);
+                                  DerivedOopClosure* df,
+                                   OopClosure* native_oop_fn);
   static void oops_do            (const frame* fr,
                                   const RegisterMap* reg_map,
                                   OopClosure* f,
-                                  DerivedPointerIterationMode mode);
+                                  DerivedPointerIterationMode mode,
+                                   OopClosure* native_oop_fn);
   static void update_register_map(const frame* fr, RegisterMap *reg_map);
 
 #ifndef PRODUCT
@@ -294,8 +296,10 @@ public:
 
   int nr_of_bytes() const; // this is an expensive operation, only used in debug builds or in aot code generation
 
-  void oops_do(const frame* fr, const RegisterMap* reg_map, OopClosure* f, DerivedOopClosure* df) const;
-  void oops_do(const frame* fr, const RegisterMap* reg_map, OopClosure* f, DerivedPointerIterationMode derived_mode) const;
+  void oops_do(const frame* fr, const RegisterMap* reg_map, OopClosure* f,
+               DerivedOopClosure* df, OopClosure* native_oop_fn) const;
+  void oops_do(const frame* fr, const RegisterMap* reg_map, OopClosure* f,
+               DerivedPointerIterationMode derived_mode, OopClosure* native_oop_fn) const;
   void all_type_do(const frame *fr, OopMapValue::oop_types type, OopMapClosure* fn) const;
   void all_type_do(const frame *fr, OopMapClosure* fn) const;
   void update_register_map(const frame* fr, RegisterMap *reg_map) const;
@@ -465,8 +469,11 @@ class OopMapDo {
 private:
   OopFnT* _oop_fn;
   DerivedOopFnT* _derived_oop_fn;
+  OopClosure* _native_oop_fn;
 public:
-  OopMapDo(OopFnT* oop_fn, DerivedOopFnT* derived_oop_fn) : _oop_fn(oop_fn), _derived_oop_fn(derived_oop_fn) {}
+  OopMapDo(OopFnT* oop_fn, DerivedOopFnT* derived_oop_fn, OopClosure* native_oop_fn)
+    : _oop_fn(oop_fn), _derived_oop_fn(derived_oop_fn),
+      _native_oop_fn(native_oop_fn) {}
   template <typename RegisterMapT>
   void oops_do(const frame* fr, const RegisterMapT* reg_map, const ImmutableOopMap* oopmap);
 private:

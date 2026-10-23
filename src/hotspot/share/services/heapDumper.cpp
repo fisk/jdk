@@ -1733,7 +1733,7 @@ class JNILocalsDumper : public OopClosure {
 
 void JNILocalsDumper::do_oop(oop* obj_p) {
   // ignore null handles
-  oop o = *obj_p;
+  oop o = NativeAccess<AS_NO_KEEPALIVE>::oop_load(obj_p);
   if (o != nullptr) {
     u4 size = 1 + sizeof(address) + 4 + 4;
     writer()->start_sub_record(HPROF_GC_ROOT_JNI_LOCAL, size);

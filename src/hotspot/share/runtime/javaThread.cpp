@@ -35,6 +35,7 @@
 #include "code/scopeDesc.hpp"
 #include "compiler/compilerThread.hpp"
 #include "compiler/compileTask.hpp"
+#include "gc/shared/barrierSet.hpp"
 #include "gc/shared/oopStorage.hpp"
 #include "gc/shared/oopStorageSet.hpp"
 #include "gc/shared/tlab_globals.hpp"
@@ -1215,13 +1216,11 @@ void JavaThread::pop_jni_handle_block() {
   JNIHandleBlock::release_block(old_handles, this);
 }
 
-void JavaThread::oops_do_no_frames(OopClosure* f, NMethodClosure* cf) {
+void JavaThread::oops_do_no_frames(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop) {
   // Traverse the GCHandles
-  Thread::oops_do_no_frames(f, cf);
+  Thread::oops_do_no_frames(f, cf, native_oop);
 
-  if (active_handles() != nullptr) {
-    active_handles()->oops_do(f);
-  }
+  jni_handle_blocks_do(native_oop);
 
   DEBUG_ONLY(verify_frame_info();)
 
@@ -1259,7 +1258,21 @@ void JavaThread::oops_do_no_frames(OopClosure* f, NMethodClosure* cf) {
   lock_stack().oops_do(f);
 }
 
-void JavaThread::oops_do_frames(OopClosure* f, NMethodClosure* cf) {
+void JavaThread::jni_handle_blocks_do(OopClosure* f) {
+  if (active_handles() != nullptr) {
+    active_handles()->oops_do(f);
+  }
+  if (has_last_Java_frame()) {
+    for (StackFrameStream fst(this, false, false); !fst.is_done(); fst.next()) {
+      if (fst.current()->is_entry_frame()) {
+        fst.current()->entry_frame_call_wrapper()->handles()->oops_do(f);
+      }
+    }
+  }
+}
+
+
+void JavaThread::oops_do_frames(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop) {
   if (!has_last_Java_frame()) {
     return;
   }
@@ -1267,7 +1280,7 @@ void JavaThread::oops_do_frames(OopClosure* f, NMethodClosure* cf) {
   StackWatermarkSet::finish_processing(this, nullptr /* context */, StackWatermarkKind::gc);
   // Traverse the execution stack
   for (StackFrameStream fst(this, true /* update */, false /* process_frames */); !fst.is_done(); fst.next()) {
-    fst.current()->oops_do(f, cf, fst.register_map());
+    fst.current()->oops_do(f, cf, fst.register_map(), native_oop);
   }
 }
 
@@ -1421,7 +1434,7 @@ static void frame_verify(frame* f, const RegisterMap *map) { f->verify(map); }
 
 void JavaThread::verify() {
   // Verify oops in the thread.
-  oops_do(&VerifyOopClosure::verify_oop, nullptr);
+  oops_do(&VerifyOopClosure::verify_oop, nullptr, &VerifyOopClosure::verify_oop);
 
   // Verify the stack frames.
   frames_do(frame_verify);

@@ -54,7 +54,7 @@ class ServiceThread : public JavaThread {
   static void enqueue_deferred_event(JvmtiDeferredEvent* event);
 
   // GC support
-  void oops_do_no_frames(OopClosure* f, NMethodClosure* cf);
+  void oops_do_no_frames(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop);
   void nmethods_do(NMethodClosure* cf);
 };
 

@@ -169,6 +169,7 @@ public:
   static void mark_barrier_on_young_oop_field(volatile zpointer* p);
   static void mark_barrier_on_old_oop_field(volatile zpointer* p, bool finalizable);
   static void mark_barrier_on_oop_field(volatile zpointer* p, bool finalizable);
+  static void mark_barrier_on_root_oop_field(volatile zpointer* p);
   static void mark_young_good_barrier_on_oop_field(volatile zpointer* p);
   static zaddress remset_barrier_on_oop_field(volatile zpointer* p);
   static void promote_barrier_on_young_oop_field(volatile zpointer* p);

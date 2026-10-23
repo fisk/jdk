@@ -647,71 +647,37 @@ void MacroAssembler::move_ptr(VMRegPair src, VMRegPair dst) {
 
 // An oop arg. Must pass a handle not the oop itself
 void MacroAssembler::object_move(OopMap* map,
-                        int oop_handle_offset,
+                        int oop_handle_slot,
                         int framesize_in_slots,
                         VMRegPair src,
                         VMRegPair dst,
                         bool is_receiver,
                         int* receiver_offset) {
-
-  // must pass a handle. First figure out the location we use as a handle
-
   Register rHandle = dst.first()->is_stack() ? rax : dst.first()->as_Register();
-
-  // See if oop is null if it is we need no handle
-
+  Register rOop;
   if (src.first()->is_stack()) {
-
-    // Oop is already on the stack as an argument
     int offset_in_older_frame = src.first()->reg2stack() + SharedRuntime::out_preserve_stack_slots();
     map->set_oop(VMRegImpl::stack2reg(offset_in_older_frame + framesize_in_slots));
-    if (is_receiver) {
-      *receiver_offset = (offset_in_older_frame + framesize_in_slots) * VMRegImpl::stack_slot_size;
-    }
-
-    cmpptr(Address(rbp, reg2offset_in(src.first())), NULL_WORD);
-    lea(rHandle, Address(rbp, reg2offset_in(src.first())));
-    // conditionally move a null
-    cmovptr(Assembler::equal, rHandle, Address(rbp, reg2offset_in(src.first())));
+    rOop = rax;
+    movptr(rOop, Address(rbp, reg2offset_in(src.first())));
   } else {
-
-    // Oop is in a register we must store it to the space we reserve
-    // on the stack for oop_handles and pass a handle if oop is non-null
-
-    const Register rOop = src.first()->as_Register();
-    int oop_slot;
-    if (rOop == j_rarg0)
-      oop_slot = 0;
-    else if (rOop == j_rarg1)
-      oop_slot = 1;
-    else if (rOop == j_rarg2)
-      oop_slot = 2;
-    else if (rOop == j_rarg3)
-      oop_slot = 3;
-    else if (rOop == j_rarg4)
-      oop_slot = 4;
-    else {
-      assert(rOop == j_rarg5, "wrong register");
-      oop_slot = 5;
-    }
-
-    oop_slot = oop_slot * VMRegImpl::slots_per_word + oop_handle_offset;
-    int offset = oop_slot*VMRegImpl::stack_slot_size;
-
-    map->set_oop(VMRegImpl::stack2reg(oop_slot));
-    // Store oop in handle area, may be null
-    movptr(Address(rsp, offset), rOop);
-    if (is_receiver) {
-      *receiver_offset = offset;
-    }
-
-    cmpptr(rOop, NULL_WORD);
-    lea(rHandle, Address(rsp, offset));
-    // conditionally move a null from the handle area where it was just stored
-    cmovptr(Assembler::equal, rHandle, Address(rsp, offset));
+    rOop = src.first()->as_Register();
   }
 
-  // If arg is on the stack then place it otherwise it is already in correct reg.
+  int offset = oop_handle_slot * VMRegImpl::stack_slot_size;
+  map->set_oop(VMRegImpl::stack2reg(oop_handle_slot));
+  initialize_local_jni_handle(Address(rsp, offset), rOop, rscratch1, rscratch2);
+  if (is_receiver) {
+    *receiver_offset = offset;
+  }
+
+  Label done;
+  testptr(rOop, rOop);
+  lea(rHandle, Address(rsp, offset));
+  jcc(Assembler::notZero, done);
+  xorptr(rHandle, rHandle);
+  bind(done);
+
   if (dst.first()->is_stack()) {
     movptr(Address(rsp, reg2offset_out(dst.first())), rHandle);
   }
@@ -3528,6 +3494,15 @@ void MacroAssembler::clear_jobject_tag(Register possibly_non_local) {
   andptr(possibly_non_local, inverted_mask);
 }
 
+void MacroAssembler::initialize_local_jni_handle(Address dst, Register value, Register tmp1, Register tmp2) {
+  access_store_at(T_OBJECT, IN_NATIVE | IS_DEST_UNINITIALIZED,
+                  dst, value, tmp1, tmp2, noreg);
+}
+
+void MacroAssembler::resolve_local_jni_handle(Register dst, Register handle, Register tmp) {
+  access_load_at(T_OBJECT, IN_NATIVE, dst, Address(handle, 0), tmp);
+}
+
 void MacroAssembler::resolve_jobject(Register value,
                                      Register tmp) {
   Register thread = r15_thread;
@@ -3539,7 +3514,7 @@ void MacroAssembler::resolve_jobject(Register value,
   jcc(Assembler::notZero, tagged);
 
   // Resolve local handle
-  access_load_at(T_OBJECT, IN_NATIVE | AS_RAW, value, Address(value, 0), tmp);
+  resolve_local_jni_handle(value, value, tmp);
   verify_oop(value);
   jmp(done);
 

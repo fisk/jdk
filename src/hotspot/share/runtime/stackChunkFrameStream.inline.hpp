@@ -386,7 +386,7 @@ template <class OopClosureType, class RegisterMapT>
 inline void StackChunkFrameStream<frame_kind>::iterate_oops(OopClosureType* closure, const RegisterMapT* map) const {
   if (is_interpreted()) {
     frame f = to_frame();
-    f.oops_interpreted_do(closure, map, true);
+    f.oops_interpreted_do(closure, closure, map, true);
   } else {
     DEBUG_ONLY(int oops = 0;)
     for (OopMapStream oms(oopmap()); !oms.is_done(); oms.next()) {

@@ -306,6 +306,10 @@ inline address  frame::sender_pc()              const { return pauth_strip_point
 
 inline intptr_t*    frame::sender_sp()        const { return            addr_at(   sender_sp_offset); }
 
+inline oop* frame::interpreter_frame_native_oop_base() const {
+  return reinterpret_cast<oop*>(ptr_at(interpreter_frame_native_oop_base_offset));
+}
+
 inline intptr_t* frame::interpreter_frame_locals() const {
   intptr_t n = *addr_at(interpreter_frame_locals_offset);
   return &fp()[n]; // return relativized locals

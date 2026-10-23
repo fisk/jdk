@@ -1063,7 +1063,7 @@ JRT_LEAF(BasicType, Deoptimization::unpack_frames(JavaThread* thread, int exec_m
         guarantee(false, "wrong number of expression stack elements during deopt");
       }
       VerifyOopClosure verify;
-      iframe->oops_interpreted_do(&verify, &rm, false);
+      iframe->oops_interpreted_do(&verify, &verify, &rm, false);
       callee_size_of_parameters = mh->size_of_parameters();
     }
   }

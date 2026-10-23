@@ -56,9 +56,9 @@ public:
 
   virtual void oops_do(OopClosure* cl) override {
     if (_f.is_interpreted_frame()) {
-      _f.oops_interpreted_do(cl, _map);
+      _f.oops_interpreted_do(cl, cl, _map);
     } else {
-      OopMapDo<OopClosure, DerivedOopClosure, IncludeAllValues> visitor(cl, nullptr);
+      OopMapDo<OopClosure, DerivedOopClosure, IncludeAllValues> visitor(cl, nullptr, cl);
       visitor.oops_do(&_f, _map, _f.oop_map());
     }
   }
@@ -434,7 +434,7 @@ void stackChunkOopDesc::fix_thawed_frame(const frame& f, const RegisterMapT* map
 
   if (f.is_compiled_frame() && f.oop_map()->has_derived_oops()) {
     DerivedPointersSupport::DerelativizeClosure derived_closure;
-    OopMapDo<OopClosure, DerivedPointersSupport::DerelativizeClosure, SkipNullValue> visitor(nullptr, &derived_closure);
+    OopMapDo<OopClosure, DerivedPointersSupport::DerelativizeClosure, SkipNullValue> visitor(nullptr, &derived_closure, nullptr);
     visitor.oops_do(&f, map, f.oop_map());
   }
 }

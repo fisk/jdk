@@ -32,6 +32,7 @@
 #include "oops/methodCounters.hpp"
 #include "oops/methodData.hpp"
 #include "oops/oop.inline.hpp"
+#include "runtime/jniHandles.hpp"
 #include "runtime/safepointVerifiers.hpp"
 #include "utilities/align.hpp"
 #include "utilities/copy.hpp"
@@ -585,9 +586,8 @@ void CodeBuffer::finalize_oop_references(const methodHandle& mh) {
   append_oop_references(&oops, mh->method_holder());
 
   // Add any oops that we've found
-  Thread* thread = Thread::current();
   for (int i = 0; i < oops.length(); i++) {
-    oop_recorder()->find_index((jobject)thread->handle_area()->allocate_handle(oops.at(i)));
+    oop_recorder()->find_index(JNIHandles::make_local(oops.at(i)));
   }
 }
 

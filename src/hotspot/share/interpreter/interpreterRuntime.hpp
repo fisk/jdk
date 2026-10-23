@@ -189,7 +189,7 @@ private:
 
 class SignatureHandlerLibrary: public AllStatic {
  public:
-  enum { buffer_size =  1*K }; // the size of the temporary code buffer
+  enum { buffer_size =  4*K }; // the size of the temporary code buffer
   enum { blob_size   = 32*K }; // the size of a handler code blob.
 
  private:

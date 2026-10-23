@@ -49,6 +49,7 @@
 #include "runtime/handles.inline.hpp"
 #include "runtime/javaCalls.hpp"
 #include "runtime/javaThread.hpp"
+#include "runtime/jniHandles.inline.hpp"
 #include "runtime/monitorChunk.hpp"
 #include "runtime/os.hpp"
 #include "runtime/safefetch.hpp"
@@ -921,7 +922,7 @@ oop frame::interpreter_callee_receiver(Symbol* signature) {
 }
 
 template <typename RegisterMapT>
-void frame::oops_interpreted_do(OopClosure* f, const RegisterMapT* map, bool query_oop_map_cache) const {
+void frame::oops_interpreted_do(OopClosure* f, OopClosure* native_oop, const RegisterMapT* map, bool query_oop_map_cache) const {
   assert(is_interpreted_frame(), "Not an interpreted frame");
   Thread *thread = Thread::current();
   methodHandle m (thread, interpreter_frame_method());
@@ -947,6 +948,7 @@ void frame::oops_interpreted_do(OopClosure* f, const RegisterMapT* map, bool que
   }
 
   if (m->is_native()) {
+    native_oops_do(native_oop, nullptr);
     f->do_oop(interpreter_frame_temp_oop_addr());
   }
 
@@ -986,23 +988,25 @@ void frame::oops_interpreted_do(OopClosure* f, const RegisterMapT* map, bool que
   mask.iterate_oop(&blk);
 }
 
-template void frame::oops_interpreted_do(OopClosure* f, const RegisterMap* map, bool query_oop_map_cache) const;
-template void frame::oops_interpreted_do(OopClosure* f, const SmallRegisterMapNoArgs* map, bool query_oop_map_cache) const;
-template void frame::oops_interpreted_do(OopClosure* f, const SmallRegisterMapWithArgs* map, bool query_oop_map_cache) const;
+template void frame::oops_interpreted_do(OopClosure* f, OopClosure* native_oop, const RegisterMap* map, bool query_oop_map_cache) const;
+template void frame::oops_interpreted_do(OopClosure* f, OopClosure* native_oop, const SmallRegisterMapNoArgs* map, bool query_oop_map_cache) const;
+template void frame::oops_interpreted_do(OopClosure* f, OopClosure* native_oop, const SmallRegisterMapWithArgs* map, bool query_oop_map_cache) const;
 
 void frame::oops_interpreted_arguments_do(Symbol* signature, bool has_receiver, OopClosure* f) const {
   InterpretedArgumentOopFinder finder(signature, has_receiver, this, f);
   finder.oops_do();
 }
 
-void frame::oops_nmethod_do(OopClosure* f, NMethodClosure* cf, DerivedOopClosure* df, DerivedPointerIterationMode derived_mode, const RegisterMap* reg_map) const {
+void frame::oops_nmethod_do(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop,
+                             DerivedOopClosure* df, DerivedPointerIterationMode derived_mode,
+                             const RegisterMap* reg_map) const {
   assert(_cb != nullptr, "sanity check");
   assert((oop_map() == nullptr) == (_cb->oop_maps() == nullptr), "frame and _cb must agree that oopmap is set or not");
   if (oop_map() != nullptr) {
     if (df != nullptr) {
-      _oop_map->oops_do(this, reg_map, f, df);
+      _oop_map->oops_do(this, reg_map, f, df, native_oop);
     } else {
-      _oop_map->oops_do(this, reg_map, f, derived_mode);
+      _oop_map->oops_do(this, reg_map, f, derived_mode, native_oop);
     }
 
     // Preserve potential arguments for a callee. We handle this by dispatching
@@ -1128,9 +1132,60 @@ oop frame::get_native_receiver() const {
          "Should not call this unless it's a native nmethod");
   int byte_offset = in_bytes(nm->native_receiver_sp_offset());
   assert(byte_offset >= 0, "should not see invalid offset");
-  oop owner = ((oop*) sp())[byte_offset / wordSize];
+  oop owner = JNIHandles::resolve_local_jni_handle(reinterpret_cast<jobject>(sp() + byte_offset / wordSize));
   assert( Universe::heap()->is_in(owner), "bad receiver" );
   return owner;
+}
+
+class NativeArgumentOopFinder : public SignatureIterator {
+  oop* const _base;
+  OopClosure* const _closure;
+  int _offset;
+
+  friend class SignatureIterator;
+  void do_type(BasicType type) {
+    if (is_reference_type(type)) {
+      _closure->do_oop(_base - _offset);
+    }
+    _offset += parameter_type_word_count(type);
+  }
+
+public:
+  NativeArgumentOopFinder(Method* method, oop* base, OopClosure* closure)
+    : SignatureIterator(method->signature()),
+      _base(base), _closure(closure), _offset(method->is_static() ? 0 : 1) {
+    if (method->is_static()) {
+      _closure->do_oop(_base + 1);
+    } else {
+      _closure->do_oop(_base);
+    }
+    do_parameters_on(this);
+  }
+};
+
+void frame::native_oops_do(OopClosure* f, const RegisterMap* map) const {
+  if (is_interpreted_frame()) {
+    Method* method = interpreter_frame_method();
+    if (method->is_native()) {
+      oop* base = interpreter_frame_native_oop_base();
+      if (base != nullptr) {
+        NativeArgumentOopFinder finder(method, base, f);
+      }
+    }
+  } else if (is_native_frame() && oop_map() != nullptr) {
+    for (OopMapStream oms(oop_map()); !oms.is_done(); oms.next()) {
+      OopMapValue omv = oms.current();
+      if (omv.is_oop() &&
+          !cb()->as_nmethod()->method()->is_continuation_enter_intrinsic() &&
+          omv.reg()->is_stack() &&
+          omv.reg()->reg2stack() < cb()->frame_size() * VMRegImpl::slots_per_word) {
+        oop* loc = reinterpret_cast<oop*>(oopmapreg_to_location(omv.reg(), map));
+        DEBUG_ONLY(if (loc == nullptr && map->should_skip_missing()) continue;)
+        guarantee(loc != nullptr, "missing saved register");
+        f->do_oop(loc);
+      }
+    }
+  }
 }
 
 void frame::oops_entry_do(OopClosure* f, const RegisterMap* map) const {
@@ -1159,21 +1214,21 @@ void frame::oops_upcall_do(OopClosure* f, const RegisterMap* map) const {
   _cb->as_upcall_stub()->oops_do(f, *this);
 }
 
-void frame::oops_do_internal(OopClosure* f, NMethodClosure* cf,
-                             DerivedOopClosure* df, DerivedPointerIterationMode derived_mode,
+void frame::oops_do_internal(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop,
+                              DerivedOopClosure* df, DerivedPointerIterationMode derived_mode,
                              const RegisterMap* map, bool use_interpreter_oop_map_cache) const {
 #ifndef PRODUCT
   // simulate GC crash here to dump java thread in error report
   guarantee(!CrashGCForDumpingJavaThread, "");
 #endif
   if (is_interpreted_frame()) {
-    oops_interpreted_do(f, map, use_interpreter_oop_map_cache);
+    oops_interpreted_do(f, native_oop, map, use_interpreter_oop_map_cache);
   } else if (is_entry_frame()) {
     oops_entry_do(f, map);
   } else if (is_upcall_stub_frame()) {
     oops_upcall_do(f, map);
   } else if (CodeCache::contains(pc())) {
-    oops_nmethod_do(f, cf, df, derived_mode, map);
+    oops_nmethod_do(f, cf, native_oop, df, derived_mode, map);
   } else {
     ShouldNotReachHere();
   }
@@ -1219,7 +1274,7 @@ void frame::verify(const RegisterMap* map) const {
 #endif // COMPILER2
 
   if (map->update_map()) { // The map has to be up-to-date for the current frame
-    oops_do_internal(&VerifyOopClosure::verify_oop, nullptr, nullptr, DerivedPointerIterationMode::_ignore, map, false);
+    oops_do_internal(&VerifyOopClosure::verify_oop, nullptr, &VerifyOopClosure::verify_oop, nullptr, DerivedPointerIterationMode::_ignore, map, false);
   }
 }
 
@@ -1415,7 +1470,7 @@ void frame::describe(FrameValues& values, int frame_no, const RegisterMap* reg_m
 
     if (reg_map != nullptr) {
       FrameValuesOopClosure oopsFn;
-      oops_do(&oopsFn, nullptr, &oopsFn, reg_map);
+      oops_do(&oopsFn, nullptr, &oopsFn, reg_map, &oopsFn);
       oopsFn.describe(values, frame_no);
     }
   } else if (is_entry_frame()) {
@@ -1494,7 +1549,7 @@ void frame::describe(FrameValues& values, int frame_no, const RegisterMap* reg_m
       }
 
       FrameValuesOopClosure oopsFn;
-      oops_do(&oopsFn, nullptr, &oopsFn, reg_map);
+      oops_do(&oopsFn, nullptr, &oopsFn, reg_map, &oopsFn);
       oopsFn.describe(values, frame_no);
 
       if (oop_map() != nullptr) {

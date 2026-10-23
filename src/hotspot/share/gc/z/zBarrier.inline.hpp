@@ -466,6 +466,22 @@ inline zaddress ZBarrier::load_barrier_on_oop_field_preloaded(volatile zpointer*
   return barrier(is_load_good_or_null_fast_path, slow_path, color_load_good, p, o);
 }
 
+inline void ZBarrier::mark_barrier_on_root_oop_field(volatile zpointer* p) {
+  const zpointer o = load_atomic((volatile zpointer*)p);
+
+  auto slow_path = [](zaddress addr) -> zaddress {
+    if (is_null(addr)) {
+      return zaddress::null;
+    }
+
+    ZBarrier::mark<ZMark::DontResurrect, ZMark::AnyThread, ZMark::Follow, ZMark::Strong>(addr);
+
+    return addr;
+  };
+
+  barrier(is_mark_good_fast_path, slow_path, color_mark_good, p, o);
+}
+
 inline zaddress ZBarrier::keep_alive_load_barrier_on_oop_field_preloaded(volatile zpointer* p, zpointer o) {
   assert(!ZResurrection::is_blocked(), "This operation is only valid when resurrection is not blocked");
   return barrier(is_mark_good_fast_path, keep_alive_slow_path, color_mark_good, p, o);

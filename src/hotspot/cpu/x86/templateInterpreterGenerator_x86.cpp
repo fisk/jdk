@@ -717,9 +717,9 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
   __ movptr(rcx, constMethod);
   __ load_unsigned_short(rcx, size_of_parameters);
 
-  // native calls don't need the stack size check since they have no
-  // expression stack and the arguments are already on the stack and
-  // we only add a handful of words to the stack
+  __ lea(rdx, Address(rcx, rcx, Address::times_1,
+                      8 + frame::arg_reg_save_area_bytes / wordSize));
+  generate_stack_overflow_check();
 
   // rbx: Method*
   // rcx: size of parameters
@@ -731,7 +731,7 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
   // compute beginning of parameters
   __ lea(rlocals, Address(rsp, rcx, Interpreter::stackElementScale(), -wordSize));
 
-  // add 2 zero-initialized slots for native calls
+  __ push(NULL_WORD); // native_oop_base; published after handle initialization
   // initialize result_handler slot
   __ push(NULL_WORD);
   // slot for oop temp
@@ -831,6 +831,9 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
   __ movptr(t, Address(method, Method::const_offset()));
   __ load_unsigned_short(t, Address(t, ConstMethod::size_of_parameters_offset()));
 
+  __ lea(rax, Address(noreg, t, Address::times_ptr, wordSize));
+  __ subptr(rsp, rax);
+
   __ shll(t, Interpreter::logStackElementSize);
 
   __ subptr(rsp, t);
@@ -880,14 +883,8 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
     __ load_unsigned_short(t, Address(method, Method::access_flags_offset()));
     __ testl(t, JVM_ACC_STATIC);
     __ jcc(Assembler::zero, L);
-    // get mirror
-    __ load_mirror(t, method, rax);
-    // copy mirror into activation frame
-    __ movptr(Address(rbp, frame::interpreter_frame_oop_temp_offset * wordSize),
-            t);
-    // pass handle to mirror
-    __ lea(c_rarg1,
-           Address(rbp, frame::interpreter_frame_oop_temp_offset * wordSize));
+    __ movptr(c_rarg1, Address(rbp, frame::interpreter_frame_native_oop_base_offset * wordSize));
+    __ addptr(c_rarg1, wordSize);
     __ bind(L);
   }
 

@@ -1162,9 +1162,9 @@ void Threads::remove(JavaThread* p, bool is_daemon) {
 
 void Threads::oops_do(OopClosure* f, NMethodClosure* cf) {
   ALL_JAVA_THREADS(p) {
-    p->oops_do(f, cf);
+    p->oops_do(f, cf, f);
   }
-  VMThread::vm_thread()->oops_do(f, cf);
+  VMThread::vm_thread()->oops_do(f, cf, f);
 }
 
 void Threads::change_thread_claim_token() {
@@ -1221,7 +1221,7 @@ private:
 public:
   ParallelOopsDoThreadClosure(OopClosure* f, NMethodClosure* cf) : _f(f), _cf(cf) {}
   void do_thread(Thread* t) {
-    t->oops_do(_f, _cf);
+    t->oops_do(_f, _cf, _f);
   }
 };
 

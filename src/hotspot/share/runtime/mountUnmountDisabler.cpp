@@ -28,7 +28,7 @@
 #include "prims/jvmtiThreadState.inline.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/javaThread.hpp"
-#include "runtime/jniHandles.hpp"
+#include "runtime/jniHandles.inline.hpp"
 #include "runtime/mountUnmountDisabler.hpp"
 #include "runtime/threadSMR.hpp"
 
@@ -50,10 +50,10 @@ class JVMTIStartTransition : public StackObj {
     if (DoJVMTIVirtualThreadTransitions && MountUnmountDisabler::notify_jvmti_events()) {
       // post VirtualThreadUnmount event before VirtualThreadEnd
       if (!_is_mount && JvmtiExport::should_post_vthread_unmount()) {
-        JvmtiExport::post_vthread_unmount((jthread)_vthread.raw_value());
+        JvmtiExport::post_vthread_unmount();
       }
       if (_is_thread_end && JvmtiExport::should_post_vthread_end()) {
-        JvmtiExport::post_vthread_end((jthread)_vthread.raw_value());
+        JvmtiExport::post_vthread_end();
       }
     }
   }
@@ -109,11 +109,11 @@ class JVMTIEndTransition : public StackObj {
           JvmtiEventController::thread_started(_current);
         }
         if (JvmtiExport::should_post_vthread_start()) {
-          JvmtiExport::post_vthread_start((jthread)_vthread.raw_value());
+          JvmtiExport::post_vthread_start();
         }
       }
       if (_is_mount && JvmtiExport::should_post_vthread_mount()) {
-        JvmtiExport::post_vthread_mount((jthread)_vthread.raw_value());
+        JvmtiExport::post_vthread_mount();
       }
     }
   }

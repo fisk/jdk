@@ -97,6 +97,7 @@ public:
 class CodeSection {
   friend class CodeBuffer;
   friend class AOTCodeReader;
+  friend class SignatureHandlerLibrary;
  public:
   typedef int csize_t;  // code size type; would be size_t except for history
 
@@ -532,6 +533,7 @@ class CodeBuffer: public StackObj DEBUG_ONLY(COMMA private Scrubber) {
   friend class CodeSection;
   friend class StubCodeGenerator;
   friend class AOTCodeReader;
+  friend class SignatureHandlerLibrary;
 
  private:
   // CodeBuffers must be allocated on the stack except for a single

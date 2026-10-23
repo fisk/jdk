@@ -27,6 +27,7 @@
 
 #include "compiler/oopMap.hpp"
 
+#include "code/nmethod.hpp"
 #include "oops/compressedOops.hpp"
 #include "runtime/frame.inline.hpp"
 #include "runtime/globals.hpp"
@@ -110,7 +111,13 @@ void OopMapDo<OopFnT, DerivedOopFnT, ValueFilterT>::iterate_oops_do(const frame 
         fr->print_on(tty);
       }
       guarantee(loc != nullptr, "missing saved register");
-      if ( omv.type() == OopMapValue::oop_value ) {
+      if (omv.is_oop() &&
+          fr->is_native_frame() &&
+          !fr->cb()->as_nmethod()->method()->is_continuation_enter_intrinsic() &&
+          omv.reg()->is_stack() &&
+          omv.reg()->reg2stack() < fr->cb()->frame_size() * VMRegImpl::slots_per_word) {
+        _native_oop_fn->do_oop((oop*)loc);
+      } else if ( omv.type() == OopMapValue::oop_value ) {
         void* val = *loc;
         if (ValueFilterT::should_skip(val)) { // TODO: UGLY (basically used to decide if we're freezing/thawing continuation)
           // Ignore nullptr oops and decoded nullptr narrow oops which

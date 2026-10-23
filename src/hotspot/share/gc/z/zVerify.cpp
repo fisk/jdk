@@ -207,6 +207,7 @@ public:
     : OopClosure(),
       _verify_marked_old(verify_marked_old) {}
 
+
   virtual void do_oop(oop* p_) {
     zpointer* const p = (zpointer*)p_;
 
@@ -246,6 +247,7 @@ public:
 
 class ZVerifyUncoloredRootClosure : public OopClosure {
 public:
+
   virtual void do_oop(oop* p_) {
     zaddress* const p = (zaddress*)p_;
     z_verify_uncolored_root_oop(p);
@@ -322,19 +324,20 @@ typedef ClaimingCLDToOopClosure<ClassLoaderData::_claim_none> ZVerifyCLDClosure;
 class ZVerifyThreadClosure : public ThreadClosure {
 private:
   OopClosure* const _verify_cl;
+  OopClosure* const _verify_jni_cl;
 
 public:
-  ZVerifyThreadClosure(OopClosure* verify_cl)
-    : _verify_cl(verify_cl) {}
+  ZVerifyThreadClosure(OopClosure* verify_cl, OopClosure* verify_jni_cl)
+    : _verify_cl(verify_cl),
+      _verify_jni_cl(verify_jni_cl) {}
 
   virtual void do_thread(Thread* thread) {
     JavaThread* const jt = JavaThread::cast(thread);
     const ZStackWatermark* const watermark = StackWatermarkSet::get<ZStackWatermark>(jt, StackWatermarkKind::gc);
     if (watermark->processing_started_acquire()) {
-      thread->oops_do_no_frames(_verify_cl, nullptr);
-
+      thread->oops_do_no_frames(_verify_cl, nullptr, _verify_jni_cl);
        if (watermark->processing_completed_acquire()) {
-         thread->oops_do_frames(_verify_cl, nullptr);
+         thread->oops_do_frames(_verify_cl, nullptr, _verify_jni_cl);
        }
     }
   }
@@ -374,7 +377,8 @@ void ZVerify::roots_strong(bool verify_after_old_mark) {
 
   {
     ZVerifyUncoloredRootClosure cl;
-    ZVerifyThreadClosure thread_cl(&cl);
+    ZVerifyColoredRootClosure jni_cl(verify_after_old_mark);
+    ZVerifyThreadClosure thread_cl(&cl, &jni_cl);
     ZVerifyNMethodClosure nm_cl(&cl);
 
     ZRootsIteratorStrongUncolored roots_strong_uncolored(ZGenerationIdOptional::none);

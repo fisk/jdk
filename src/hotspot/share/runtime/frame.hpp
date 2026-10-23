@@ -374,6 +374,7 @@ class frame {
 
   // Address of the temp oop in the frame. Needed as GC root.
   oop* interpreter_frame_temp_oop_addr() const;
+  oop* interpreter_frame_native_oop_base() const;
 
   // BasicObjectLocks:
   //
@@ -461,24 +462,26 @@ class frame {
   // Oops-do's
   void oops_compiled_arguments_do(Symbol* signature, bool has_receiver, bool has_appendix, const RegisterMap* reg_map, OopClosure* f) const;
   template <typename RegisterMapT>
-  void oops_interpreted_do(OopClosure* f, const RegisterMapT* map, bool query_oop_map_cache = true) const;
+  void oops_interpreted_do(OopClosure* f, OopClosure* native_oop,
+                          const RegisterMapT* map, bool query_oop_map_cache = true) const;
 
  private:
   void oops_interpreted_arguments_do(Symbol* signature, bool has_receiver, OopClosure* f) const;
 
   // Iteration of oops
-  void oops_do_internal(OopClosure* f, NMethodClosure* cf,
+  void oops_do_internal(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop,
                         DerivedOopClosure* df, DerivedPointerIterationMode derived_mode,
                         const RegisterMap* map, bool use_interpreter_oop_map_cache) const;
 
   void oops_entry_do(OopClosure* f, const RegisterMap* map) const;
   void oops_upcall_do(OopClosure* f, const RegisterMap* map) const;
-  void oops_nmethod_do(OopClosure* f, NMethodClosure* cf,
+  void oops_nmethod_do(OopClosure* f, NMethodClosure* cf, OopClosure* native_oop,
                        DerivedOopClosure* df, DerivedPointerIterationMode derived_mode,
                        const RegisterMap* map) const;
  public:
   // Memory management
-  void oops_do(OopClosure* f, NMethodClosure* cf, const RegisterMap* map) {
+  void oops_do(OopClosure* f, NMethodClosure* cf, const RegisterMap* map,
+               OopClosure* native_oop) {
 #ifdef COMPILER2
     DerivedPointerIterationMode dpim = DerivedPointerTable::is_active() ?
                                        DerivedPointerIterationMode::_with_table :
@@ -486,17 +489,25 @@ class frame {
 #else // COMPILER2
     DerivedPointerIterationMode dpim = DerivedPointerIterationMode::_ignore;;
 #endif // COMPILER2
-    oops_do_internal(f, cf, nullptr, dpim, map, true);
+    oops_do_internal(f, cf, native_oop, nullptr, dpim, map, true);
   }
 
-  void oops_do(OopClosure* f, NMethodClosure* cf, DerivedOopClosure* df, const RegisterMap* map) {
-    oops_do_internal(f, cf, df, DerivedPointerIterationMode::_ignore, map, true);
+  void oops_do(OopClosure* f, NMethodClosure* cf, DerivedOopClosure* df, const RegisterMap* map,
+               OopClosure* native_oop) {
+    oops_do_internal(f, cf, native_oop, df, DerivedPointerIterationMode::_ignore, map, true);
   }
 
   void oops_do(OopClosure* f, NMethodClosure* cf, const RegisterMap* map,
-               DerivedPointerIterationMode derived_mode) const {
-    oops_do_internal(f, cf, nullptr, derived_mode, map, true);
+               DerivedPointerIterationMode derived_mode, OopClosure* native_oop) const {
+    oops_do_internal(f, cf, native_oop, nullptr, derived_mode, map, true);
   }
+
+  void oops_do(OopClosure* f, NMethodClosure* cf, const RegisterMap* map,
+               OopClosure* native_oop) const {
+    oops_do_internal(f, cf, native_oop, nullptr, DerivedPointerIterationMode::_ignore, map, true);
+  }
+
+  void native_oops_do(OopClosure* f, const RegisterMap* map) const;
 
   void nmethod_do(NMethodClosure* cf) const;
 
