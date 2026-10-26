@@ -1466,6 +1466,11 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
   __ ldr(result_handler, Address(rfp, frame::interpreter_frame_result_handler_offset*wordSize));
   __ bind(not_preempted);
 
+  if (CheckJNICalls) {
+    // clear_pending_jni_exception_check
+    __ str(zr, Address(rthread, JavaThread::pending_jni_exception_check_fn_offset()));
+  }
+
   // If result is an oop unbox and store it in frame where gc will see it
   // and result handler will pick it up
 
@@ -1485,11 +1490,6 @@ address TemplateInterpreterGenerator::generate_native_entry(bool synchronized) {
 
   // reset_last_Java_frame
   __ reset_last_Java_frame(true);
-
-  if (CheckJNICalls) {
-    // clear_pending_jni_exception_check
-    __ str(zr, Address(rthread, JavaThread::pending_jni_exception_check_fn_offset()));
-  }
 
   // reset handle block
   __ ldr(t, Address(rthread, JavaThread::active_handles_offset()));
