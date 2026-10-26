@@ -3539,16 +3539,25 @@ void MacroAssembler::resolve_jobject(Register value,
   testptr(value, JNIHandles::tag_mask); // Test for tag.
   jcc(Assembler::notZero, tagged);
 
-  if (BarrierSet::barrier_set()->uses_stack_watermark_barrier()) {
+  if (StackWatermarkSet::has_watermark(JavaThread::current(), StackWatermarkKind::gc)) {
+    // Local JNI handles created by native wrappers may reside in nested stack frames
+    // of a caller's caller. Such handles may not yet have been processed by the GC.
     Label local_ready;
+
+    // First check if the handle is in the stack at all.
     cmpptr(value, Address(thread, Thread::stack_base_offset()));
     jcc(Assembler::aboveEqual, local_ready);
     movptr(tmp, Address(thread, Thread::stack_base_offset()));
     subptr(tmp, Address(thread, Thread::stack_size_offset()));
     cmpptr(value, tmp);
     jcc(Assembler::below, local_ready);
-    cmpptr(value, Address(thread, JavaThread::polling_word_offset()));
+
+    // Then check if it's potentially above the watermark using the polling_word.
+    movptr(tmp, Address(thread, JavaThread::polling_word_offset()));
+    cmpptr(value, tmp);
     jcc(Assembler::belowEqual, local_ready);
+
+    // Possibly unprocessed JNI handle - take a slow path.
     push_call_clobbered_registers();
     call_VM_leaf(CAST_FROM_FN_PTR(address, StackWatermarkSet::on_jni_handle_resolve), value);
     pop_call_clobbered_registers();

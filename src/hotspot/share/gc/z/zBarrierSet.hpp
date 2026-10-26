@@ -60,8 +60,6 @@ public:
 
   virtual void on_thread_create(Thread* thread);
   virtual void on_thread_destroy(Thread* thread);
-  bool uses_stack_watermark_barrier() const override { return true; }
-
   virtual void on_thread_attach(Thread* thread);
   virtual void on_thread_detach(Thread* thread);
 
