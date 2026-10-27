@@ -92,6 +92,7 @@
 # include <inttypes.h>
 # include <link.h>
 # include <linux/elf-em.h>
+# include <linux/prctl.h>
 # include <poll.h>
 # include <pthread.h>
 # include <pwd.h>
@@ -119,6 +120,16 @@
 # include <unistd.h>
 #ifdef __GLIBC__
 # include <malloc.h>
+#endif
+
+// PR_SET_THP_DISABLE was added in Linux 5.4 and
+// PR_THP_DISABLE_EXCEPT_ADVISED in Linux 6.18. Keep builds with older Linux
+// headers compatible.
+#ifndef PR_SET_THP_DISABLE
+#define PR_SET_THP_DISABLE 41
+#endif
+#ifndef PR_THP_DISABLE_EXCEPT_ADVISED
+#define PR_THP_DISABLE_EXCEPT_ADVISED (1UL << 1)
 #endif
 
 #ifndef _GNU_SOURCE
@@ -4593,6 +4604,14 @@ static void check_pax(void) {
 #endif
 }
 
+// Make transparent huge pages opt-in for this process.
+static void disable_thp_except_when_advised() {
+  if (prctl(PR_SET_THP_DISABLE, 1, PR_THP_DISABLE_EXCEPT_ADVISED, 0, 0) == -1) {
+    log_warning(os)("Could not disable transparent huge pages except when explicitly advised: %s",
+                    os::strerror(errno));
+  }
+}
+
 // this is called _before_ most of the global arguments have been parsed
 void os::init(void) {
   char dummy;   // used to get a guess on initial stack address
@@ -4610,6 +4629,8 @@ void os::init(void) {
   _page_sizes.add(os::vm_page_size());
 
   Linux::initialize_system_info();
+
+  disable_thp_except_when_advised();
 
 #ifdef __GLIBC__
   g_mallinfo = CAST_TO_FN_PTR(mallinfo_func_t, dlsym(RTLD_DEFAULT, "mallinfo"));
