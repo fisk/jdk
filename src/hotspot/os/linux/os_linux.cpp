@@ -4612,6 +4612,60 @@ static void disable_thp_except_when_advised() {
   }
 }
 
+#ifdef __GLIBC__
+static bool glibc_tunable_is_set(const char* name) {
+  // Parse GLIBC_TUNABLES which is a colon separated key=value string
+  const char* const tunables = ::getenv("GLIBC_TUNABLES");
+  if (tunables == nullptr) {
+    return false;
+  }
+
+  const size_t name_length = strlen(name);
+  for (const char* entry = tunables; *entry != '\0';) {
+    const char* const separator = strchr(entry, ':');
+    const size_t entry_length = separator == nullptr ? strlen(entry) : separator - entry;
+    if (entry_length > name_length &&
+        strncmp(entry, name, name_length) == 0 && entry[name_length] == '=') {
+      return true;
+    }
+    if (separator == nullptr) {
+      break;
+    }
+    entry = separator + 1;
+  }
+
+  return false;
+}
+
+static bool glibc_malloc_tunable_is_set(const char* env_name, const char* tunable_name) {
+  return ::getenv(env_name) != nullptr || glibc_tunable_is_set(tunable_name);
+}
+#endif
+
+static void configure_malloc() {
+#ifdef __GLIBC__
+  const int host_cpus = os::processor_count();
+  const int arena_max = MAX2(1, host_cpus / 4);
+  constexpr int trim_threshold = 2 * M;
+  constexpr int top_pad = 1 * M;
+
+  bool configured = true;
+  if (!glibc_malloc_tunable_is_set("MALLOC_ARENA_MAX", "glibc.malloc.arena_max") &&
+      !glibc_malloc_tunable_is_set("MALLOC_ARENA_TEST", "glibc.malloc.arena_test")) {
+    configured = ::mallopt(M_ARENA_MAX, arena_max) != 0 && configured;
+  }
+  if (!glibc_malloc_tunable_is_set("MALLOC_TRIM_THRESHOLD_", "glibc.malloc.trim_threshold")) {
+    configured = ::mallopt(M_TRIM_THRESHOLD, trim_threshold) != 0 && configured;
+  }
+  if (!glibc_malloc_tunable_is_set("MALLOC_TOP_PAD_", "glibc.malloc.top_pad")) {
+    configured = ::mallopt(M_TOP_PAD, top_pad) != 0 && configured;
+  }
+  if (!configured) {
+    log_warning(os)("Could not fully configure glibc malloc");
+  }
+#endif
+}
+
 // this is called _before_ most of the global arguments have been parsed
 void os::init(void) {
   char dummy;   // used to get a guess on initial stack address
@@ -4631,6 +4685,7 @@ void os::init(void) {
   Linux::initialize_system_info();
 
   disable_thp_except_when_advised();
+  configure_malloc();
 
 #ifdef __GLIBC__
   g_mallinfo = CAST_TO_FN_PTR(mallinfo_func_t, dlsym(RTLD_DEFAULT, "mallinfo"));
