@@ -32,7 +32,10 @@
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
 
-void ZAdaptiveHeap::pd_machine_memory_info(ZMachineMemoryInfo& info) {
+void ZAdaptiveHeap::pd_initialize() {
+}
+
+void ZAdaptiveHeap::pd_machine_memory_info(ZMachineMemoryInfo& info, bool must_include_caches) {
   info._physical_memory = 0;
   info._available_memory = 0;
   info._is_valid = false;

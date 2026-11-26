@@ -22,14 +22,57 @@
  */
 
 #include "gc/z/zAdaptiveHeap.hpp"
+#include "gc/z/zThread.hpp"
+#include "runtime/atomic.hpp"
 #include "runtime/os.inline.hpp"
 
-#include <windows.h>
 #include <processthreadsapi.h>
+#include <windows.h>
 
-void ZAdaptiveHeap::pd_machine_memory_info(ZMachineMemoryInfo& info) {
+static Atomic<bool> z_available_memory_initialized;
+
+class ZLazyAdaptiveHeapInitThread : public ConcurrentGCThread {
+protected:
+  virtual void run_service() {
+    // Perform the potentially first os::available_memory query which is slow
+    physical_memory_size_type available;
+    if (os::available_memory(available)) {
+      z_available_memory_initialized.store_relaxed(true);
+    }
+  }
+
+  virtual void stop_service() {
+  }
+
+public:
+  ZLazyAdaptiveHeapInitThread() {
+    set_name("ZLazyAdaptiveHeapInit");
+    create_and_start();
+  }
+};
+
+void ZAdaptiveHeap::pd_initialize() {
+  new ZLazyAdaptiveHeapInitThread();
+}
+
+void ZAdaptiveHeap::pd_machine_memory_info(ZMachineMemoryInfo& info, bool must_include_caches) {
   info._physical_memory = os::Machine::physical_memory();
+
+  // The first call to available_memory on windows is very expensive. Make sure
+  // to run it in a concurrent thread, unless the additional accuracy is needed
+  // for accurate OOME handling.
+  bool initialized = z_available_memory_initialized.load_relaxed();
+
+  if (!initialized && !must_include_caches) {
+    info._is_valid = os::Machine::free_memory(info._available_memory);
+    return;
+  }
+
   info._is_valid = os::Machine::available_memory(info._available_memory);
+
+  if (!initialized) {
+    z_available_memory_initialized.store_relaxed(true);
+  }
 }
 
 bool ZAdaptiveHeap::pd_machine_elapsed_system_cpu_time(ZSystemCpuTime& value) {

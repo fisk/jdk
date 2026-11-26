@@ -140,7 +140,7 @@ public:
              size_t static_max_capacity);
 
   size_t dynamic_max_capacity() const;
-  size_t current_max_capacity() const;
+  size_t current_max_capacity(bool must_include_caches) const;
   size_t static_max_capacity() const;
   size_t capacity() const;
 
@@ -331,7 +331,7 @@ public:
   size_t static_min_capacity() const;
   size_t static_max_capacity() const;
   size_t dynamic_max_capacity() const;
-  size_t current_max_capacity() const;
+  size_t current_max_capacity(bool must_include_caches) const;
   size_t heuristic_max_capacity() const;
   size_t capacity() const;
   size_t used() const;

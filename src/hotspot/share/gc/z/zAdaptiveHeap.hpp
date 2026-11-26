@@ -182,7 +182,8 @@ private:
   [[nodiscard]] static bool machine_elapsed_system_cpu_time(ZSystemCpuTime& value);
   [[nodiscard]] static bool container_elapsed_system_cpu_time(ZSystemCpuTime& value);
 
-  static void pd_machine_memory_info(ZMachineMemoryInfo& info);
+  static void pd_initialize();
+  static void pd_machine_memory_info(ZMachineMemoryInfo& info, bool must_include_caches);
   static bool pd_machine_compressed_memory(physical_memory_size_type& value);
   static double machine_memory_compression_ratio(physical_memory_size_type machine_used_memory,
                                                  physical_memory_size_type machine_max_memory);
@@ -191,7 +192,7 @@ public:
   static void initialize(bool explicit_max_heap_size);
   static void initialize_generation_data();
 
-  static ZMachineMemoryInfo machine_memory_info();
+  static ZMachineMemoryInfo machine_memory_info(bool must_include_caches);
   static physical_memory_size_type machine_physical_memory();
 
   static size_t compute_heap_size(const ZHeapResizeMetrics& metrics, ZGenerationId generation);

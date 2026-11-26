@@ -338,6 +338,8 @@ class os: AllStatic {
   // For example, on Linux, "available" memory (`MemAvailable` in `/proc/meminfo`) is greater
   // than "free" memory (`MemFree` in `/proc/meminfo`) because Linux can free memory
   // aggressively (e.g. clear caches) so that it becomes available.
+  // NOTE: On windows, the first call to available_memory is very expensive - please avoid
+  // using in the bootstrapping path to avoid startup regressions.
   [[nodiscard]] static bool available_memory(physical_memory_size_type& value);
   [[nodiscard]] static bool used_memory(physical_memory_size_type& value);
   [[nodiscard]] static bool free_memory(physical_memory_size_type& value);

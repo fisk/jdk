@@ -25,7 +25,10 @@
 #include "runtime/os.inline.hpp"
 #include "utilities/debug.hpp"
 
-void ZAdaptiveHeap::pd_machine_memory_info(ZMachineMemoryInfo& info) {
+void ZAdaptiveHeap::pd_initialize() {
+}
+
+void ZAdaptiveHeap::pd_machine_memory_info(ZMachineMemoryInfo& info, bool must_include_caches) {
   info._physical_memory = os::Machine::physical_memory();
   info._is_valid = os::Machine::available_memory(info._available_memory);
 }

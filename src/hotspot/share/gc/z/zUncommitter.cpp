@@ -383,9 +383,9 @@ size_t ZUncommitter::uncommit() {
     // We flush out and uncommit chunks at a time (~0.8% of the max capacity,
     // but at least one granule and at most 256M), in case demand for memory
     // increases while we are uncommitting.
-    const size_t current_max_capacity = _partition->current_max_capacity();
+    const size_t capacity = _partition->_capacity;
     const size_t limit_upper_bound = MAX2(ZGranuleSize, align_down(256 * M / ZNUMA::count(), ZGranuleSize));
-    const size_t limit = MIN2(align_up(current_max_capacity >> 7, ZGranuleSize), limit_upper_bound);
+    const size_t limit = MIN2(align_up(capacity >> 7, ZGranuleSize), limit_upper_bound);
 
     ZMappedCache& cache = _partition->_cache;
 
@@ -396,7 +396,7 @@ size_t ZUncommitter::uncommit() {
 
     // Never uncommit below min capacity.
     const size_t retain = MAX2(_partition->_used, _partition->_static_min_capacity);
-    const size_t release = _partition->_capacity - retain;
+    const size_t release = capacity - retain;
     const size_t flush = MIN3(release, limit, to_uncommit);
 
     // Flush memory from the mapped cache for uncommit

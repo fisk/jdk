@@ -658,8 +658,8 @@ size_t ZPartition::dynamic_max_capacity() const {
   return ZNUMA::calculate_share(_numa_id, _page_allocator->dynamic_max_capacity());
 }
 
-size_t ZPartition::current_max_capacity() const {
-  return ZNUMA::calculate_share(_numa_id, _page_allocator->current_max_capacity());
+size_t ZPartition::current_max_capacity(bool must_include_caches) const {
+  return ZNUMA::calculate_share(_numa_id, _page_allocator->current_max_capacity(must_include_caches));
 }
 
 size_t ZPartition::static_max_capacity() const {
@@ -1601,13 +1601,13 @@ static size_t calculate_system_max_capacity(size_t system_used,
   return clamp(align_down(result, ZGranuleSize), min_capacity, max_capacity);
 }
 
-size_t ZPageAllocator::current_max_capacity() const {
+size_t ZPageAllocator::current_max_capacity(bool must_include_caches) const {
   if (!ZAdaptiveHeapSizing) {
     // When not adapting use supplied max capacity
     return _static_max_capacity;
   }
 
-  ZMachineMemoryInfo machine_memory_info = ZAdaptiveHeap::machine_memory_info();
+  ZMachineMemoryInfo machine_memory_info = ZAdaptiveHeap::machine_memory_info(must_include_caches);
   if (!machine_memory_info._is_valid) {
     return dynamic_max_capacity();
   }
@@ -1739,7 +1739,7 @@ void ZPageAllocator::truncate_heuristic_max_after_capacity_decrease(TruncationRe
     if (_heuristic_max_capacity.compare_exchange(heuristic_max, capacity) != heuristic_max) {
       continue;
     }
-    const size_t current_max = current_max_capacity();
+    const size_t current_max = current_max_capacity(true /* must_include_caches */);
     if (reason == TruncationReason::CommitFailure) {
       log_debug(gc)("Forced to lower heap size from "
                     "%zuM(%.0f%%) to %zuM(%.0f%%)",
@@ -1759,7 +1759,7 @@ void ZPageAllocator::adapt_heuristic_max_capacity(ZGenerationId generation) {
   const size_t static_min_capacity = _static_min_capacity;
   const size_t used = ZPageAllocator::used();
   const size_t capacity = MAX2(ZPageAllocator::capacity(), used);
-  const size_t curr_max_capacity = MAX2(capacity, current_max_capacity());
+  const size_t curr_max_capacity = MAX2(capacity, current_max_capacity(false /* must_include_caches */));
   const size_t highest_soft_capacity = clamp_to_soft_max_capacity(curr_max_capacity);
 
   const double alloc_rate = ZStatMutatorAllocRate::stats()._avg;
@@ -2384,14 +2384,7 @@ bool ZPageAllocator::commit_and_map_multi_partition(ZMultiPartitionAllocation* m
   return false;
 }
 
-size_t ZPageAllocator::allowed_to_commit(size_t about_to_commit) {
-  // We only allow committing up to the current max capacity. Even if capacity
-  // may have been allowed to be increased on individual partitions, we may
-  // disallow that capacity to be committed if it turns out that it will put
-  // too much strain on the system.
-  const size_t current_max = current_max_capacity();
-  const size_t capacity = ZPageAllocator::capacity();
-
+static size_t allowed_to_commit_impl(size_t about_to_commit, size_t capacity, size_t current_max) {
   // Capacity already accounts for the increase as part of this allocation,
   // subtract it to get the already committed capacity.
   const size_t committed_capacity = capacity - about_to_commit;
@@ -2401,6 +2394,24 @@ size_t ZPageAllocator::allowed_to_commit(size_t about_to_commit) {
   }
 
   return current_max - committed_capacity;
+}
+
+size_t ZPageAllocator::allowed_to_commit(size_t about_to_commit) {
+  // We only allow committing up to the current max capacity. Even if capacity
+  // may have been allowed to be increased on individual partitions, we may
+  // disallow that capacity to be committed if it turns out that it will put
+  // too much strain on the system.
+  const size_t current_max_no_cache = current_max_capacity(false /* must_include_caches */);
+  const size_t capacity = ZPageAllocator::capacity();
+
+  const size_t allowed_excluding_caches = allowed_to_commit_impl(about_to_commit, capacity, current_max_no_cache);
+
+  if (allowed_excluding_caches < about_to_commit) {
+    const size_t current_max_with_caches = current_max_capacity(true /* must_include_caches */);
+    return allowed_to_commit_impl(about_to_commit, capacity, current_max_with_caches);
+  }
+
+  return allowed_excluding_caches;
 }
 
 void ZPageAllocator::commit(ZMemoryAllocation* allocation, const ZVirtualMemory& vmem) {

@@ -125,10 +125,12 @@ void ZAdaptiveHeap::initialize_generation_data() {
     _old_data._last_time = time_now;
   }
 
+  pd_initialize();
+
   _initialized_generation_data = true;
 }
 
-ZMachineMemoryInfo ZAdaptiveHeap::machine_memory_info() {
+ZMachineMemoryInfo ZAdaptiveHeap::machine_memory_info(bool must_include_caches) {
   ZMachineMemoryInfo info = {};
 
   // Used to "latch" on to whatever validity we initially observe and make sure
@@ -148,12 +150,12 @@ ZMachineMemoryInfo ZAdaptiveHeap::machine_memory_info() {
     }
   } is_valid_stability(info);
 
-  pd_machine_memory_info(info);
+  pd_machine_memory_info(info, must_include_caches);
   return info;
 }
 
 physical_memory_size_type ZAdaptiveHeap::machine_physical_memory() {
-  return machine_memory_info()._physical_memory;
+  return machine_memory_info(false /* include_caches */)._physical_memory;
 }
 
 double ZAdaptiveHeap::young_to_old_gc_time() {
@@ -219,7 +221,7 @@ ZMemoryPressureMetrics ZAdaptiveHeap::memory_pressure_metrics() {
   precond(ZAdaptiveHeapSizing);
   const double unscaled_gc_intensity = clamp(AtomicAccess::load(&ZGCIntensity), MinZGCIntensity, MaxZGCIntensity);
 
-  const ZMachineMemoryInfo machine_memory_info = ZAdaptiveHeap::machine_memory_info();
+  const ZMachineMemoryInfo machine_memory_info = ZAdaptiveHeap::machine_memory_info(false);
 
   const physical_memory_size_type machine_max_memory = machine_memory_info._physical_memory;
 

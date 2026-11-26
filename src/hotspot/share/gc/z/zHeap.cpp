@@ -118,7 +118,7 @@ size_t ZHeap::dynamic_max_capacity() const {
 }
 
 size_t ZHeap::current_max_capacity() const {
-  return _page_allocator.current_max_capacity();
+  return _page_allocator.current_max_capacity(false /* before_stall */);
 }
 
 size_t ZHeap::heuristic_max_capacity() const {
